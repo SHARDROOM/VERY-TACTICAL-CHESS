@@ -145,6 +145,13 @@ describe('full effect vocabulary through the GM boundary', () => {
     expect(parseGmRuling({ ...base, effects: [{ type: 'transform', at: 'e4', into: 'king' }] }).ok).toBe(false);
   });
 
+  it('fake GM understands summoning and transforming', () => {
+    expect(fakeRuling('e4에 나이트를 생성한다', 'black').effects).toEqual([{ type: 'spawn', at: 'e4', color: 'black', piece: 'knight' }]);
+    expect(fakeRuling('a2 폰을 퀸으로 바꾼다').effects).toEqual([{ type: 'transform', at: 'a2', into: 'queen' }]);
+    // A removal still wins over these when no piece-making word is used.
+    expect(fakeRuling('d7 폰을 저격한다').effects).toEqual([{ type: 'remove', at: 'd7' }]);
+  });
+
   it('fake GM understands stun, shield and riding', () => {
     expect(fakeRuling('g8 나이트를 기절시킨다').effects).toEqual([{ type: 'tag', at: 'g8', tag: '기절', turns: 1 }]);
     expect(fakeRuling('e1 킹에 보호막').effects).toEqual([{ type: 'tag', at: 'e1', tag: '보호막', turns: 0 }]);

@@ -241,6 +241,22 @@ describe('transform and spawn', () => {
     expect(proposeFails(s, { type: 'spawn', at: sq('e2'), color: 'white', piece: 'queen' })).toContain('비어 있지 않음');
   });
 
+  it('never creates a pawn that could not move: not on its own last rank', () => {
+    const s = { ...createStateFrom({ e1: { color: 'white', type: 'king' }, h8: { color: 'black', type: 'king' }, a8: { color: 'white', type: 'rook' } }), ap: { white: 5, black: 5 } };
+    expect(proposeFails(s, { type: 'spawn', at: sq('d8'), color: 'white', piece: 'pawn' })).toContain('마지막 줄');
+    expect(proposeFails(s, { type: 'transform', at: sq('a8'), into: 'pawn' })).toContain('마지막 줄');
+    // A black pawn on the 8th rank is on its own first rank: it can still move down.
+    const r = act(s, { type: 'spawn', at: sq('d8'), color: 'black', piece: 'pawn' });
+    expect(r.state.board[sq('d8')]).toMatchObject({ color: 'black', type: 'pawn' });
+  });
+
+  it('a pawn carried to its last rank by an effect promotes to a queen', () => {
+    const s = { ...createStateFrom({ e1: { color: 'white', type: 'king' }, h8: { color: 'black', type: 'king' }, b2: { color: 'white', type: 'pawn' } }), ap: { white: 5, black: 5 } };
+    const r = act(s, { type: 'move', from: sq('b2'), to: sq('b8') });
+    expect(r.state.board[sq('b8')]).toMatchObject({ color: 'white', type: 'queen' });
+    expect(r.events).toContainEqual(expect.objectContaining({ type: 'transformed', at: sq('b8'), from: 'pawn', to: 'queen' }));
+  });
+
   it('free tags are stored but not enforced', () => {
     const s = act(rich(), { type: 'tag', at: sq('g1'), tag: '불타는 중', turns: 2 }).state;
     expect(tagsAt(s, 'g1')).toEqual([['불타는 중', 2]]);

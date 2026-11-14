@@ -48,6 +48,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - 기절한 기물은 move나 board로 움직일 수 없습니다.
 - board: 같은 편끼리만, 킹은 탈 수 없음, 한 기물에는 한 명만 탈 수 있음. 탑승은 tag 효과로 붙이거나 뗄 수 없습니다.
 - spawn과 unboard의 도착 칸은 비어 있어야 합니다.
+- 폰을 그 편의 마지막 줄(백은 8번 줄, 흑은 1번 줄)에 spawn하거나 그 줄의 기물을 폰으로 transform할 수 없습니다. 효과로 폰이 마지막 줄에 도착하면 자동으로 퀸으로 승격됩니다.
 
 ## 난이도와 비용의 기준
 - 그럴듯하고 영향이 작은 행동(가까운 칸으로의 기발한 이동 등): DC ${rules.dcMin}~10, AP ${rules.costMin}.

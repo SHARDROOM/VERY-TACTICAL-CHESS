@@ -1,6 +1,6 @@
 import { RIDE, type Board, type Color, type Effect, type GameEvent, type Piece, type PieceType, type Ruling, type Square } from './types';
 import type { RuleConfig } from './config';
-import { squareName } from './squares';
+import { rankOf, squareName } from './squares';
 import { isShielded, isStunned, withTag, withoutTag } from './tags';
 import { SHIELD } from './types';
 
@@ -21,6 +21,9 @@ const onBoard = (sq: unknown): sq is Square => isInt(sq) && sq >= 0 && sq < 64;
 const isColor = (c: unknown): c is Color => c === 'white' || c === 'black';
 const isPieceType = (t: unknown): t is PieceType => PIECE_TYPES.includes(t as PieceType);
 const MAX_TAG_LENGTH = 20;
+/** The rank a pawn of this colour promotes on. */
+const lastRank = (color: Color) => (color === 'white' ? 7 : 0);
+const pawnStuckAt = (sq: Square, color: Color) => rankOf(sq) === lastRank(color);
 
 /** Events for a piece leaving the board for good: it, and anything riding it. */
 function goneEvents(piece: Piece, at: Square): GameEvent[] {
@@ -142,6 +145,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (!piece) return fail(onBoard(e.at) ? `${squareName(e.at)}에 기물이 없음` : '보드 밖의 칸');
         if (piece.type === 'king') return fail('킹은 변환할 수 없음');
         if (!isPieceType(e.into) || e.into === 'king') return fail('킹이 아닌 기물 종류로만 변환할 수 있음');
+        if (e.into === 'pawn' && pawnStuckAt(e.at as Square, piece.color)) return fail('마지막 줄에 있는 기물은 폰으로 바꿀 수 없음');
         board[e.at as Square] = { ...piece, type: e.into };
         touched.push(e.at as Square);
         events.push({ type: 'transformed', pieceId: piece.id, at: e.at as Square, from: piece.type, to: e.into });
@@ -152,6 +156,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (board[e.at]) return fail(`${squareName(e.at)}이(가) 비어 있지 않음`);
         if (!isColor(e.color)) return fail('기물 색이 올바르지 않음');
         if (!isPieceType(e.piece) || e.piece === 'king') return fail('킹은 만들 수 없음');
+        if (e.piece === 'pawn' && pawnStuckAt(e.at, e.color)) return fail('폰은 그 편의 마지막 줄에 만들 수 없음');
         const piece: Piece = { id: `spawn-${nextSpawnId++}`, color: e.color, type: e.piece };
         board[e.at] = piece;
         touched.push(e.at);
@@ -161,6 +166,14 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
       default:
         return fail('알 수 없는 효과 종류');
     }
+  }
+  // A pawn carried to its last rank by an effect promotes, like after a normal move (always to a queen).
+  for (let sq = 0; sq < 64; sq++) {
+    const piece = board[sq];
+    if (piece?.type !== 'pawn' || !pawnStuckAt(sq, piece.color)) continue;
+    board[sq] = { ...piece, type: 'queen' };
+    if (!touched.includes(sq)) touched.push(sq);
+    events.push({ type: 'transformed', pieceId: piece.id, at: sq, from: 'pawn', to: 'queen' });
   }
   return { ok: true, board, events, touched, nextSpawnId };
 }
