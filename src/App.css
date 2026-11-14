@@ -22,6 +22,15 @@ html, body, #root { margin: 0; height: 100%; overflow: hidden; }
 .badge { padding: 8px 12px; border-radius: 10px; font-weight: 600; }
 .badge.check { background: var(--danger); color: white; }
 .badge.warn { background: rgba(224, 164, 58, 0.18); color: var(--warn); border: 1px solid var(--warn); }
+.badge.busy { background: rgba(120, 140, 220, 0.2); color: #b9c6ff; border: 1px solid #6f80c9; }
+.badge.roll.success { background: rgba(79, 179, 107, 0.2); color: #8fe0a6; border: 1px solid #4fb36b; }
+.badge.roll.fail { background: rgba(208, 87, 79, 0.18); color: #f0a39d; border: 1px solid var(--danger); }
+.ap { display: flex; align-items: center; gap: 6px; background: var(--panel); padding: 6px 10px; border-radius: 10px; font-size: 0.85em; opacity: 0.7; }
+.ap.active { opacity: 1; outline: 1px solid var(--accent); }
+.ap-pips { display: flex; gap: 3px; }
+.pip { width: 9px; height: 9px; border-radius: 50%; border: 1px solid var(--accent); }
+.pip.full { background: var(--accent); }
+.ap-num { font-variant-numeric: tabular-nums; color: var(--muted); }
 .camera-buttons { top: 12px; right: 12px; display: flex; gap: 6px; }
 button {
   background: #2c2d36; color: var(--text); border: 1px solid #44454f; border-radius: 8px;
@@ -38,6 +47,19 @@ button:disabled { opacity: 0.5; cursor: default; }
 .log .hint { color: var(--muted); }
 .log .warn { color: var(--warn); }
 .log .error { color: var(--danger); }
+.log .gm { color: #d9c38a; font-style: italic; }
+.log .roll { color: #b9c6ff; font-weight: 600; }
+.panel-footer { display: flex; justify-content: space-between; align-items: center; }
+.counter { color: var(--muted); font-size: 0.8em; font-variant-numeric: tabular-nums; }
+.ruling { max-width: min(460px, calc(100vw - 32px)); }
+.ruling-who { color: var(--muted); font-size: 0.85em; }
+.ruling blockquote { margin: 6px 0 12px; padding: 8px 12px; border-left: 3px solid var(--accent); background: rgba(255,255,255,0.04); border-radius: 4px; }
+.ruling-stats { display: flex; gap: 10px; margin: 10px 0; }
+.ruling-stats div { flex: 1; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 8px; text-align: center; }
+.ruling-stats dt { color: var(--muted); font-size: 0.8em; }
+.ruling-stats dd { margin: 2px 0 0; font-weight: 700; font-size: 1.1em; }
+.ruling-stats small { font-weight: 400; color: var(--muted); font-size: 0.75em; }
+.infeasible { color: var(--warn); }
 .input-row { display: flex; gap: 6px; }
 .input-row input {
   flex: 1; min-width: 0; background: #101116; color: var(--text); border: 1px solid #44454f;
@@ -54,6 +76,16 @@ button.primary { background: var(--accent); color: #1a1a1a; border-color: var(--
 .victory { background: var(--panel); padding: 24px 32px; border-radius: 14px; text-align: center; border: 1px solid var(--accent); }
 .victory h1 { margin: 0 0 6px; color: var(--accent); }
 @media (max-width: 600px) {
-  .camera-buttons { top: auto; bottom: calc(45% + 24px); }
+  .badge.busy { background: rgba(120, 140, 220, 0.2); color: #b9c6ff; border: 1px solid #6f80c9; }
+.badge.roll.success { background: rgba(79, 179, 107, 0.2); color: #8fe0a6; border: 1px solid #4fb36b; }
+.badge.roll.fail { background: rgba(208, 87, 79, 0.18); color: #f0a39d; border: 1px solid var(--danger); }
+.ap { display: flex; align-items: center; gap: 6px; background: var(--panel); padding: 6px 10px; border-radius: 10px; font-size: 0.85em; opacity: 0.7; }
+.ap.active { opacity: 1; outline: 1px solid var(--accent); }
+.ap-pips { display: flex; gap: 3px; }
+.pip { width: 9px; height: 9px; border-radius: 50%; border: 1px solid var(--accent); }
+.pip.full { background: var(--accent); }
+.ap-num { font-variant-numeric: tabular-nums; color: var(--muted); }
+.camera-buttons { top: auto; bottom: calc(45% + 24px); }
   .panel { left: 12px; width: auto; max-height: 38%; }
 }
+button.primary:disabled { background: #2c2d36; color: var(--muted); border-color: #44454f; }

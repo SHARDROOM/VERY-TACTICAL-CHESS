@@ -1,10 +1,16 @@
 import type { Color, GameState, Piece, PieceType } from './types';
 import { squareAt } from './squares';
 import { FULL_CASTLING } from './castling';
+import { DEFAULT_RULES, type RuleConfig } from './config';
 
 const BACK_RANK: PieceType[] = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
 
-export function createInitialState(): GameState {
+/** AP at game start: both start at apStart, and white's first turn has already begun. */
+function initialAp(rules: RuleConfig): Record<Color, number> {
+  return { white: Math.min(rules.apMax, rules.apStart + rules.apPerTurn), black: rules.apStart };
+}
+
+export function createInitialState(rules: RuleConfig = DEFAULT_RULES): GameState {
   const board: (Piece | null)[] = Array(64).fill(null);
   const place = (color: Color, type: PieceType, file: number, rank: number) => {
     board[squareAt(file, rank)!] = { id: `${color}-${type}-${file}-${rank}`, color, type };
@@ -16,23 +22,27 @@ export function createInitialState(): GameState {
     place('black', BACK_RANK[f], f, 7);
   }
   return {
+    rules,
     board,
     turn: 'white',
     turnNumber: 1,
     status: { kind: 'playing' },
     castling: FULL_CASTLING,
     enPassant: null,
+    ap: initialAp(rules),
+    usedApThisTurn: false,
+    pending: null,
   };
 }
 
 /**
  * Build a state from a sparse placement map, for tests and scenarios.
- * Castling rights default to none; pass them explicitly when needed.
+ * Castling rights default to none and AP to zero; override via `extra`.
  */
 export function createStateFrom(
   placements: Record<string, { color: Color; type: PieceType }>,
   turn: Color = 'white',
-  extra: Partial<Pick<GameState, 'castling' | 'enPassant'>> = {},
+  extra: Partial<GameState> = {},
 ): GameState {
   const board: (Piece | null)[] = Array(64).fill(null);
   for (const [name, p] of Object.entries(placements)) {
@@ -43,6 +53,7 @@ export function createStateFrom(
     board[sq] = { id: `${p.color}-${p.type}-${name}`, color: p.color, type: p.type };
   }
   return {
+    rules: DEFAULT_RULES,
     board,
     turn,
     turnNumber: 1,
@@ -52,6 +63,9 @@ export function createStateFrom(
       black: { kingSide: false, queenSide: false },
     },
     enPassant: null,
+    ap: { white: 0, black: 0 },
+    usedApThisTurn: false,
+    pending: null,
     ...extra,
   };
 }

@@ -7,31 +7,51 @@ import {
   legalTargets,
   opponent,
   rankOf,
-  parseMoveText,
+  type Color,
   type Command,
   type GameState,
   type PromotionType,
   type Square,
 } from './engine';
 import { BoardScene, type CameraRequest } from './scene/BoardScene';
-import { COLOR_NAME, PIECE_NAME, REJECT_MESSAGE, describeEvents } from './ui/messages';
+import { COLOR_NAME, PIECE_NAME, REJECT_MESSAGE, describeEvents, type LogEntry, type LogTone } from './ui/messages';
+import { FakeGameMaster } from './gm/fakeGm';
+import { parseGmRuling } from './gm/parse';
+import type { GameMaster } from './gm/types';
+import { rollD20, successChance } from './dice';
+import { parseMoveText } from './engine';
 import './App.css';
 
-interface LogLine {
+interface LogLine extends LogEntry {
   id: number;
-  text: string;
-  tone: 'normal' | 'warn' | 'error';
 }
 
 let nextLogId = 1;
+const gm: GameMaster = new FakeGameMaster();
+
+function ApMeter({ color, ap, max, active }: { color: Color; ap: number; max: number; active: boolean }) {
+  return (
+    <div className={`ap ${active ? 'active' : ''}`} title={`${COLOR_NAME[color]} AP ${ap}/${max}`}>
+      <span className="ap-label">{COLOR_NAME[color]} AP</span>
+      <span className="ap-pips">
+        {Array.from({ length: max }, (_, i) => (
+          <span key={i} className={`pip ${i < ap ? 'full' : ''}`} />
+        ))}
+      </span>
+      <span className="ap-num">{ap}</span>
+    </div>
+  );
+}
 
 export default function App() {
-  const [game, setGame] = useState<GameState>(createInitialState);
+  const [game, setGame] = useState<GameState>(() => createInitialState());
   const [selected, setSelected] = useState<Square | null>(null);
   const [log, setLog] = useState<LogLine[]>([]);
   const [text, setText] = useState('');
   const [camera, setCamera] = useState<CameraRequest>({ mode: 'side', side: 'white', nonce: 0 });
   const [warning, setWarning] = useState<string | null>(null);
+  const [gmBusy, setGmBusy] = useState(false);
+  const [lastRoll, setLastRoll] = useState<{ roll: number; success: boolean } | null>(null);
   const logRef = useRef<HTMLOListElement>(null);
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
@@ -44,33 +64,41 @@ export default function App() {
   );
 
   const sideToMove = game.turn;
-  const inCheck = game.status.kind === 'playing' && isInCheck(game.board, sideToMove);
+  const playing = game.status.kind === 'playing';
+  const inCheck = playing && isInCheck(game.board, sideToMove);
   const checkedKing = inCheck ? findKing(game.board, sideToMove) : null;
+  const pending = game.pending;
+  const locked = !playing || gmBusy || !!pending;
 
-  const addLog = (lines: string[], tone: LogLine['tone'] = 'normal') =>
-    setLog((l) => [...l, ...lines.map((t) => ({ id: nextLogId++, text: t, tone: t.startsWith('⚠') ? 'warn' : tone }))]);
+  const addLog = (entries: LogEntry[]) => setLog((l) => [...l, ...entries.map((e) => ({ ...e, id: nextLogId++ }))]);
+  const say = (text: string, tone: LogTone = 'normal') => addLog([{ text, tone }]);
 
-  const run = (cmd: Command): boolean => {
-    const result = applyCommand(game, cmd);
+  /** Runs a command against the current state. Returns the new state, or null if rejected. */
+  const run = (cmd: Command, from: GameState = game): GameState | null => {
+    const result = applyCommand(from, cmd);
     if (!result.ok) {
-      addLog([REJECT_MESSAGE[result.reason]], 'error');
-      return false;
+      say(REJECT_MESSAGE[result.reason] + (result.detail ? ` (${result.detail})` : ''), 'error');
+      return null;
     }
-    const typeOf = (id: string) => game.board.find((p) => p?.id === id)?.type;
+    const typeOf = (id: string) => from.board.find((p) => p?.id === id)?.type;
     addLog(describeEvents(result.events, typeOf));
     const exposed = result.events.find((e) => e.type === 'ownKingExposed');
-    setWarning(exposed ? '방금 둔 수로 내 킹이 공격받는 위치에 놓였습니다.' : null);
+    if (exposed) setWarning('방금 행동으로 내 킹이 공격받는 위치에 놓였습니다.');
+    else if (result.events.some((e) => e.type === 'turnPassed')) setWarning(null);
+    const resolved = result.events.find((e) => e.type === 'specialResolved');
+    if (resolved) setLastRoll({ roll: resolved.roll, success: resolved.success });
+    else if (result.events.some((e) => e.type === 'turnPassed')) setLastRoll(null);
     setGame(result.state);
     setSelected(null);
-    if (result.state.status.kind === 'playing' && result.state.turn !== game.turn) {
+    if (result.state.status.kind === 'playing' && result.state.turn !== from.turn) {
       // Hotseat: swing the camera to the player whose turn it is.
       setCamera((c) => ({ ...c, side: result.state.turn, nonce: c.nonce + 1 }));
     }
-    return true;
+    return result.state;
   };
 
   const onSquareClick = (sq: Square) => {
-    if (game.status.kind !== 'playing') return;
+    if (locked) return;
     const piece = game.board[sq];
     if (selected !== null && targets.includes(sq)) {
       const mover = game.board[selected];
@@ -83,17 +111,50 @@ export default function App() {
     else setSelected(null);
   };
 
+  const declareSpecial = async (action: string) => {
+    const snapshot = game;
+    setGmBusy(true);
+    try {
+      const raw = await gm.rule({ action, state: snapshot });
+      const parsed = parseGmRuling(raw);
+      if (!parsed.ok) {
+        say(`GM 응답 형식이 올바르지 않습니다 (${parsed.error}). AP는 쓰지 않았습니다. 다시 시도해 주세요.`, 'error');
+        return;
+      }
+      if (run({ type: 'proposeSpecial', action, ruling: parsed.ruling }, snapshot)) setText('');
+    } catch (err) {
+      say(`GM 호출 실패: ${err instanceof Error ? err.message : String(err)}. AP는 쓰지 않았습니다. 다시 시도해 주세요.`, 'error');
+    } finally {
+      setGmBusy(false);
+    }
+  };
+
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     const input = text.trim();
-    if (!input) return;
+    if (!input || locked) return;
     const parsed = parseMoveText(input);
-    if (!parsed) {
-      addLog([`"${input}"을(를) 이해하지 못했습니다. 예: e2e4`], 'error');
+    if (parsed) {
+      const mover = game.board[parsed.from];
+      const lastRank = mover?.color === 'white' ? 7 : 0;
+      if (!parsed.promotion && mover?.type === 'pawn' && rankOf(parsed.to) === lastRank && legalTargets(game, parsed.from).some((t) => t.to === parsed.to)) {
+        setPromotionChoice({ from: parsed.from, to: parsed.to });
+        setText('');
+        return;
+      }
+      if (run({ type: 'move', ...parsed })) setText('');
       return;
     }
-    if (run({ type: 'move', ...parsed })) setText('');
+    if (input.length > game.rules.actionMaxLength) {
+      say(REJECT_MESSAGE.actionTooLong, 'error');
+      return;
+    }
+    void declareSpecial(input);
   };
+
+  const attempt = () => run({ type: 'attemptSpecial', roll: rollD20() });
+  const cancel = () => run({ type: 'cancelSpecial' });
+  const endTurn = () => run({ type: 'endTurn' });
 
   const promote = (type: PromotionType) => {
     if (!promotionChoice) return;
@@ -106,10 +167,12 @@ export default function App() {
     setSelected(null);
     setLog([]);
     setWarning(null);
+    setLastRoll(null);
     setCamera((c) => ({ mode: 'side', side: 'white', nonce: c.nonce + 1 }));
   };
 
   const winner = game.status.kind === 'won' ? game.status.winner : null;
+  const canAfford = pending ? game.ap[pending.color] >= pending.ruling.cost : false;
 
   return (
     <div className="app">
@@ -127,7 +190,15 @@ export default function App() {
           {winner ? `${COLOR_NAME[winner]} 승리!` : `${COLOR_NAME[sideToMove]}의 차례`}
           <span className="turn-number">턴 {game.turnNumber}</span>
         </div>
+        <ApMeter color="white" ap={game.ap.white} max={game.rules.apMax} active={sideToMove === 'white'} />
+        <ApMeter color="black" ap={game.ap.black} max={game.rules.apMax} active={sideToMove === 'black'} />
         {inCheck && <div className="badge check">체크!</div>}
+        {gmBusy && <div className="badge busy">GM 판정 중…</div>}
+        {lastRoll && (
+          <div className={`badge roll ${lastRoll.success ? 'success' : 'fail'}`}>
+            🎲 {lastRoll.roll} — {lastRoll.success ? '성공' : '실패'}
+          </div>
+        )}
         {warning && !winner && <div className="badge warn">⚠ {warning}</div>}
       </header>
 
@@ -140,7 +211,13 @@ export default function App() {
 
       <aside className="hud panel">
         <ol className="log" ref={logRef}>
-          {log.length === 0 && <li className="hint">기물을 클릭하거나 아래에 수를 입력하세요. 예: e2e4</li>}
+          {log.length === 0 && (
+            <li className="hint">
+              기물을 클릭하거나 수를 입력하세요 (예: e2e4). 규칙 밖의 행동은 그대로 문장으로 쓰면 GM이 판정합니다.
+              <br />
+              지금은 {gm.name}: "b1 나이트를 투석기로 e5까지 날린다", "d7 폰을 저격한다"
+            </li>
+          )}
           {log.map((l) => (
             <li key={l.id} className={l.tone}>{l.text}</li>
           ))}
@@ -149,13 +226,44 @@ export default function App() {
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={winner ? '게임 종료' : `${COLOR_NAME[sideToMove]}: 수 입력 (예: e2e4, e7e8q)`}
-            disabled={!!winner}
-            maxLength={200}
+            placeholder={winner ? '게임 종료' : `${COLOR_NAME[sideToMove]}: 수 또는 특수 행동`}
+            disabled={locked}
+            maxLength={game.rules.actionMaxLength}
           />
-          <button type="submit" disabled={!!winner}>두기</button>
+          <button type="submit" disabled={locked || !text.trim()}>입력</button>
         </form>
+        <div className="panel-footer">
+          <span className="counter">{text.length}/{game.rules.actionMaxLength}</span>
+          <button onClick={endTurn} disabled={locked}>턴 종료</button>
+        </div>
       </aside>
+
+      {pending && (
+        <div className="overlay">
+          <div className="dialog ruling">
+            <div className="ruling-who">{COLOR_NAME[pending.color]}의 특수 행동</div>
+            <blockquote>"{pending.action}"</blockquote>
+            <h2>GM 판정</h2>
+            <p>{pending.ruling.interpretation}</p>
+            {pending.ruling.feasible ? (
+              <dl className="ruling-stats">
+                <div><dt>난이도</dt><dd>DC {pending.ruling.dc}</dd></div>
+                <div><dt>비용</dt><dd>AP {pending.ruling.cost} <small>(보유 {game.ap[pending.color]})</small></dd></div>
+                <div><dt>성공 확률</dt><dd>{Math.round(successChance(pending.ruling.dc) * 100)}%</dd></div>
+              </dl>
+            ) : (
+              <p className="infeasible">GM이 불가능한 행동으로 판정했습니다.</p>
+            )}
+            {pending.ruling.feasible && !canAfford && <p className="infeasible">AP가 부족해서 시도할 수 없습니다.</p>}
+            <div className="choice-row">
+              <button className="primary" onClick={attempt} disabled={!pending.ruling.feasible || !canAfford}>
+                🎲 시도
+              </button>
+              <button onClick={cancel}>취소 (AP 사용 안 함)</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {promotionChoice && (
         <div className="overlay">
