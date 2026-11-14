@@ -247,3 +247,46 @@ describe('liveness', () => {
     }
   });
 });
+
+describe('chat', () => {
+  const chats = (events: SessionEvent[]) =>
+    events.filter((e) => e.kind === 'chat').map((e) => e as Extract<SessionEvent, { kind: 'chat' }>).map((e) => `${e.from}${e.mine ? '*' : ''}:${e.text}`);
+
+  it('carries messages both ways without touching the game', async () => {
+    const o = online();
+    await settle();
+    const before = o.host.view().state;
+    o.host.sendChat('  잘 부탁해!  ');
+    o.guest.sendChat('나도\n잘 부탁해');
+    await settle();
+    expect(chats(o.hostRec.events)).toEqual(['white*:잘 부탁해!', 'black:나도 잘 부탁해']);
+    expect(chats(o.guestRec.events)).toEqual(['black*:나도 잘 부탁해', 'white:잘 부탁해!']);
+    expect(o.host.view().state).toBe(before);
+  });
+
+  it('drops empty messages and cuts long ones', async () => {
+    const o = online();
+    await settle();
+    o.guest.sendChat('   ');
+    o.guest.sendChat('가'.repeat(500));
+    await settle();
+    const got = chats(o.hostRec.events);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toBe(`black:${'가'.repeat(300)}`);
+  });
+
+  it('ignores chat from a connection that is not the seated guest, and junk', () => {
+    expect(parseGuestMessage({ t: 'chat', text: 42 })).toBeNull();
+    expect(parseGuestMessage({ t: 'chat', text: '   ' })).toBeNull();
+    expect(parseGuestMessage({ t: 'chat', text: 'hi' })).toEqual({ t: 'chat', text: 'hi' });
+  });
+
+  it('in hotseat a message is labelled with the side to move', () => {
+    const s = new LocalSession(new TestGm());
+    const rec = record(s);
+    s.sendChat('메모');
+    s.request({ type: 'move', from: sq('e2'), to: sq('e4') });
+    s.sendChat('흑 차례');
+    expect(chats(rec.events)).toEqual(['white*:메모', 'black*:흑 차례']);
+  });
+});

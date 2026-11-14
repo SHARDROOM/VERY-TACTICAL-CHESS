@@ -1,10 +1,10 @@
 import { PROMOTION_TYPES, type Color, type GameEvent, type GameState } from '../engine';
-import type { NoticeTone, Request } from './types';
+import { cleanChat, type NoticeTone, type Request } from './types';
 
 export const PROTOCOL_VERSION = 1;
 
 /** `id` is a random per-browser id, so a guest coming back can be told apart from a stranger. */
-export type GuestMessage = { t: 'hello'; v: number; id?: string } | { t: 'req'; req: Request } | { t: 'ping' };
+export type GuestMessage = { t: 'hello'; v: number; id?: string } | { t: 'req'; req: Request } | { t: 'ping' } | { t: 'chat'; text: string };
 
 export type HostMessage =
   | { t: 'welcome'; v: number; color: Color; state: GameState; gmName: string; busy: boolean }
@@ -13,7 +13,8 @@ export type HostMessage =
   | { t: 'busy'; busy: boolean; gmName: string }
   | { t: 'notice'; text: string; tone: NoticeTone }
   | { t: 'full' }
-  | { t: 'ping' };
+  | { t: 'ping' }
+  | { t: 'chat'; from: Color; text: string };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isSquare = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 64;
@@ -27,6 +28,10 @@ export function parseGuestMessage(raw: unknown): GuestMessage | null {
     return id ? { t: 'hello', v: raw.v, id } : { t: 'hello', v: raw.v };
   }
   if (raw.t === 'ping') return { t: 'ping' };
+  if (raw.t === 'chat') {
+    const text = cleanChat(raw.text);
+    return text ? { t: 'chat', text } : null;
+  }
   if (raw.t !== 'req' || !isObj(raw.req)) return null;
   const r = raw.req;
   switch (r.type) {
@@ -67,6 +72,10 @@ export function parseHostMessage(raw: unknown): HostMessage | null {
       return { t: 'full' };
     case 'ping':
       return { t: 'ping' };
+    case 'chat': {
+      const text = cleanChat(raw.text);
+      return text && (raw.from === 'white' || raw.from === 'black') ? { t: 'chat', from: raw.from, text } : null;
+    }
     default:
       return null;
   }

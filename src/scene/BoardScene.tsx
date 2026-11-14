@@ -5,8 +5,11 @@ import { CameraControls, Environment, Lightformer } from '@react-three/drei';
 import { fileOf, rankOf, type Board, type Color, type Square } from '../engine';
 import { squareToWorld } from './coords';
 import { PieceMesh } from './PieceMesh';
+import { WoodTable } from './WoodTable';
+import { DiceTray, trayCenterX, type ActiveRoll } from '../dice3d/DiceTray';
 
-export type ViewMode = 'side' | 'top';
+/** 'dice' looks at the dice tray beside the board while a roll plays. */
+export type ViewMode = 'side' | 'top' | 'dice';
 
 export interface CameraRequest {
   mode: ViewMode;
@@ -23,12 +26,16 @@ interface Props {
   camera: CameraRequest;
   onSquareClick: (sq: Square) => void;
   onHoverSquare: (sq: Square | null) => void;
+  /** Which side of the board the dice tray stands on (-1 = white's left). */
+  diceSide: 1 | -1;
+  diceRoll: ActiveRoll | null;
+  onDiceLanded: () => void;
 }
 
 const LIGHT = '#d4bf98';
 const DARK = '#7d5a3b';
 
-function CameraRig({ camera }: { camera: CameraRequest }) {
+function CameraRig({ camera, diceSide }: { camera: CameraRequest; diceSide: 1 | -1 }) {
   const ref = useRef<CameraControls>(null);
   const aspect = useThree((st) => st.size.width / Math.max(1, st.size.height));
   // Portrait screens (phones) need the camera further back to fit the board's width.
@@ -38,9 +45,14 @@ function CameraRig({ camera }: { camera: CameraRequest }) {
     if (!c) return;
     const s = camera.side === 'white' ? 1 : -1;
     if (camera.mode === 'side') c.setLookAt(0, 7.2 * zoom, 8.8 * s * zoom, 0, 0, 0.6 * s, true);
-    else c.setLookAt(0, 13 * zoom, 0.001 * s, 0, 0, 0, true);
-  }, [camera.mode, camera.side, camera.nonce, zoom]);
-  return <CameraControls ref={ref} minDistance={5} maxDistance={34} maxPolarAngle={Math.PI / 2.1} />;
+    else if (camera.mode === 'top') c.setLookAt(0, 13 * zoom, 0.001 * s, 0, 0, 0, true);
+    else {
+      const x = trayCenterX(diceSide);
+      // Closer in on the tray, still seen from this player's side, leaning toward the board.
+      c.setLookAt(x * 0.85, 5.2 * zoom, 4.6 * s * zoom, x, -0.2, 0, true);
+    }
+  }, [camera.mode, camera.side, camera.nonce, zoom, diceSide]);
+  return <CameraControls ref={ref} minDistance={4} maxDistance={30} maxPolarAngle={Math.PI / 2.2} />;
 }
 
 /** Frame with file/rank labels painted into a texture (stays under the pieces, unlike DOM overlays). */
@@ -87,7 +99,18 @@ function LabeledFrame() {
   );
 }
 
-export function BoardScene({ board, selected, targets, checkedKing, camera, onSquareClick, onHoverSquare }: Props) {
+export function BoardScene({
+  board,
+  selected,
+  targets,
+  checkedKing,
+  camera,
+  onSquareClick,
+  onHoverSquare,
+  diceSide,
+  diceRoll,
+  onDiceLanded,
+}: Props) {
   const click = (sq: Square) => (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
     onSquareClick(sq);
@@ -105,10 +128,15 @@ export function BoardScene({ board, selected, targets, checkedKing, camera, onSq
         <Lightformer form="ring" intensity={0.8} color="#ffd9a0" position={[0, 2, 8]} scale={3} />
       </Environment>
       <directionalLight position={[4, 10, 6]} intensity={1.4} castShadow shadow-mapSize={[2048, 2048]}>
-        <orthographicCamera attach="shadow-camera" args={[-6, 6, 6, -6, 0.5, 30]} />
+        {/* Covers the board and the dice tray on either side. */}
+        <orthographicCamera attach="shadow-camera" args={[-11, 11, 7, -7, 0.5, 30]} />
       </directionalLight>
-      <CameraRig camera={camera} />
+      {/* Warm lamp over the table. */}
+      <pointLight position={[0, 9, 0]} intensity={18} distance={30} decay={1.6} color="#ffdcae" />
+      <CameraRig camera={camera} diceSide={diceSide} />
 
+      <WoodTable />
+      <DiceTray side={diceSide} roll={diceRoll} onLanded={onDiceLanded} />
       <LabeledFrame />
 
       {Array.from({ length: 64 }, (_, sq) => {

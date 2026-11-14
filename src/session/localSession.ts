@@ -3,7 +3,7 @@ import type { GameState } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { Authority, type AuthorityEvent } from './authority';
 import { Emitter } from './emitter';
-import type { Request, Session, SessionView } from './types';
+import { cleanChat, type Request, type Session, type SessionView } from './types';
 
 /** Hotseat: both players share this screen; the authority runs right here. */
 export class LocalSession implements Session {
@@ -29,6 +29,12 @@ export class LocalSession implements Session {
 
   request(req: Request): void {
     void this.authority.handle(req, 'any');
+  }
+
+  sendChat(text: string): void {
+    const clean = cleanChat(text);
+    // Hotseat: whoever is to move is the one typing.
+    if (clean) this.emitter.emit({ kind: 'chat', from: this.authority.state.turn, text: clean, mine: true });
   }
 
   setGm(gm: GameMaster): void {

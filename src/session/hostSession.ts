@@ -6,7 +6,7 @@ import type { Channel } from './channel';
 import { Emitter } from './emitter';
 import { PROTOCOL_VERSION, parseGuestMessage, type HostMessage } from './protocol';
 import { startHeartbeat } from './heartbeat';
-import type { ConnectionStatus, Request, Session, SessionView } from './types';
+import { cleanChat, type ConnectionStatus, type Request, type Session, type SessionView } from './types';
 
 export interface HostOptions {
   code: string;
@@ -73,7 +73,9 @@ export class HostSession implements Session {
       const msg = parseGuestMessage(raw);
       if (!msg || msg.t === 'ping') return;
       if (msg.t === 'hello') return this.onHello(channel, msg.id);
-      if (this.guest?.channel === channel) void this.authority.handle(msg.req, this.guestColor);
+      if (this.guest?.channel !== channel) return;
+      if (msg.t === 'chat') this.emitter.emit({ kind: 'chat', from: this.guestColor, text: msg.text, mine: false });
+      else void this.authority.handle(msg.req, this.guestColor);
     });
     channel.onClose(() => {
       heartbeat.stop();
@@ -112,6 +114,13 @@ export class HostSession implements Session {
 
   request(req: Request): void {
     void this.authority.handle(req, this.hostColor);
+  }
+
+  sendChat(text: string): void {
+    const clean = cleanChat(text);
+    if (!clean) return;
+    this.emitter.emit({ kind: 'chat', from: this.hostColor, text: clean, mine: true });
+    this.send({ t: 'chat', from: this.hostColor, text: clean });
   }
 
   setGm(gm: GameMaster): void {

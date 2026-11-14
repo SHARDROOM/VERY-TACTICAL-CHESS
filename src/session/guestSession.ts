@@ -3,7 +3,7 @@ import type { Channel } from './channel';
 import { Emitter } from './emitter';
 import { PROTOCOL_VERSION, parseHostMessage, type GuestMessage } from './protocol';
 import { startHeartbeat } from './heartbeat';
-import type { ConnectionStatus, Request, Seat, Session, SessionView } from './types';
+import { cleanChat, type ConnectionStatus, type Request, type Seat, type Session, type SessionView } from './types';
 
 export interface GuestOptions {
   /** Random per-browser id sent with hello, so the host recognises us when we come back. */
@@ -55,6 +55,13 @@ export class GuestSession implements Session {
   request(req: Request): void {
     if (this.connection.kind !== 'connected') return;
     this.channel.send({ t: 'req', req } satisfies GuestMessage);
+  }
+
+  sendChat(text: string): void {
+    const clean = cleanChat(text);
+    if (!clean || this.connection.kind !== 'connected' || this.seat === 'both') return;
+    this.emitter.emit({ kind: 'chat', from: this.seat, text: clean, mine: true });
+    this.channel.send({ t: 'chat', text: clean } satisfies GuestMessage);
   }
 
   setGm(): void {}
@@ -152,6 +159,9 @@ export class GuestSession implements Session {
       case 'notice':
         this.emitter.emit({ kind: 'notice', text: msg.text, tone: msg.tone });
         break;
+      case 'chat':
+        this.emitter.emit({ kind: 'chat', from: msg.from, text: msg.text, mine: false });
+        return;
       case 'full':
         this.turnedAway = true;
         this.connection = { kind: 'disconnected', reason: '이미 두 명이 있는 방입니다.' };

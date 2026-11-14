@@ -1,4 +1,5 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Quaternion } from 'three';
 import {
   findKing,
   isInCheck,
@@ -20,8 +21,11 @@ import { PrecedentList } from './PrecedentList';
 import { GmSettings, type GmConfig } from './GmSettings';
 import { PieceInfo } from './PieceInfo';
 import { successChance } from '../dice';
+import { loadPhysics, simulateRoll } from '../dice3d/simulate';
+import { skinRotationFor } from '../dice3d/d20';
+import type { ActiveRoll } from '../dice3d/DiceTray';
 import { PROVIDER_LABEL } from '../gm/createGm';
-import type { Session, SessionView } from '../session/types';
+import { CHAT_MAX_LENGTH, type Session, type SessionView } from '../session/types';
 
 interface LogLine extends LogEntry {
   id: number;
@@ -34,25 +38,6 @@ interface Batch {
   after: GameState;
   /** The dice for this batch have already been shown. */
   rolled: boolean;
-}
-
-// Physics and the dice scene load only when the first roll happens.
-const DiceOverlay = lazy(() => import('../dice3d/DiceOverlay'));
-
-const DICE_PREF = 'vtc.dice3d';
-function readDicePref(): boolean {
-  try {
-    return localStorage.getItem(DICE_PREF) !== 'off';
-  } catch {
-    return true;
-  }
-}
-function writeDicePref(on: boolean) {
-  try {
-    localStorage.setItem(DICE_PREF, on ? 'on' : 'off');
-  } catch {
-    // a remembered preference is only a convenience
-  }
 }
 
 let nextLogId = 1;
@@ -108,13 +93,25 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const [showGmSettings, setShowGmSettings] = useState(openGmSettings);
   const [promotionChoice, setPromotionChoice] = useState<{ from: Square; to: Square } | null>(null);
   const [copied, setCopied] = useState(false);
-  /** The dice roll being shown, and the board as it was before it (shown until the dice land). */
-  const [dice, setDice] = useState<{ roll: number; outcome: Outcome; done: () => void } | null>(null);
+  const [tab, setTab] = useState<'log' | 'chat'>('log');
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
+  const [chat, setChat] = useState<{ id: number; from: Color; text: string; mine: boolean }[]>([]);
+  const [chatText, setChatText] = useState('');
+  const [unread, setUnread] = useState(0);
+  const chatRef = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
+  }, [chat, tab]);
+  /**
+   * The roll being shown on the table, and the board as it was before it (kept on screen
+   * until the die lands). `landed` flips when the die stops; `done` reveals the result.
+   */
+  const [dice, setDice] = useState<{ roll: number; outcome: Outcome; done: () => void; landed: boolean } | null>(null);
+  const [diceRoll, setDiceRoll] = useState<ActiveRoll | null>(null);
   const [frozen, setFrozen] = useState<GameState | null>(null);
   const queueRef = useRef<Batch[]>([]);
-  const [diceEnabled, setDiceEnabled] = useState(() => readDicePref());
-  const diceEnabledRef = useRef(diceEnabled);
-  diceEnabledRef.current = diceEnabled;
+  const cameraBeforeDice = useRef<CameraRequest | null>(null);
   const logRef = useRef<HTMLOListElement>(null);
 
   const addLog = (entries: LogEntry[]) => setLog((l) => [...l, ...entries.map((e) => ({ ...e, id: nextLogId++ }))]);
@@ -126,13 +123,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
 
   // Warm up the dice physics in the background so the first roll starts at once.
   useEffect(() => {
-    if (!diceEnabled) return;
-    const t = setTimeout(() => {
-      void import('../dice3d/simulate').then((m) => m.loadPhysics()).catch(() => {});
-      void import('../dice3d/DiceOverlay').catch(() => {});
-    }, 2500);
+    const t = setTimeout(() => void loadPhysics().catch(() => {}), 2500);
     return () => clearTimeout(t);
-  }, [diceEnabled]);
+  }, []);
 
   // Online, the camera stays on your side once your color is known.
   useEffect(() => {
@@ -160,6 +153,20 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       }
     };
 
+    /** Rolls the die on the table: simulate, look at the tray, then reveal via `done`. */
+    const startRoll = (roll: number, outcome: Outcome, done: () => void) => {
+      setDice({ roll, outcome, done, landed: false });
+      setDiceRoll({ run: null, skin: new Quaternion(), outcome, skipped: false });
+      setCamera((c) => {
+        if (c.mode !== 'dice') cameraBeforeDice.current = c;
+        return { ...c, mode: 'dice', nonce: c.nonce + 1 };
+      });
+      simulateRoll()
+        .then((run) => setDiceRoll((r) => (r ? { ...r, run, skin: skinRotationFor(roll, run.final) } : r)))
+        // Without physics, just show the number.
+        .catch(() => setDice((d) => (d ? { ...d, landed: true } : d)));
+    };
+
     /**
      * Shows queued batches in order. A batch with a dice roll first plays the roll while the
      * board keeps showing the position before it; the rest waits behind it.
@@ -169,13 +176,13 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       while (queue.length) {
         const head = queue[0];
         const resolved = head.events.find((ev) => ev.type === 'specialResolved');
-        if (resolved && !head.rolled && diceEnabledRef.current) {
+        if (resolved && !head.rolled) {
           head.rolled = true;
           setFrozen(head.before);
-          setDice({ roll: resolved.roll, outcome: resolved.outcome, done: () => {
+          startRoll(resolved.roll, resolved.outcome, () => {
             setDice(null);
             pump();
-          } });
+          });
           return;
         }
         queue.shift();
@@ -193,6 +200,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         say(e.text, e.tone === 'normal' ? 'normal' : e.tone);
         return;
       }
+      if (e.kind === 'chat') {
+        setChat((c) => [...c.slice(-199), { id: nextLogId++, from: e.from, text: e.text, mine: e.mine }]);
+        if (tabRef.current !== 'chat') setUnread((n) => n + 1);
+        return;
+      }
       queueRef.current.push({ events: e.events, before: e.before, after: e.after, rolled: false });
       // While a roll is on screen, later batches wait their turn.
       if (queueRef.current.length === 1) pump();
@@ -201,6 +213,41 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     setView(session.view());
     return unsubscribe;
   }, [session, seat]);
+
+  const diceRef = useRef(dice);
+  diceRef.current = dice;
+  const skipRequested = useRef(false);
+
+  /** Reveals the rolled result on the board and turns the camera back. */
+  const finishRoll = () => {
+    const d = diceRef.current;
+    if (!d) return;
+    diceRef.current = null;
+    skipRequested.current = false;
+    setDiceRoll(null);
+    setCamera((c) => ({ ...(cameraBeforeDice.current ?? { mode: 'side', side: c.side }), nonce: c.nonce + 1 }));
+    cameraBeforeDice.current = null;
+    d.done();
+  };
+
+  const skipRoll = () => {
+    if (!diceRoll?.run) return finishRoll(); // still computing: nothing to watch yet
+    skipRequested.current = true;
+    setDiceRoll((r) => (r ? { ...r, skipped: true } : r));
+  };
+
+  const onDiceLanded = () => {
+    if (skipRequested.current) return finishRoll();
+    setDice((d) => (d ? { ...d, landed: true } : d));
+  };
+
+  // Let the result sink in for a moment, then reveal it on the board.
+  useEffect(() => {
+    if (!dice?.landed) return;
+    const crit = dice.outcome === 'critSuccess' || dice.outcome === 'critFailure';
+    const t = setTimeout(finishRoll, crit ? 2000 : 1400);
+    return () => clearTimeout(t);
+  }, [dice?.landed]);
 
   const game = frozen ?? view.state;
   const targets = useMemo(() => (selected === null ? [] : legalTargets(game, selected).map((t) => t.to)), [game, selected]);
@@ -302,6 +349,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         camera={camera}
         onSquareClick={onSquareClick}
         onHoverSquare={setHovered}
+        diceSide={seat === 'black' ? 1 : -1}
+        diceRoll={diceRoll}
+        onDiceLanded={onDiceLanded}
       />
 
       <div className="hud topbar">
@@ -336,17 +386,6 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         ) : (
           <button disabled title="GM은 방장이 설정합니다">🎙 {view.gmName || 'GM'}</button>
         )}
-        <button
-          onClick={() => {
-            setDiceEnabled((on) => {
-              writeDicePref(!on);
-              return !on;
-            });
-          }}
-          title="특수 행동 주사위를 3D로 굴릴지"
-        >
-          🎲 {diceEnabled ? '3D 주사위 켬' : '3D 주사위 끔'}
-        </button>
         <button onClick={() => setCamera((c) => ({ mode: 'side', side: seat === 'both' ? sideToMove : seat, nonce: c.nonce + 1 }))}>
           시점 초기화
         </button>
@@ -364,43 +403,99 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       })()}
 
       <aside className="hud panel">
-        <ol className="log" ref={logRef}>
-          {log.length === 0 && (
-            <li className="hint">
-              기물을 클릭하거나 수를 입력하세요 (예: e2e4). 규칙 밖의 행동은 그대로 문장으로 쓰면 GM이 판정합니다.
-              <br />
-              지금 GM: {view.gmName}.{' '}
-              {view.isAuthority
-                ? '진짜 GM은 ⚙ 버튼에서 Claude, OpenAI, Gemini 중 하나의 API 키를 넣으면 켜집니다.'
-                : 'GM은 방장이 설정합니다.'}
-            </li>
-          )}
-          {log.map((l) => (
-            <li key={l.id} className={l.tone}>
-              {l.text}
-            </li>
-          ))}
-        </ol>
-        <form onSubmit={onSubmit} className="input-row">
-          <input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={placeholder}
-            disabled={locked}
-            maxLength={game.rules.actionMaxLength}
-          />
-          <button type="submit" disabled={locked || !text.trim()}>
-            입력
+        <div className="panel-tabs" role="tablist">
+          <button role="tab" aria-selected={tab === 'log'} className={tab === 'log' ? 'active' : ''} onClick={() => setTab('log')}>
+            게임
           </button>
-        </form>
-        <div className="panel-footer">
-          <span className="counter">
-            {text.length}/{game.rules.actionMaxLength}
-          </span>
-          <button onClick={() => session.request({ type: 'endTurn' })} disabled={locked}>
-            턴 종료
+          <button
+            role="tab"
+            aria-selected={tab === 'chat'}
+            className={tab === 'chat' ? 'active' : ''}
+            onClick={() => {
+              setTab('chat');
+              setUnread(0);
+            }}
+          >
+            채팅{unread > 0 && <span className="unread">{unread}</span>}
           </button>
         </div>
+        {tab === 'log' ? (
+          <>
+            <ol className="log" ref={logRef}>
+              {log.length === 0 && (
+                <li className="hint">
+                  기물을 클릭하거나 수를 입력하세요 (예: e2e4). 규칙 밖의 행동은 그대로 문장으로 쓰면 GM이 판정합니다.
+                  <br />
+                  지금 GM: {view.gmName}.{' '}
+                  {view.isAuthority
+                    ? '진짜 GM은 ⚙ 버튼에서 Claude, OpenAI, Gemini 중 하나의 API 키를 넣으면 켜집니다.'
+                    : 'GM은 방장이 설정합니다.'}
+                </li>
+              )}
+              {log.map((l) => (
+                <li key={l.id} className={l.tone}>
+                  {l.text}
+                </li>
+              ))}
+            </ol>
+            <form onSubmit={onSubmit} className="input-row">
+              <input
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder={placeholder}
+                disabled={locked}
+                maxLength={game.rules.actionMaxLength}
+              />
+              <button type="submit" disabled={locked || !text.trim()}>
+                입력
+              </button>
+            </form>
+            <div className="panel-footer">
+              <span className="counter">
+                {text.length}/{game.rules.actionMaxLength}
+              </span>
+              <button onClick={() => session.request({ type: 'endTurn' })} disabled={locked}>
+                턴 종료
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <ol className="log chat" ref={chatRef}>
+              {chat.length === 0 && (
+                <li className="hint">
+                  {online ? '상대와 자유롭게 이야기하세요. 채팅은 게임 행동이 아니라서 GM에게 가지 않습니다.' : '핫시트에서는 지금 차례인 쪽 이름으로 메모가 남습니다.'}
+                </li>
+              )}
+              {chat.map((m) => (
+                <li key={m.id} className={`chat-line ${m.mine ? 'mine' : ''}`}>
+                  <span className={`chat-who who-${m.from}`}>{COLOR_NAME[m.from]}</span>
+                  <span className="chat-text">{m.text}</span>
+                </li>
+              ))}
+            </ol>
+            <form
+              className="input-row"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!chatText.trim()) return;
+                session.sendChat(chatText);
+                setChatText('');
+              }}
+            >
+              <input
+                value={chatText}
+                onChange={(e) => setChatText(e.target.value)}
+                placeholder={connected ? '채팅 메시지' : '연결을 기다리는 중'}
+                disabled={!connected}
+                maxLength={CHAT_MAX_LENGTH}
+              />
+              <button type="submit" disabled={!connected || !chatText.trim()}>
+                보내기
+              </button>
+            </form>
+          </>
+        )}
       </aside>
 
       {pending && !dice && (
@@ -540,9 +635,17 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       )}
 
       {dice && (
-        <Suspense fallback={null}>
-          <DiceOverlay roll={dice.roll} outcome={dice.outcome} onDone={dice.done} />
-        </Suspense>
+        <div className="hud dice-hud">
+          {dice.landed ? (
+            <div className={`dice-result ${dice.outcome}`}>
+              <span className="dice-number">{dice.roll}</span>
+              <span className="dice-label">{OUTCOME_LABEL[dice.outcome]}</span>
+            </div>
+          ) : (
+            <div className="dice-rolling">🎲 주사위를 굴리는 중…</div>
+          )}
+          <button onClick={dice.landed ? finishRoll : skipRoll}>{dice.landed ? '확인' : '건너뛰기'}</button>
+        </div>
       )}
 
       {winner && connected && !dice && (
