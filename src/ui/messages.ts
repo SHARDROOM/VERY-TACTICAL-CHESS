@@ -24,6 +24,7 @@ export const REJECT_MESSAGE: Record<RejectReason, string> = {
   invalidRoll: '주사위 값이 올바르지 않습니다.',
   kingProtectedThisTurn: '이번 턴에 AP를 썼으므로 킹을 잡을 수 없습니다.',
   nothingDoneThisTurn: '아무것도 하지 않고는 턴을 끝낼 수 없습니다. 수를 두거나 특수 행동을 시도해 주세요.',
+  invalidChaos: '혼돈이 규칙에 맞지 않아 일어나지 않았습니다.',
 };
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
@@ -33,7 +34,7 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   critFailure: '대실패!!',
 };
 
-export type LogTone = 'normal' | 'warn' | 'error' | 'gm' | 'roll';
+export type LogTone = 'normal' | 'warn' | 'error' | 'gm' | 'roll' | 'chaos';
 export interface LogEntry {
   text: string;
   tone: LogTone;
@@ -85,6 +86,16 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         break;
       case 'spawned':
         add(`✨ ${squareName(e.at)}에 ${COLOR_NAME[e.piece.color]} ${PIECE_NAME[e.piece.type]} 등장`);
+        break;
+      case 'converted':
+        add(`🎭 ${squareName(e.at)}의 ${josa(name(e.pieceId), '이/가')} ${COLOR_NAME[e.to]} 편이 됨`, 'warn');
+        break;
+      case 'timedOut':
+        add(`⏰ ${COLOR_NAME[e.color]}의 시간이 다 되었습니다.${e.apLost ? ` AP ${e.apLost} 차감.` : ''} 턴이 넘어갑니다.`, 'warn');
+        break;
+      case 'chaos':
+        add(`🌪 혼돈! ${e.title}`, 'chaos');
+        add(e.narration, 'gm');
         break;
       case 'shieldBroken':
         add(`🛡 ${name(e.pieceId)}(${squareName(e.at)})의 보호막이 공격을 막고 깨짐`, 'warn');

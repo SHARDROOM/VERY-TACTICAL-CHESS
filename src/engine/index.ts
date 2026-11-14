@@ -6,4 +6,4 @@ export { parseMoveText } from './notation';
 export { squareName, parseSquare, fileOf, rankOf, squareAt, opponent } from './squares';
 export { applyEffects, validateRuling, type EffectContext } from './effects';
 export { hasTag, isStunned, isShielded, CORE_TAGS } from './tags';
-export { DEFAULT_RULES, type RuleConfig } from './config';
+export { DEFAULT_RULES, withDefaultRules, type RuleConfig } from './config';

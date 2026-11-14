@@ -1,10 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
-import type { GameMaster, GmRequest, GmRulingJson } from './types';
-import { GmRulingSchema } from './schema';
-import { buildSystemPrompt, buildUserMessage } from './prompt';
+import type { z } from 'zod';
+import type { GameState } from '../engine';
+import type { GameMaster, GmChaosJson, GmRequest, GmRulingJson } from './types';
+import { GmChaosSchema, GmRulingSchema } from './schema';
+import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
 import { GmError } from './errors';
-import { REFUSED, TRUNCATED, rulingFromText } from './llmReply';
+import { REFUSED, TRUNCATED, jsonFromText } from './llmReply';
 
 export { GmError };
 
@@ -45,7 +47,15 @@ export class ClaudeGameMaster implements GameMaster {
     });
   }
 
-  async rule({ action, state }: GmRequest): Promise<GmRulingJson> {
+  rule({ action, state }: GmRequest): Promise<GmRulingJson> {
+    return this.ask(buildSystemPrompt(state.rules), buildUserMessage(action, state), GmRulingSchema);
+  }
+
+  chaos({ state }: { state: GameState }): Promise<GmChaosJson> {
+    return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state), GmChaosSchema);
+  }
+
+  private async ask<T extends z.ZodTypeAny>(system: string, user: string, schema: T): Promise<z.infer<T>> {
     let response;
     try {
       response = await this.client.beta.messages.create({
@@ -54,9 +64,9 @@ export class ClaudeGameMaster implements GameMaster {
         // If the model declines on policy grounds, let the API retry on its default fallback model.
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
-        system: [{ type: 'text', text: buildSystemPrompt(state.rules), cache_control: { type: 'ephemeral' } }],
-        output_config: { effort: this.options.effort, format: betaZodOutputFormat(GmRulingSchema) },
-        messages: [{ role: 'user', content: buildUserMessage(action, state) }],
+        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+        output_config: { effort: this.options.effort, format: betaZodOutputFormat(schema) },
+        messages: [{ role: 'user', content: user }],
       });
     } catch (err) {
       throw new GmError(describeApiError(err));
@@ -66,7 +76,7 @@ export class ClaudeGameMaster implements GameMaster {
     if (response.stop_reason === 'max_tokens') throw new GmError(TRUNCATED);
     // Read content only after the stop reason says it is complete.
     const text = response.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
-    return rulingFromText(text);
+    return jsonFromText(text, schema);
   }
 }
 

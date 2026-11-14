@@ -3,6 +3,7 @@ import {
   type Board,
   type Color,
   type Command,
+  type ChaosEvent,
   type CommandResult,
   type GameEvent,
   type GameState,
@@ -22,6 +23,8 @@ import { SHIELD } from './types';
 /** The single entry point for changing game state. Pure: no I/O, no randomness. */
 export function applyCommand(state: GameState, cmd: Command): CommandResult {
   if (state.status.kind !== 'playing') return { ok: false, reason: 'gameOver' };
+  // Running out of time cancels whatever was pending, so it may come at any moment.
+  if (cmd.type === 'timeout') return timeOut(state);
   const actionCommand = cmd.type === 'attemptSpecial' || cmd.type === 'cancelSpecial';
   if (state.pending && !actionCommand) return { ok: false, reason: 'actionPending' };
   if (!state.pending && actionCommand) return { ok: false, reason: 'noPendingAction' };
@@ -42,7 +45,46 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
       const { color, action } = state.pending!;
       return { ok: true, state: { ...state, pending: null }, events: [{ type: 'specialCancelled', color, action }] };
     }
+    case 'chaos':
+      return chaos(state, cmd.chaos);
   }
+}
+
+function timeOut(state: GameState): CommandResult {
+  const color = state.turn;
+  const apLost = Math.min(state.ap[color], Math.max(0, state.rules.timeoutPenalty));
+  const events: GameEvent[] = [];
+  if (state.pending) events.push({ type: 'specialCancelled', color: state.pending.color, action: state.pending.action });
+  events.push({ type: 'timedOut', color, apLost });
+  const after: GameState = { ...state, pending: null, ap: { ...state.ap, [color]: state.ap[color] - apLost } };
+  return { ok: true, ...passTurn(after, after.board, null, events) };
+}
+
+/**
+ * A chaos event: applied as it stands, with no AP and no dice. It may not leave either
+ * king attacked, so chaos can never hand anyone a free king capture or a forced loss.
+ */
+function chaos(state: GameState, event: ChaosEvent): CommandResult {
+  const bad = (detail: string): CommandResult => ({ ok: false, reason: 'invalidChaos', detail });
+  if (typeof event?.title !== 'string' || typeof event.narration !== 'string' || !Array.isArray(event.effects)) return bad('형식이 올바르지 않음');
+  if (event.effects.length > state.rules.maxEffects) return bad(`효과가 너무 많음 (최대 ${state.rules.maxEffects}개)`);
+  const applied = applyEffects(state.board, event.effects, { turnNumber: state.turnNumber, nextSpawnId: state.nextSpawnId });
+  if (!applied.ok) return bad(applied.detail);
+  if (isInCheck(applied.board, 'white') || isInCheck(applied.board, 'black')) return bad('혼돈 뒤에 킹이 공격받는 상태가 됨');
+  const title = event.title.trim().slice(0, 40);
+  const narration = event.narration.trim().slice(0, 300);
+  const events: GameEvent[] = [{ type: 'chaos', title, narration }, ...applied.events];
+  const after = withCaptured(
+    {
+      ...state,
+      board: applied.board,
+      nextSpawnId: applied.nextSpawnId,
+      castling: revokeCastling(state.castling, applied.touched),
+      chaosLog: [...(state.chaosLog ?? []), { turnNumber: state.turnNumber, title, narration }],
+    },
+    events,
+  );
+  return { ok: true, state: after, events };
 }
 
 /** True if the side to move has at least one normal move. */

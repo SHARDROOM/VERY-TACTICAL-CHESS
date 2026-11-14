@@ -116,3 +116,31 @@ describe('Gemini GM', () => {
     await expect(gm(failingFetch).rule(req)).rejects.toThrow(/연결하지 못했습니다/);
   });
 });
+
+describe('chaos requests', () => {
+  const chaosReply = { title: '스파이', narration: '폰이 편을 바꿨다.', effects: [{ type: 'convert', at: 'e2', color: 'black' }] };
+
+  it('the chaos JSON schema is strict-mode friendly and matches the zod schema', async () => {
+    const { GM_CHAOS_JSON_SCHEMA } = await import('./jsonSchema');
+    const { GmChaosSchema } = await import('./schema');
+    expect(GM_CHAOS_JSON_SCHEMA.additionalProperties).toBe(false);
+    expect([...GM_CHAOS_JSON_SCHEMA.required].sort()).toEqual(Object.keys(GmChaosSchema.shape).sort());
+    expect(GmChaosSchema.safeParse(chaosReply).success).toBe(true);
+  });
+
+  it('OpenAI and Gemini send the chaos prompts with the chaos schema', async () => {
+    const { buildChaosSystemPrompt, buildChaosUserMessage } = await import('./prompt');
+    const { GM_CHAOS_JSON_SCHEMA } = await import('./jsonSchema');
+    const captured: Captured[] = [];
+    const openai = new OpenAiGameMaster({ apiKey: 'k', model: 'm', fetch: fakeFetch({ body: openaiReply(JSON.stringify(chaosReply)) }, captured) });
+    expect(await openai.chaos({ state })).toEqual(chaosReply);
+    expect(captured[0].body.messages[0].content).toBe(buildChaosSystemPrompt(state.rules));
+    expect(captured[0].body.messages[1].content).toBe(buildChaosUserMessage(state));
+    expect(captured[0].body.response_format.json_schema).toEqual({ name: 'gm_chaos', strict: true, schema: GM_CHAOS_JSON_SCHEMA });
+
+    const gCaptured: Captured[] = [];
+    const gemini = new GeminiGameMaster({ apiKey: 'k', model: 'm', fetch: fakeFetch({ body: geminiReply(JSON.stringify(chaosReply)) }, gCaptured) });
+    expect(await gemini.chaos({ state })).toEqual(chaosReply);
+    expect(gCaptured[0].body.generationConfig.responseJsonSchema).toEqual(GM_CHAOS_JSON_SCHEMA);
+  });
+});

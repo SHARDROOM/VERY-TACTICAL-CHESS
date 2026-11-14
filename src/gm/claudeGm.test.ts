@@ -87,7 +87,7 @@ describe('prompt', () => {
     const p = buildSystemPrompt(createInitialState().rules);
     expect(p).toContain('5~25');
     expect(p).toContain('1~3');
-    expect(p).toContain('킹은 어떤 효과로도 제거하거나 잡거나 변환할 수 없고');
+    expect(p).toContain('킹은 어떤 효과로도 제거하거나 잡거나 변환하거나 편을 바꿀 수 없고');
   });
 
   it('user message describes the board and whose turn it is', () => {
@@ -157,5 +157,19 @@ describe('prompt shows precedents', () => {
     expect(m).not.toContain('"행동5"');
     expect(m).toContain('"행동6"');
     expect(m).toContain('"행동25"');
+  });
+});
+
+describe('ClaudeGameMaster chaos', () => {
+  it('asks for a chaos event with the chaos prompts and returns it', async () => {
+    const { buildChaosSystemPrompt, buildChaosUserMessage } = await import('./prompt');
+    const event = { title: '모래바람', narration: '바람이 분다.', effects: [{ type: 'move', from: 'b8', to: 'a6' }] };
+    const captured: Captured[] = [];
+    const state = createInitialState();
+    const out = await gm(fakeFetch({ body: message(JSON.stringify(event)) }, captured)).chaos({ state });
+    expect(out).toEqual(event);
+    expect(captured[0].body.system[0].text).toBe(buildChaosSystemPrompt(state.rules));
+    expect(captured[0].body.messages[0].content).toBe(buildChaosUserMessage(state));
+    expect(captured[0].body.output_config.format.type).toBe('json_schema');
   });
 });

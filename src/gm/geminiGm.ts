@@ -1,8 +1,11 @@
-import type { GameMaster, GmRequest, GmRulingJson } from './types';
-import { buildSystemPrompt, buildUserMessage } from './prompt';
-import { GM_RULING_JSON_SCHEMA } from './jsonSchema';
+import type { z } from 'zod';
+import type { GameState } from '../engine';
+import type { GameMaster, GmChaosJson, GmRequest, GmRulingJson } from './types';
+import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
+import { GM_CHAOS_JSON_SCHEMA, GM_RULING_JSON_SCHEMA } from './jsonSchema';
+import { GmChaosSchema, GmRulingSchema } from './schema';
 import { GmError, describeHttpError, describeNetworkError } from './errors';
-import { REFUSED, TRUNCATED, rulingFromText } from './llmReply';
+import { REFUSED, TRUNCATED, jsonFromText } from './llmReply';
 
 /** Suggestions only: the settings field accepts any model id. */
 export const GEMINI_MODEL_SUGGESTIONS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-4-argon'];
@@ -30,7 +33,15 @@ export class GeminiGameMaster implements GameMaster {
     this.name = `Gemini GM (${options.model})`;
   }
 
-  async rule({ action, state }: GmRequest): Promise<GmRulingJson> {
+  rule({ action, state }: GmRequest): Promise<GmRulingJson> {
+    return this.ask(buildSystemPrompt(state.rules), buildUserMessage(action, state), GM_RULING_JSON_SCHEMA, GmRulingSchema);
+  }
+
+  chaos({ state }: { state: GameState }): Promise<GmChaosJson> {
+    return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state), GM_CHAOS_JSON_SCHEMA, GmChaosSchema);
+  }
+
+  private async ask<T extends z.ZodTypeAny>(system: string, user: string, jsonSchema: object, schema: T): Promise<z.infer<T>> {
     const doFetch = this.options.fetch ?? fetch;
     const base = this.options.baseUrl ?? 'https://generativelanguage.googleapis.com';
     let res: Response;
@@ -39,9 +50,9 @@ export class GeminiGameMaster implements GameMaster {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-goog-api-key': this.options.apiKey },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: buildSystemPrompt(state.rules) }] },
-          contents: [{ role: 'user', parts: [{ text: buildUserMessage(action, state) }] }],
-          generationConfig: { responseMimeType: 'application/json', responseJsonSchema: GM_RULING_JSON_SCHEMA },
+          systemInstruction: { parts: [{ text: system }] },
+          contents: [{ role: 'user', parts: [{ text: user }] }],
+          generationConfig: { responseMimeType: 'application/json', responseJsonSchema: jsonSchema },
         }),
         signal: AbortSignal.timeout(90_000),
       });
@@ -66,6 +77,6 @@ export class GeminiGameMaster implements GameMaster {
       .filter((p) => !p.thought && typeof p.text === 'string')
       .map((p) => p.text)
       .join('');
-    return rulingFromText(text);
+    return jsonFromText(text, schema);
   }
 }

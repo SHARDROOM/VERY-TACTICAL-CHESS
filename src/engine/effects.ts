@@ -163,6 +163,17 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         events.push({ type: 'spawned', piece, at: e.at });
         break;
       }
+      case 'convert': {
+        const piece = pieceAt(e.at);
+        if (!piece) return fail(onBoard(e.at) ? `${squareName(e.at)}에 기물이 없음` : '보드 밖의 칸');
+        if (piece.type === 'king') return fail('킹은 편을 바꿀 수 없음');
+        if (!isColor(e.color)) return fail('기물 색이 올바르지 않음');
+        if (piece.color === e.color) return fail(`${squareName(e.at)}의 기물은 이미 그 편임`);
+        board[e.at as Square] = { ...piece, color: e.color, rider: piece.rider && { ...piece.rider, color: e.color } };
+        touched.push(e.at as Square);
+        events.push({ type: 'converted', pieceId: piece.id, at: e.at as Square, to: e.color });
+        break;
+      }
       default:
         return fail('알 수 없는 효과 종류');
     }

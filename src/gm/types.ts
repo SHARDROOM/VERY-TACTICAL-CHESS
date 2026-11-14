@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import type { GameState } from '../engine';
-import type { GmEffectSchema, GmRulingSchema } from './schema';
+import type { GmChaosSchema, GmEffectSchema, GmRulingSchema } from './schema';
 
 /**
  * The ruling exactly as a GM (LLM or fake) returns it: plain JSON with
@@ -8,6 +8,7 @@ import type { GmEffectSchema, GmRulingSchema } from './schema';
  */
 export type GmRulingJson = z.infer<typeof GmRulingSchema>;
 export type GmEffectJson = z.infer<typeof GmEffectSchema>;
+export type GmChaosJson = z.infer<typeof GmChaosSchema>;
 
 export interface GmRequest {
   /** The player's declaration, as typed. */
@@ -20,4 +21,6 @@ export interface GameMaster {
   readonly name: string;
   /** Returns raw JSON-like data; callers must run it through parseGmRuling. */
   rule(request: GmRequest): Promise<unknown>;
+  /** Makes up a chaos event for the turn that is starting; callers run it through parseGmChaos. */
+  chaos?(request: { state: GameState }): Promise<unknown>;
 }

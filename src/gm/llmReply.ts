@@ -1,18 +1,23 @@
+import type { z } from 'zod';
 import { GmRulingSchema } from './schema';
 import { GmError } from './errors';
 import type { GmRulingJson } from './types';
 
-/** Parses and shape-checks the JSON text of a completed LLM reply. */
-export function rulingFromText(text: string): GmRulingJson {
+/** Parses and shape-checks the JSON text of a completed LLM reply against `schema`. */
+export function jsonFromText<T extends z.ZodTypeAny>(text: string, schema: T): z.infer<T> {
   let json: unknown;
   try {
     json = JSON.parse(text);
   } catch {
     throw new GmError('GM의 응답을 해석하지 못했습니다. 다시 시도해 주세요.');
   }
-  const checked = GmRulingSchema.safeParse(json);
+  const checked = schema.safeParse(json);
   if (!checked.success) throw new GmError('GM의 응답 형식이 올바르지 않습니다. 다시 시도해 주세요.');
   return checked.data;
+}
+
+export function rulingFromText(text: string): GmRulingJson {
+  return jsonFromText(text, GmRulingSchema);
 }
 
 export const TRUNCATED = 'GM의 응답이 너무 길어 중간에 끊겼습니다. 다시 시도해 주세요.';

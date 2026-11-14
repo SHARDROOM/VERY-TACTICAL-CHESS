@@ -48,7 +48,9 @@ export type Effect =
   /** The rider of the piece on `at` gets off onto `to`. */
   | { type: 'unboard'; at: Square; to: Square }
   | { type: 'transform'; at: Square; into: PieceType }
-  | { type: 'spawn'; at: Square; color: Color; piece: PieceType };
+  | { type: 'spawn'; at: Square; color: Color; piece: PieceType }
+  /** The piece on `at` (and whoever rides it) changes sides. */
+  | { type: 'convert'; at: Square; color: Color };
 
 /** The GM's ruling on a declared special action, already converted to engine squares. */
 export interface Ruling {
@@ -83,6 +85,20 @@ export interface Precedent {
   outcome: Outcome;
 }
 
+/** Something chaotic the GM made happen at the start of a turn (the 혼돈 rule). */
+export interface ChaosEvent {
+  title: string;
+  narration: string;
+  effects: Effect[];
+}
+
+/** A chaos event that happened, kept so later rulings can build on it. */
+export interface ChaosRecord {
+  turnNumber: number;
+  title: string;
+  narration: string;
+}
+
 /** A ruled special action waiting for the player to attempt or cancel it. */
 export interface PendingAction {
   color: Color;
@@ -110,6 +126,8 @@ export interface GameState {
   precedents: Precedent[];
   /** Pieces taken off the board (captured or removed), oldest first, as plain pieces. */
   captured: Piece[];
+  /** Chaos events so far, oldest first (missing in saves from before the rule existed). */
+  chaosLog?: ChaosRecord[];
 }
 
 export type Command =
@@ -118,7 +136,11 @@ export type Command =
   | { type: 'proposeSpecial'; action: string; ruling: Ruling }
   /** `roll` is a d20 result produced outside the engine, keeping the engine deterministic. */
   | { type: 'attemptSpecial'; roll: number }
-  | { type: 'cancelSpecial' };
+  | { type: 'cancelSpecial' }
+  /** The side to move ran out of time: it loses AP and the turn passes. */
+  | { type: 'timeout' }
+  /** A chaos event at the start of a turn (no AP, no dice). */
+  | { type: 'chaos'; chaos: ChaosEvent };
 
 export type MoveSpecial =
   | { kind: 'castle'; side: 'king' | 'queen' }
@@ -135,6 +157,9 @@ export type GameEvent =
   | { type: 'unboarded'; riderId: string; from: Square; to: Square; captured: Piece | null }
   | { type: 'transformed'; pieceId: string; at: Square; from: PieceType; to: PieceType }
   | { type: 'spawned'; piece: Piece; at: Square }
+  | { type: 'converted'; pieceId: string; at: Square; to: Color }
+  | { type: 'timedOut'; color: Color; apLost: number }
+  | { type: 'chaos'; title: string; narration: string }
   /** A special action left the opponent's king attacked, so the turn ended by itself. */
   | { type: 'autoTurnEnd'; color: Color; reason: 'check' }
   /** A capture hit a shield: the shield is gone, the target stays, the attacker did not move. */
@@ -175,7 +200,8 @@ export type RejectReason =
   | 'notEnoughAp'
   | 'invalidRoll'
   | 'kingProtectedThisTurn'
-  | 'nothingDoneThisTurn';
+  | 'nothingDoneThisTurn'
+  | 'invalidChaos';
 
 export type CommandResult =
   | { ok: true; state: GameState; events: GameEvent[] }

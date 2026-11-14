@@ -34,7 +34,23 @@ export const GM_EFFECT_JSON_SCHEMAS = [
     color: { type: 'string', enum: ['white', 'black'], description: '만들 기물의 편' },
     piece: { type: 'string', enum: PIECES, description: '만들 기물 종류 (킹 불가)' },
   }),
+  effect('convert', {
+    at: sq('편을 바꿀 기물의 칸 (킹 불가)'),
+    color: { type: 'string', enum: ['white', 'black'], description: '새로 속할 편' },
+  }),
 ];
+
+/** Mirrors GmChaosSchema. */
+export const GM_CHAOS_JSON_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: { type: 'string', description: '사건의 짧은 제목 (한국어, 15자 이내)' },
+    narration: { type: 'string', description: '무슨 일이 일어났는지 해설 (한국어, 1~2문장)' },
+    effects: { type: 'array', description: '순서대로 적용할 효과 (1~3개)', items: { anyOf: GM_EFFECT_JSON_SCHEMAS } },
+  },
+  required: ['title', 'narration', 'effects'],
+  additionalProperties: false,
+} as const;
 
 export const GM_RULING_JSON_SCHEMA = {
   type: 'object',

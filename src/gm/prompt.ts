@@ -33,6 +33,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - {"type": "unboard", "at": "b1", "to": "a3"}: at 칸 기물에 타고 있던 기물이 빈 칸 to로 내린다.
 - {"type": "transform", "at": "a2", "into": "knight"}: 기물을 다른 종류(queen, rook, bishop, knight, pawn)로 바꾼다.
 - {"type": "spawn", "at": "e4", "color": "white", "piece": "pawn"}: 빈 칸에 새 기물을 만든다.
+- {"type": "convert", "at": "e2", "color": "black"}: 기물(과 그 기물에 탄 기물)이 상대 편으로 넘어간다. 매수, 배신, 정체는 스파이 같은 행동에 쓴다.
 효과는 목록 순서대로 적용되고, 각 효과는 앞 효과가 적용된 뒤의 보드를 기준으로 합니다. 칸 이름은 a1~h8 형식입니다.
 
 ## 태그의 의미
@@ -43,7 +44,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - 보드 상태에 각 기물의 태그와 남은 턴, 타고 있는 기물이 표시됩니다. 이를 판정에 반영하세요(예: 불타는 기물은 다른 기물에 불을 옮기기 쉽다).
 
 ## 절대 규칙 (어기면 판정 전체가 거부됩니다)
-- 킹은 어떤 효과로도 제거하거나 잡거나 변환할 수 없고, 킹을 새로 만들 수도 없습니다. 킹은 일반 체스 수로만 잡힙니다. 킹에 태그를 붙이는 것은 됩니다.
+- 킹은 어떤 효과로도 제거하거나 잡거나 변환하거나 편을 바꿀 수 없고, 킹을 새로 만들 수도 없습니다. 킹은 일반 체스 수로만 잡힙니다. 킹에 태그를 붙이는 것은 됩니다.
 - 기물이 없는 칸을 from/at/rider/carrier로 쓰지 마세요. 같은 편 기물이 있는 칸으로 move하지 마세요.
 - 기절한 기물은 move나 board로 움직일 수 없습니다.
 - board: 같은 편끼리만, 킹은 탈 수 없음, 한 기물에는 한 명만 탈 수 있음. 탑승은 tag 효과로 붙이거나 뗄 수 없습니다.
@@ -53,7 +54,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 ## 난이도와 비용의 기준
 - 그럴듯하고 영향이 작은 행동(가까운 칸으로의 기발한 이동 등): DC ${rules.dcMin}~10, AP ${rules.costMin}.
 - 대담하거나 판을 크게 바꾸는 행동(먼 거리 이동, 중요 기물 위협, 폰이나 마이너 기물 제거): DC 11~17, AP ${Math.min(rules.costMax, rules.costMin + 1)}.
-- 터무니없거나 결정적인 행동(퀸이나 룩 제거, 폰을 퀸으로 변환, 강한 기물 생성, 여러 기물에 한꺼번에 영향): DC 18~${rules.dcMax}, AP ${rules.costMax}.
+- 터무니없거나 결정적인 행동(퀸이나 룩 제거, 폰을 퀸으로 변환, 강한 기물 생성, 상대 기물 매수, 여러 기물에 한꺼번에 영향): DC 18~${rules.dcMax}, AP ${rules.costMax}.
 - 기절과 보호막은 지속 턴이 길수록, 영구일수록 DC와 비용을 높이세요. 대부분은 1~2턴이면 충분합니다.
 - 선언이 체스판의 상황과 맞아떨어질수록(예: 실제로 인접한 기물끼리의 협동) DC를 낮추고, 억지스러울수록 높이세요.
 - 한 번의 특수 행동이 게임을 사실상 끝내지 않도록 효과를 선언에 꼭 필요한 만큼만 넣으세요.
@@ -138,9 +139,78 @@ ${boardGrid(state)}
 
 ## 이번 게임의 판례 (최근 ${MAX_PRECEDENTS}개까지, 오래된 순)
 ${precedentList(state)}
-
+${chaosSection(state)}
 ## ${COLOR[me]}의 선언
 <declaration>
 ${sanitizeDeclaration(action)}
 </declaration>`;
+}
+
+const MAX_CHAOS = 10;
+
+/** Chaos so far, so rulings and later chaos can build on it (e.g. a known spy). Empty if none. */
+function chaosSection(state: GameState): string {
+  const recent = (state.chaosLog ?? []).slice(-MAX_CHAOS);
+  if (!recent.length) return '';
+  return `
+## 이번 게임에 일어난 혼돈 (오래된 순)
+${recent.map((c) => `- 턴 ${c.turnNumber}: ${c.title} — ${c.narration}`).join('\n')}
+`;
+}
+
+/** Standing instructions for chaos events. Depends only on the rules, so it can be cached too. */
+export function buildChaosSystemPrompt(rules: RuleConfig): string {
+  return `당신은 "아주 전략적인 체스"의 혼돈을 일으키는 게임 마스터(GM)입니다. 체스를 두던 중 턴이 시작될 때 가끔 기상천외한 사건이 일어납니다. 그 사건 하나를 지어내고, 보드에 적용할 효과로 표현하세요.
+
+## 사건의 예
+- "백의 폰은 사실 흑의 스파이였습니다!" → {"type": "convert", "at": "e2", "color": "black"}
+- "모래바람이 흑의 폰을 엉뚱한 칸으로 날려 보냈습니다" → {"type": "move", "from": "c7", "to": "h5"}
+- 벼락이 떨어져 기물이 기절 → {"type": "tag", "at": "g1", "tag": "기절", "turns": 1}
+- 하늘에서 떨어진 보급품 → 빈 칸에 폰을 spawn
+- 수호 정령의 축복 → "보호막" 태그
+- 그 밖에 상상력을 발휘하되, 보드의 실제 상황(기물 위치, 태그, 지난 혼돈과 판례)과 엮일수록 좋습니다.
+
+## 효과 (이것만 쓸 수 있습니다)
+- {"type": "move", "from": "b1", "to": "e5"}: 기물을 옮긴다. to에 상대 기물이 있으면 잡는다.
+- {"type": "remove", "at": "d7"}: 기물을 없앤다.
+- {"type": "tag", "at": "g8", "tag": "기절", "turns": 1}: 태그를 붙인다 (turns 0 = 영구). "기절"은 못 움직임, "보호막"은 한 번의 잡힘을 막음, 그 밖의 이름은 서사용.
+- {"type": "untag", "at": "g8", "tag": "기절"}: 태그를 뗀다.
+- {"type": "transform", "at": "a2", "into": "knight"}: 기물 종류를 바꾼다 (queen, rook, bishop, knight, pawn).
+- {"type": "spawn", "at": "e4", "color": "white", "piece": "pawn"}: 빈 칸에 기물을 만든다.
+- {"type": "convert", "at": "e2", "color": "black"}: 기물이 상대 편으로 넘어간다.
+- {"type": "board", ...}, {"type": "unboard", ...}: 탑승과 하차 (같은 편끼리).
+칸 이름은 a1~h8 형식이고, 효과는 순서대로 앞 효과가 적용된 보드를 기준으로 합니다.
+
+## 절대 규칙 (어기면 사건 전체가 취소됩니다)
+- 효과는 1~3개, 최대 ${rules.maxEffects}개.
+- 킹은 제거, 이동으로 잡기, 변환, 편 바꾸기, 생성 모두 불가. 킹에 태그는 가능.
+- 사건이 끝난 뒤 어느 쪽 킹도 공격받는 상태(체크)가 되면 안 됩니다.
+- 기물이 없는 칸을 대상으로 하지 말고, 같은 편 기물이 있는 칸으로 move하지 마세요. 기절한 기물은 move할 수 없습니다.
+- 폰을 그 편의 마지막 줄(백은 8번 줄, 흑은 1번 줄)에 만들지 마세요.
+
+## 균형
+- 혼돈은 재미를 위한 것입니다. 한쪽이 사실상 이기게 만드는 사건(퀸 제거, 퀸 생성, 여러 중요 기물 매수)은 피하고, 영향은 작게 또는 양쪽에 비슷하게 주세요.
+- 지난 혼돈과 다른 종류의 사건을 일으키세요.
+- title은 15자 이내의 짧은 제목, narration은 판타지 전장 해설자 같은 생생한 한국어 1~2문장.`;
+}
+
+export function buildChaosUserMessage(state: GameState): string {
+  const me = state.turn;
+  const them = me === 'white' ? 'black' : 'white';
+  return `## 현재 상황
+- 지금 시작되는 차례: ${COLOR[me]} (보유 AP ${state.ap[me]})
+- 상대: ${COLOR[them]} (보유 AP ${state.ap[them]})
+- 턴 번호: ${state.turnNumber}
+
+## 기물 위치
+- 백: ${pieceList(state, 'white')}
+- 흑: ${pieceList(state, 'black')}
+
+## 보드 (대문자 = 백, 소문자 = 흑, . = 빈 칸; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰)
+${boardGrid(state)}
+
+## 이번 게임의 판례 (최근 ${MAX_PRECEDENTS}개까지, 오래된 순)
+${precedentList(state)}
+${chaosSection(state) || '\n## 이번 게임에 일어난 혼돈\n(아직 없음)\n'}
+지금 일어날 혼돈 사건 하나를 정해 주세요.`;
 }

@@ -1,8 +1,11 @@
-import type { GameMaster, GmRequest, GmRulingJson } from './types';
-import { buildSystemPrompt, buildUserMessage } from './prompt';
-import { GM_RULING_JSON_SCHEMA } from './jsonSchema';
+import type { z } from 'zod';
+import type { GameState } from '../engine';
+import type { GameMaster, GmChaosJson, GmRequest, GmRulingJson } from './types';
+import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
+import { GM_CHAOS_JSON_SCHEMA, GM_RULING_JSON_SCHEMA } from './jsonSchema';
+import { GmChaosSchema, GmRulingSchema } from './schema';
 import { GmError, describeHttpError, describeNetworkError } from './errors';
-import { REFUSED, TRUNCATED, rulingFromText } from './llmReply';
+import { REFUSED, TRUNCATED, jsonFromText } from './llmReply';
 
 /** Suggestions only: the settings field accepts any model id. */
 export const OPENAI_MODEL_SUGGESTIONS = ['gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-luna', 'gpt-6-astra'];
@@ -27,7 +30,15 @@ export class OpenAiGameMaster implements GameMaster {
     this.name = `OpenAI GM (${options.model})`;
   }
 
-  async rule({ action, state }: GmRequest): Promise<GmRulingJson> {
+  rule({ action, state }: GmRequest): Promise<GmRulingJson> {
+    return this.ask(buildSystemPrompt(state.rules), buildUserMessage(action, state), 'gm_ruling', GM_RULING_JSON_SCHEMA, GmRulingSchema);
+  }
+
+  chaos({ state }: { state: GameState }): Promise<GmChaosJson> {
+    return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state), 'gm_chaos', GM_CHAOS_JSON_SCHEMA, GmChaosSchema);
+  }
+
+  private async ask<T extends z.ZodTypeAny>(system: string, user: string, name: string, jsonSchema: object, schema: T): Promise<z.infer<T>> {
     const doFetch = this.options.fetch ?? fetch;
     let res: Response;
     try {
@@ -37,12 +48,12 @@ export class OpenAiGameMaster implements GameMaster {
         body: JSON.stringify({
           model: this.options.model,
           messages: [
-            { role: 'system', content: buildSystemPrompt(state.rules) },
-            { role: 'user', content: buildUserMessage(action, state) },
+            { role: 'system', content: system },
+            { role: 'user', content: user },
           ],
           response_format: {
             type: 'json_schema',
-            json_schema: { name: 'gm_ruling', strict: true, schema: GM_RULING_JSON_SCHEMA },
+            json_schema: { name, strict: true, schema: jsonSchema },
           },
         }),
         signal: AbortSignal.timeout(90_000),
@@ -58,6 +69,6 @@ export class OpenAiGameMaster implements GameMaster {
     if (choice?.message?.refusal) throw new GmError(REFUSED);
     if (choice?.finish_reason === 'length') throw new GmError(TRUNCATED);
     if (choice?.finish_reason === 'content_filter') throw new GmError(REFUSED);
-    return rulingFromText(choice?.message?.content ?? '');
+    return jsonFromText(choice?.message?.content ?? '', schema);
   }
 }

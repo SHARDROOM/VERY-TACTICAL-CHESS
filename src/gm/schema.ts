@@ -27,7 +27,19 @@ export const GmEffectSchema = z.discriminatedUnion('type', [
     color: z.enum(['white', 'black']).describe('만들 기물의 편'),
     piece: pieceType.describe('만들 기물 종류 (킹 불가)'),
   }),
+  z.object({
+    type: z.literal('convert'),
+    at: square('편을 바꿀 기물의 칸 (킹 불가)'),
+    color: z.enum(['white', 'black']).describe('새로 속할 편'),
+  }),
 ]);
+
+/** A chaos event (the 혼돈 rule): something odd happens at the start of a turn. */
+export const GmChaosSchema = z.object({
+  title: z.string().describe('사건의 짧은 제목 (한국어, 15자 이내)'),
+  narration: z.string().describe('무슨 일이 일어났는지 해설 (한국어, 1~2문장)'),
+  effects: z.array(GmEffectSchema).describe('순서대로 적용할 효과 (1~3개)'),
+});
 
 export const GmRulingSchema = z.object({
   interpretation: z.string().describe('플레이어의 선언을 GM이 어떻게 이해했는지 한 문장으로'),

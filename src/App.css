@@ -49,6 +49,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .log .error { color: var(--danger); }
 .log .gm { color: #d9c38a; font-style: italic; }
 .log .roll { color: #b9c6ff; font-weight: 600; }
+.log .chaos { color: #e59cff; font-weight: 700; }
 .panel-footer { display: flex; justify-content: space-between; align-items: center; }
 .counter { color: var(--muted); font-size: 0.8em; font-variant-numeric: tabular-nums; }
 .ruling { max-width: min(460px, calc(100vw - 32px)); }
