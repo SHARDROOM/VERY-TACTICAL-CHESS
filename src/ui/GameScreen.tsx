@@ -25,7 +25,6 @@ import { successChance } from '../dice';
 import { loadPhysics, simulateRoll } from '../dice3d/simulate';
 import { skinRotationFor } from '../dice3d/d20';
 import type { ActiveRoll } from '../dice3d/DiceTray';
-import { PROVIDER_LABEL } from '../gm/createGm';
 import { CHAT_MAX_LENGTH, type Session, type SessionView } from '../session/types';
 
 interface LogLine extends LogEntry {
