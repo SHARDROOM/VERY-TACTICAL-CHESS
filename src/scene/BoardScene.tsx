@@ -4,7 +4,8 @@ import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
 import { CameraControls, Environment, Lightformer } from '@react-three/drei';
 import { fileOf, rankOf, type Board, type Color, type Piece, type Square } from '../engine';
 import { squareToWorld } from './coords';
-import { PieceMesh } from './PieceMesh';
+import { PieceMesh, PiecePhysicsContext, type PiecePhysics } from './PieceMesh';
+import type { Obstacle } from './piecePhysics';
 import { TABLE_TOP_Y, WoodTable } from './WoodTable';
 import { CoinTable } from '../coins/CoinTable';
 import { DiceTray, trayCenterX, type ActiveRoll } from '../dice3d/DiceTray';
@@ -40,6 +41,8 @@ interface Props {
   captured: Piece[];
   /** Title screen: a camera tour of the table instead of the player's view. */
   tour?: { inset: TourInset; onPhase: (phase: TourPhase) => void };
+  /** Pieces whose latest move was a special action or chaos: they fly with physics. */
+  flung?: ReadonlySet<string>;
   /** Doodles on the table; with a tool picked, pointer drags draw and the camera holds still. */
   doodle?: { doodles: Doodle[]; tool: DoodleTool | null; myKey: string; moderator: boolean; onDoodle: (op: DoodleOp) => void };
 }
@@ -144,7 +147,10 @@ export function BoardScene({
   captured,
   tour,
   doodle,
+  flung,
 }: Props) {
+  const resting = useRef(new Map<string, Obstacle>());
+  const physics = useMemo<PiecePhysics>(() => ({ diceSide, resting: resting.current }), [diceSide]);
   // Pieces that appear after the first render (spawned by a special action) pop in.
   const mountedRef = useRef(false);
   useEffect(() => {
@@ -207,6 +213,7 @@ export function BoardScene({
         );
       })}
 
+      <PiecePhysicsContext.Provider value={physics}>
       {/* Board pieces and captured pieces share keys, so a captured piece flies from its square to the side. */}
       {board.map((piece, sq) =>
         piece ? (
@@ -216,6 +223,7 @@ export function BoardScene({
             position={squareToWorld(sq)}
             selected={sq === selected}
             popIn={mountedRef.current}
+            flung={flung?.has(piece.id) ?? false}
             onClick={click(sq)}
             onHover={(on) => onHoverSquare(on ? sq : null)}
           />
@@ -224,6 +232,7 @@ export function BoardScene({
       {graveyard.map(({ piece, position }) => (
         <PieceMesh key={piece.id} piece={piece} position={position} selected={false} captured />
       ))}
+      </PiecePhysicsContext.Provider>
 
     </Canvas>
   );

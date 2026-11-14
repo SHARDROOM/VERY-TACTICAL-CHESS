@@ -99,6 +99,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const [doodleTool, setDoodleTool] = useState<DoodleTool | null>(null);
   const lastTool = useRef<DoodleTool>({ kind: 'pen', color: DOODLE_COLORS[1], width: 0.06, noteText: '' });
   const onDoodle = useMemo(() => (op: DoodleOp) => session.doodle(op), [session]);
+  /** Pieces moved by the latest special action or chaos: they fly with physics instead of being carried. */
+  const [flung, setFlung] = useState<ReadonlySet<string>>(() => new Set());
   /** A chaos event being announced across the screen. */
   const [chaosBanner, setChaosBanner] = useState<{ title: string; narration: string } | null>(null);
   const [unread, setUnread] = useState(0);
@@ -145,6 +147,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     const applyBatch = ({ events, before, after }: Batch) => {
       const typeOf = (id: string) => findPiece(before.board, id)?.type ?? findPiece(after.board, id)?.type;
       addLog(describeEvents(events, typeOf));
+      const magic = events.some((ev) => ev.type === 'specialResolved' || ev.type === 'chaos');
+      const thrown = magic
+        ? events.flatMap((ev) => (ev.type === 'moved' ? [ev.pieceId] : ev.type === 'unboarded' ? [ev.riderId] : []))
+        : [];
+      setFlung(new Set(thrown));
       const passed = events.some((ev) => ev.type === 'turnPassed');
       if (passed) playSfx('turn', { delay: 0.25 });
       if (events.some((ev) => ev.type === 'check')) playSfx('check', { delay: 0.45 });
@@ -362,6 +369,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         onDiceLanded={onDiceLanded}
         ap={game.ap}
         captured={game.captured ?? []}
+        flung={flung}
         doodle={
           game.rules.doodle
             ? { doodles: view.doodles, tool: doodleTool, myKey: view.myKey, moderator: view.isAuthority, onDoodle }
