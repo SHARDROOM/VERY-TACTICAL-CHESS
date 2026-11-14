@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   findKing,
   isInCheck,
@@ -7,6 +7,7 @@ import {
   parseMoveText,
   rankOf,
   type Color,
+  type GameEvent,
   type GameState,
   type Outcome,
   type Piece,
@@ -24,6 +25,34 @@ import type { Session, SessionView } from '../session/types';
 
 interface LogLine extends LogEntry {
   id: number;
+}
+
+/** One batch of game events from the session, shown on screen in order. */
+interface Batch {
+  events: GameEvent[];
+  before: GameState;
+  after: GameState;
+  /** The dice for this batch have already been shown. */
+  rolled: boolean;
+}
+
+// Physics and the dice scene load only when the first roll happens.
+const DiceOverlay = lazy(() => import('../dice3d/DiceOverlay'));
+
+const DICE_PREF = 'vtc.dice3d';
+function readDicePref(): boolean {
+  try {
+    return localStorage.getItem(DICE_PREF) !== 'off';
+  } catch {
+    return true;
+  }
+}
+function writeDicePref(on: boolean) {
+  try {
+    localStorage.setItem(DICE_PREF, on ? 'on' : 'off');
+  } catch {
+    // a remembered preference is only a convenience
+  }
 }
 
 let nextLogId = 1;
@@ -64,7 +93,6 @@ interface Props {
 
 export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSettings = false, startNotice = null }: Props) {
   const [view, setView] = useState<SessionView>(() => session.view());
-  const game = view.state;
   const seat = view.seat;
   const online = view.connection.kind !== 'local';
   const homeSide: Color = seat === 'both' ? 'white' : seat;
@@ -80,6 +108,13 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const [showGmSettings, setShowGmSettings] = useState(openGmSettings);
   const [promotionChoice, setPromotionChoice] = useState<{ from: Square; to: Square } | null>(null);
   const [copied, setCopied] = useState(false);
+  /** The dice roll being shown, and the board as it was before it (shown until the dice land). */
+  const [dice, setDice] = useState<{ roll: number; outcome: Outcome; done: () => void } | null>(null);
+  const [frozen, setFrozen] = useState<GameState | null>(null);
+  const queueRef = useRef<Batch[]>([]);
+  const [diceEnabled, setDiceEnabled] = useState(() => readDicePref());
+  const diceEnabledRef = useRef(diceEnabled);
+  diceEnabledRef.current = diceEnabled;
   const logRef = useRef<HTMLOListElement>(null);
 
   const addLog = (entries: LogEntry[]) => setLog((l) => [...l, ...entries.map((e) => ({ ...e, id: nextLogId++ }))]);
@@ -89,45 +124,85 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [log]);
 
+  // Warm up the dice physics in the background so the first roll starts at once.
+  useEffect(() => {
+    if (!diceEnabled) return;
+    const t = setTimeout(() => {
+      void import('../dice3d/simulate').then((m) => m.loadPhysics()).catch(() => {});
+      void import('../dice3d/DiceOverlay').catch(() => {});
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [diceEnabled]);
+
   // Online, the camera stays on your side once your color is known.
   useEffect(() => {
     if (seat !== 'both') setCamera((c) => ({ ...c, side: seat, nonce: c.nonce + 1 }));
   }, [seat]);
 
   useEffect(() => {
+    /** Logs a batch of game events and reacts to them (the moment the board shows them). */
+    const applyBatch = ({ events, before, after }: Batch) => {
+      const typeOf = (id: string) => findPiece(before.board, id)?.type ?? findPiece(after.board, id)?.type;
+      addLog(describeEvents(events, typeOf));
+      const passed = events.some((ev) => ev.type === 'turnPassed');
+      const exposed = events.find((ev) => ev.type === 'ownKingExposed');
+      if (exposed) setWarning(`${COLOR_NAME[exposed.color]} 킹이 공격받는 위치에 놓였습니다.`);
+      else if (passed) setWarning(null);
+      const resolved = events.find((ev) => ev.type === 'specialResolved');
+      if (resolved) setLastRoll({ roll: resolved.roll, outcome: resolved.outcome });
+      else if (passed) setLastRoll(null);
+      const proposed = events.find((ev) => ev.type === 'specialProposed');
+      if (proposed && (seat === 'both' || proposed.color === seat)) setText('');
+      setSelected(null);
+      if (seat === 'both' && after.status.kind === 'playing' && after.turn !== before.turn) {
+        // Hotseat: swing the camera to the player whose turn it is.
+        setCamera((c) => ({ ...c, side: after.turn, nonce: c.nonce + 1 }));
+      }
+    };
+
+    /**
+     * Shows queued batches in order. A batch with a dice roll first plays the roll while the
+     * board keeps showing the position before it; the rest waits behind it.
+     */
+    const pump = () => {
+      const queue = queueRef.current;
+      while (queue.length) {
+        const head = queue[0];
+        const resolved = head.events.find((ev) => ev.type === 'specialResolved');
+        if (resolved && !head.rolled && diceEnabledRef.current) {
+          head.rolled = true;
+          setFrozen(head.before);
+          setDice({ roll: resolved.roll, outcome: resolved.outcome, done: () => {
+            setDice(null);
+            pump();
+          } });
+          return;
+        }
+        queue.shift();
+        applyBatch(head);
+      }
+      setFrozen(null);
+    };
+
     const unsubscribe = session.subscribe((e) => {
-        if (e.kind === 'view') {
-          setView(e.view);
-          return;
-        }
-        if (e.kind === 'notice') {
-          say(e.text, e.tone === 'normal' ? 'normal' : e.tone);
-          return;
-        }
-        // Game events: log them and react.
-        const { events, before, after } = e;
-        const typeOf = (id: string) => findPiece(before.board, id)?.type ?? findPiece(after.board, id)?.type;
-        addLog(describeEvents(events, typeOf));
-        const passed = events.some((ev) => ev.type === 'turnPassed');
-        const exposed = events.find((ev) => ev.type === 'ownKingExposed');
-        if (exposed) setWarning(`${COLOR_NAME[exposed.color]} 킹이 공격받는 위치에 놓였습니다.`);
-        else if (passed) setWarning(null);
-        const resolved = events.find((ev) => ev.type === 'specialResolved');
-        if (resolved) setLastRoll({ roll: resolved.roll, outcome: resolved.outcome });
-        else if (passed) setLastRoll(null);
-        const proposed = events.find((ev) => ev.type === 'specialProposed');
-        if (proposed && (seat === 'both' || proposed.color === seat)) setText('');
-        setSelected(null);
-        if (seat === 'both' && after.status.kind === 'playing' && after.turn !== before.turn) {
-          // Hotseat: swing the camera to the player whose turn it is.
-          setCamera((c) => ({ ...c, side: after.turn, nonce: c.nonce + 1 }));
-        }
+      if (e.kind === 'view') {
+        setView(e.view);
+        return;
+      }
+      if (e.kind === 'notice') {
+        say(e.text, e.tone === 'normal' ? 'normal' : e.tone);
+        return;
+      }
+      queueRef.current.push({ events: e.events, before: e.before, after: e.after, rolled: false });
+      // While a roll is on screen, later batches wait their turn.
+      if (queueRef.current.length === 1) pump();
     });
     // Anything that arrived between the first render and this subscription (e.g. the host's welcome).
     setView(session.view());
     return unsubscribe;
   }, [session, seat]);
 
+  const game = frozen ?? view.state;
   const targets = useMemo(() => (selected === null ? [] : legalTargets(game, selected).map((t) => t.to)), [game, selected]);
 
   const sideToMove = game.turn;
@@ -137,7 +212,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const checkedKing = inCheck ? findKing(game.board, sideToMove) : null;
   const pending = game.pending;
   const connected = view.connection.kind === 'local' || view.connection.kind === 'connected';
-  const locked = !playing || view.gmBusy || !!pending || !myTurn || !connected;
+  const locked = !playing || view.gmBusy || !!pending || !myTurn || !connected || !!dice;
   const winner = game.status.kind === 'won' ? game.status.winner : null;
 
   const promotes = (from: Square, to: Square) => {
@@ -261,6 +336,17 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         ) : (
           <button disabled title="GM은 방장이 설정합니다">🎙 {view.gmName || 'GM'}</button>
         )}
+        <button
+          onClick={() => {
+            setDiceEnabled((on) => {
+              writeDicePref(!on);
+              return !on;
+            });
+          }}
+          title="특수 행동 주사위를 3D로 굴릴지"
+        >
+          🎲 {diceEnabled ? '3D 주사위 켬' : '3D 주사위 끔'}
+        </button>
         <button onClick={() => setCamera((c) => ({ mode: 'side', side: seat === 'both' ? sideToMove : seat, nonce: c.nonce + 1 }))}>
           시점 초기화
         </button>
@@ -317,7 +403,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         </div>
       </aside>
 
-      {pending && (
+      {pending && !dice && (
         <div className="overlay">
           <div className="dialog ruling">
             <div className="ruling-who">{COLOR_NAME[pending.color]}의 특수 행동</div>
@@ -453,7 +539,13 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         </div>
       )}
 
-      {winner && connected && (
+      {dice && (
+        <Suspense fallback={null}>
+          <DiceOverlay roll={dice.roll} outcome={dice.outcome} onDone={dice.done} />
+        </Suspense>
+      )}
+
+      {winner && connected && !dice && (
         <div className="overlay">
           <div className="victory">
             <h1>{COLOR_NAME[winner]} 승리</h1>
