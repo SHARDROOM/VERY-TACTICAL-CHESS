@@ -113,6 +113,8 @@ export type GameEvent =
   | { type: 'unboarded'; riderId: string; from: Square; to: Square; captured: Piece | null }
   | { type: 'transformed'; pieceId: string; at: Square; from: PieceType; to: PieceType }
   | { type: 'spawned'; piece: Piece; at: Square }
+  /** A special action left the opponent's king attacked, so the turn ended by itself. */
+  | { type: 'autoTurnEnd'; color: Color; reason: 'check' }
   /** A capture hit a shield: the shield is gone, the target stays, the attacker did not move. */
   | { type: 'shieldBroken'; pieceId: string; at: Square; attackerId: string | null }
   | { type: 'kingCaptured'; winner: Color }
@@ -148,7 +150,8 @@ export type RejectReason =
   | 'invalidRuling'
   | 'notFeasible'
   | 'notEnoughAp'
-  | 'invalidRoll';
+  | 'invalidRoll'
+  | 'kingProtectedThisTurn';
 
 export type CommandResult =
   | { ok: true; state: GameState; events: GameEvent[] }

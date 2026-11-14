@@ -82,6 +82,8 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   if (piece.color !== state.turn) return { ok: false, reason: 'notYourPiece' };
   const target = legalTargets(state, cmd.from).find((t) => t.to === cmd.to);
   if (!target) return { ok: false, reason: 'illegalMove' };
+  // One-turn-kill guard: after any special-action attempt this turn, kings are off limits.
+  if (state.usedApThisTurn && state.board[cmd.to]?.type === 'king') return { ok: false, reason: 'kingProtectedThisTurn' };
 
   const lastRank = piece.color === 'white' ? 7 : 0;
   const promotes = piece.type === 'pawn' && rankOf(cmd.to) === lastRank;
@@ -186,6 +188,9 @@ function attempt(state: GameState, roll: number): CommandResult {
     nextSpawnId = applied.nextSpawnId;
     castling = revokeCastling(castling, applied.touched);
     effectEvents.push(...applied.events, ...checkEvents(board, color));
+  } else if (isInCheck(board, opponent(color))) {
+    // Nothing changed, but the opponent's king was already attacked (e.g. since the turn began).
+    effectEvents.push({ type: 'check', color: opponent(color) });
   }
 
   const events: GameEvent[] = [
@@ -201,17 +206,20 @@ function attempt(state: GameState, roll: number): CommandResult {
     },
     ...effectEvents,
   ];
-  return {
-    ok: true,
-    state: {
-      ...state,
-      board,
-      castling,
-      nextSpawnId,
-      ap: { ...state.ap, [color]: state.ap[color] - ruling.cost },
-      usedApThisTurn: true,
-      pending: null,
-    },
-    events,
+  const after: GameState = {
+    ...state,
+    board,
+    castling,
+    nextSpawnId,
+    ap: { ...state.ap, [color]: state.ap[color] - ruling.cost },
+    usedApThisTurn: true,
+    pending: null,
   };
+
+  // One-turn-kill guard: if the opponent's king is attacked after a special action, the
+  // turn ends at once (remaining AP carries over), so the opponent always gets to respond.
+  if (events.some((e) => e.type === 'check')) {
+    return { ok: true, ...passTurn(after, board, null, [...events, { type: 'autoTurnEnd', color, reason: 'check' }]) };
+  }
+  return { ok: true, state: after, events };
 }

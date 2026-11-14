@@ -22,6 +22,7 @@ export const REJECT_MESSAGE: Record<RejectReason, string> = {
   notFeasible: 'GM이 불가능하다고 판정한 행동입니다.',
   notEnoughAp: 'AP가 부족합니다.',
   invalidRoll: '주사위 값이 올바르지 않습니다.',
+  kingProtectedThisTurn: '이번 턴에 AP를 썼으므로 킹을 잡을 수 없습니다.',
 };
 
 export type LogTone = 'normal' | 'warn' | 'error' | 'gm' | 'roll';
@@ -79,6 +80,9 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         break;
       case 'shieldBroken':
         add(`🛡 ${name(e.pieceId)}(${squareName(e.at)})의 보호막이 공격을 막고 깨짐`, 'warn');
+        break;
+      case 'autoTurnEnd':
+        add(`⏭ 특수 행동 뒤 상대 킹이 공격받고 있어 ${COLOR_NAME[e.color]}의 턴이 자동으로 끝났습니다. (남은 AP는 다음 턴으로 이월)`, 'warn');
         break;
       case 'check':
         add(`체크! ${COLOR_NAME[e.color]} 킹이 공격받고 있습니다.`, 'warn');
