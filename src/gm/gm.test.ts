@@ -93,3 +93,47 @@ describe('dice', () => {
     expect(successChance(25)).toBe(0);
   });
 });
+
+describe('full effect vocabulary through the GM boundary', () => {
+  it('parses every effect type and converts its squares', () => {
+    const raw = {
+      interpretation: 'x',
+      feasible: true,
+      dc: 10,
+      cost: 1,
+      effects: [
+        { type: 'tag', at: 'g8', tag: '기절', turns: 1 },
+        { type: 'untag', at: 'g8', tag: '기절' },
+        { type: 'board', rider: 'a2', carrier: 'b1' },
+        { type: 'unboard', at: 'b1', to: 'a3' },
+        { type: 'transform', at: 'a3', into: 'queen' },
+        { type: 'spawn', at: 'e4', color: 'black', piece: 'knight' },
+      ],
+      narration: { success: 's', failure: 'f' },
+    };
+    const r = parseGmRuling(raw);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.ruling.effects).toEqual([
+      { type: 'tag', at: sq('g8'), tag: '기절', turns: 1 },
+      { type: 'untag', at: sq('g8'), tag: '기절' },
+      { type: 'board', rider: sq('a2'), carrier: sq('b1') },
+      { type: 'unboard', at: sq('b1'), to: sq('a3') },
+      { type: 'transform', at: sq('a3'), into: 'queen' },
+      { type: 'spawn', at: sq('e4'), color: 'black', piece: 'knight' },
+    ]);
+    const state = { ...createInitialState(), ap: { white: 5, black: 0 } };
+    expect(applyCommand(state, { type: 'proposeSpecial', action: 'x', ruling: r.ruling }).ok).toBe(true);
+  });
+
+  it('rejects kings in transform/spawn at the schema level', () => {
+    const base = { interpretation: 'x', feasible: true, dc: 10, cost: 1, narration: { success: 's', failure: 'f' } };
+    expect(parseGmRuling({ ...base, effects: [{ type: 'spawn', at: 'e4', color: 'white', piece: 'king' }] }).ok).toBe(false);
+    expect(parseGmRuling({ ...base, effects: [{ type: 'transform', at: 'e4', into: 'king' }] }).ok).toBe(false);
+  });
+
+  it('fake GM understands stun, shield and riding', () => {
+    expect(fakeRuling('g8 나이트를 기절시킨다').effects).toEqual([{ type: 'tag', at: 'g8', tag: '기절', turns: 1 }]);
+    expect(fakeRuling('e1 킹에 보호막').effects).toEqual([{ type: 'tag', at: 'e1', tag: '보호막', turns: 0 }]);
+    expect(fakeRuling('a2 폰을 b1 나이트에 태운다').effects).toEqual([{ type: 'board', rider: 'a2', carrier: 'b1' }]);
+  });
+});

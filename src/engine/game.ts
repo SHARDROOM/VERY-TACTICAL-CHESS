@@ -14,6 +14,8 @@ import { isInCheck, legalTargets } from './moves';
 import { fileOf, opponent, rankOf, squareAt } from './squares';
 import { revokeCastling } from './castling';
 import { applyEffects, validateRuling } from './effects';
+import { isShielded, tickTags, withoutTag } from './tags';
+import { SHIELD } from './types';
 
 /** The single entry point for changing game state. Pure: no I/O, no randomness. */
 export function applyCommand(state: GameState, cmd: Command): CommandResult {
@@ -45,14 +47,17 @@ function passTurn(
   enPassant: Square | null,
   events: GameEvent[],
 ): { state: GameState; events: GameEvent[] } {
+  // Tags of the player whose turn is ending count down here.
   const next = opponent(state.turn);
   const { apMax, apPerTurn } = state.rules;
   const apNext = Math.min(apMax, state.ap[next] + apPerTurn);
   const turnNumber = state.turnNumber + 1;
+  const ticked = tickTags(board, state.turn, state.turnNumber);
+  events = [...events, ...ticked.events];
   return {
     state: {
       ...state,
-      board,
+      board: ticked.board,
       turn: next,
       turnNumber,
       enPassant,
@@ -86,7 +91,20 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   }
 
   const board: (Piece | null)[] = [...state.board];
-  let captured = board[cmd.to];
+  const victimSquare =
+    target.special?.kind === 'enPassant' ? squareAt(fileOf(cmd.to), rankOf(cmd.from))! : cmd.to;
+  const victim = board[victimSquare];
+
+  // A shield absorbs the capture: it breaks, the target stays, the attacker does not move,
+  // and the move still uses up the turn.
+  if (victim && isShielded(victim)) {
+    board[victimSquare] = withoutTag(victim, SHIELD);
+    const events: GameEvent[] = [{ type: 'shieldBroken', pieceId: victim.id, at: victimSquare, attackerId: piece.id }];
+    events.push(...checkEvents(board, piece.color));
+    return { ok: true, ...passTurn(state, board, null, events) };
+  }
+
+  const captured = victim;
   let special: MoveSpecial | undefined = target.special;
   const touched = [cmd.from, cmd.to];
 
@@ -95,10 +113,8 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   if (promotes) special = { kind: 'promotion', to: cmd.promotion! };
 
   if (target.special?.kind === 'enPassant') {
-    const victim = squareAt(fileOf(cmd.to), rankOf(cmd.from))!;
-    captured = board[victim];
-    board[victim] = null;
-    touched.push(victim);
+    board[victimSquare] = null;
+    touched.push(victimSquare);
   }
 
   if (target.special?.kind === 'castle') {
@@ -113,6 +129,8 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   const events: GameEvent[] = [
     { type: 'moved', pieceId: piece.id, from: cmd.from, to: cmd.to, captured, ...(special && { special }) },
   ];
+  // Whoever rode the captured piece falls with it.
+  if (captured?.rider) events.push({ type: 'removed', piece: captured.rider, at: victimSquare });
 
   if (captured?.type === 'king') {
     events.push({ type: 'kingCaptured', winner: piece.color });
@@ -135,7 +153,10 @@ function propose(state: GameState, cmd: Extract<Command, { type: 'proposeSpecial
   const action = cmd.action.trim();
   if (!action) return { ok: false, reason: 'emptyAction' };
   if (action.length > state.rules.actionMaxLength) return { ok: false, reason: 'actionTooLong' };
-  const problem = validateRuling(state.board, cmd.ruling, state.rules);
+  const problem = validateRuling(state.board, cmd.ruling, state.rules, {
+    turnNumber: state.turnNumber,
+    nextSpawnId: state.nextSpawnId,
+  });
   if (problem) return { ok: false, reason: 'invalidRuling', detail: problem };
 
   const pending = { color: state.turn, action, ruling: cmd.ruling };
@@ -155,12 +176,14 @@ function attempt(state: GameState, roll: number): CommandResult {
   const success = roll >= ruling.dc;
   let board = state.board;
   let castling = state.castling;
+  let nextSpawnId = state.nextSpawnId;
   const effectEvents: GameEvent[] = [];
   if (success) {
-    const applied = applyEffects(board, ruling.effects);
+    const applied = applyEffects(board, ruling.effects, { turnNumber: state.turnNumber, nextSpawnId });
     // Validated on proposal and nothing can change the board while pending, so this is an invariant.
     if (!applied.ok) return { ok: false, reason: 'invalidRuling', detail: applied.detail };
     board = applied.board;
+    nextSpawnId = applied.nextSpawnId;
     castling = revokeCastling(castling, applied.touched);
     effectEvents.push(...applied.events, ...checkEvents(board, color));
   }
@@ -184,6 +207,7 @@ function attempt(state: GameState, roll: number): CommandResult {
       ...state,
       board,
       castling,
+      nextSpawnId,
       ap: { ...state.ap, [color]: state.ap[color] - ruling.cost },
       usedApThisTurn: true,
       pending: null,

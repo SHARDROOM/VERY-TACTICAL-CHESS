@@ -34,6 +34,10 @@ export interface LogEntry {
 export function describeEvents(events: GameEvent[], pieceType: (id: string) => PieceType | undefined): LogEntry[] {
   const out: LogEntry[] = [];
   const add = (text: string, tone: LogTone = 'normal') => out.push({ text, tone });
+  const name = (id: string) => {
+    const t = pieceType(id);
+    return t ? PIECE_NAME[t] : '기물';
+  };
   for (const e of events) {
     switch (e.type) {
       case 'moved': {
@@ -49,6 +53,32 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
       }
       case 'removed':
         add(`${COLOR_NAME[e.piece.color]} ${PIECE_NAME[e.piece.type]}(${squareName(e.at)}) 제거됨`);
+        break;
+      case 'tagged': {
+        const who = name(e.pieceId);
+        add(`🏷 ${who}(${squareName(e.at)})에 '${e.tag}' ${e.turns === null ? '(영구)' : `(${e.turns}턴)`}`);
+        break;
+      }
+      case 'untagged':
+        add(`${name(e.pieceId)}(${squareName(e.at)})의 '${e.tag}' 태그가 사라짐`);
+        break;
+      case 'tagExpired':
+        add(`⌛ ${name(e.pieceId)}의 '${e.tag}' 효과가 끝남`);
+        break;
+      case 'boarded':
+        add(`🐎 ${josa(name(e.riderId), '이/가')} ${squareName(e.at)}의 ${name(e.carrierId)}에 올라탐`);
+        break;
+      case 'unboarded':
+        add(`${josa(name(e.riderId), '이/가')} ${squareName(e.from)}에서 ${josa(squareName(e.to), '으로/로')} 내림`);
+        break;
+      case 'transformed':
+        add(`✨ ${squareName(e.at)}의 ${josa(PIECE_NAME[e.from], '이/가')} ${josa(PIECE_NAME[e.to], '으로/로')} 변함`);
+        break;
+      case 'spawned':
+        add(`✨ ${squareName(e.at)}에 ${COLOR_NAME[e.piece.color]} ${PIECE_NAME[e.piece.type]} 등장`);
+        break;
+      case 'shieldBroken':
+        add(`🛡 ${name(e.pieceId)}(${squareName(e.at)})의 보호막이 공격을 막고 깨짐`, 'warn');
         break;
       case 'check':
         add(`체크! ${COLOR_NAME[e.color]} 킹이 공격받고 있습니다.`, 'warn');

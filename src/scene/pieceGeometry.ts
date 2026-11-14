@@ -152,3 +152,13 @@ export function pieceParts(type: PieceType): PiecePart[] {
   }
   return parts;
 }
+
+/** Approximate top of each piece (after the vertical stretch), used to stack riders and tag effects. */
+export const PIECE_HEIGHT: Record<PieceType, number> = {
+  pawn: 0.8,
+  knight: 1.1,
+  bishop: 1.2,
+  rook: 0.95,
+  queen: 1.35,
+  king: 1.58,
+};

@@ -22,6 +22,7 @@ interface Props {
   checkedKing: Square | null;
   camera: CameraRequest;
   onSquareClick: (sq: Square) => void;
+  onHoverSquare: (sq: Square | null) => void;
 }
 
 const LIGHT = '#d4bf98';
@@ -83,7 +84,7 @@ function LabeledFrame() {
   );
 }
 
-export function BoardScene({ board, selected, targets, checkedKing, camera, onSquareClick }: Props) {
+export function BoardScene({ board, selected, targets, checkedKing, camera, onSquareClick, onHoverSquare }: Props) {
   const click = (sq: Square) => (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
     onSquareClick(sq);
@@ -137,6 +138,7 @@ export function BoardScene({ board, selected, targets, checkedKing, camera, onSq
             position={squareToWorld(sq)}
             selected={sq === selected}
             onClick={click(sq)}
+            onHover={(on) => onHoverSquare(on ? sq : null)}
           />
         ) : null,
       )}

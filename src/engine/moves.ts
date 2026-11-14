@@ -1,6 +1,7 @@
 import type { Board, Color, GameState, MoveSpecial, Square } from './types';
 import { fileOf, rankOf, squareAt } from './squares';
 import { KING_START, ROOK_START } from './castling';
+import { isStunned } from './tags';
 
 const KNIGHT_STEPS = [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]];
 const KING_STEPS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
@@ -15,7 +16,8 @@ const BISHOP_DIRS = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
  */
 export function movesFrom(board: Board, from: Square): Square[] {
   const piece = board[from];
-  if (!piece) return [];
+  // A stunned piece cannot move, so it attacks nothing either.
+  if (!piece || isStunned(piece)) return [];
   const f = fileOf(from);
   const r = rankOf(from);
   const out: Square[] = [];
@@ -109,7 +111,7 @@ export interface Target {
 export function legalTargets(state: GameState, from: Square): Target[] {
   const { board } = state;
   const piece = board[from];
-  if (!piece) return [];
+  if (!piece || isStunned(piece)) return [];
   const out: Target[] = movesFrom(board, from).map((to) => ({ to }));
 
   if (piece.type === 'pawn' && state.enPassant !== null) {
@@ -139,7 +141,7 @@ export function legalTargets(state: GameState, from: Square): Target[] {
     ];
     for (const s of sides) {
       const rook = board[s.rook];
-      if (!s.allowed || rook?.type !== 'rook' || rook.color !== piece.color) continue;
+      if (!s.allowed || rook?.type !== 'rook' || rook.color !== piece.color || isStunned(rook)) continue;
       if (s.between.some((f) => board[squareAt(f, rank)!])) continue;
       out.push({ to: squareAt(s.kingTo, rank)!, special: { kind: 'castle', side: s.side } });
     }

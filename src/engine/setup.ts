@@ -30,6 +30,7 @@ export function createInitialState(rules: RuleConfig = DEFAULT_RULES): GameState
     castling: FULL_CASTLING,
     enPassant: null,
     ap: initialAp(rules),
+    nextSpawnId: 1,
     usedApThisTurn: false,
     pending: null,
   };
@@ -64,6 +65,7 @@ export function createStateFrom(
     },
     enPassant: null,
     ap: { white: 0, black: 0 },
+    nextSpawnId: 1,
     usedApThisTurn: false,
     pending: null,
     ...extra,

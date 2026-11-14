@@ -1,19 +1,13 @@
+import type { z } from 'zod';
 import type { GameState } from '../engine';
+import type { GmEffectSchema, GmRulingSchema } from './schema';
 
 /**
  * The ruling exactly as a GM (LLM or fake) returns it: plain JSON with
  * algebraic squares ("e4"). `parseGmRuling` turns it into an engine Ruling.
  */
-export interface GmRulingJson {
-  interpretation: string;
-  feasible: boolean;
-  dc: number;
-  cost: number;
-  effects: GmEffectJson[];
-  narration: { success: string; failure: string };
-}
-
-export type GmEffectJson = { type: 'move'; from: string; to: string } | { type: 'remove'; at: string };
+export type GmRulingJson = z.infer<typeof GmRulingSchema>;
+export type GmEffectJson = z.infer<typeof GmEffectSchema>;
 
 export interface GmRequest {
   /** The player's declaration, as typed. */
@@ -21,7 +15,7 @@ export interface GmRequest {
   state: GameState;
 }
 
-/** Anything that can rule on special actions. Real LLM providers implement this in later tickets. */
+/** Anything that can rule on special actions. */
 export interface GameMaster {
   readonly name: string;
   /** Returns raw JSON-like data; callers must run it through parseGmRuling. */

@@ -10,6 +10,7 @@ import {
   type Color,
   type Command,
   type GameState,
+  type Piece,
   type PromotionType,
   type Square,
 } from './engine';
@@ -21,6 +22,7 @@ import { OpenAiGameMaster } from './gm/openaiGm';
 import { GeminiGameMaster } from './gm/geminiGm';
 import { GmError } from './gm/errors';
 import { GmSettings, type GmConfig } from './ui/GmSettings';
+import { PieceInfo } from './ui/PieceInfo';
 import { parseGmRuling } from './gm/parse';
 import type { GameMaster } from './gm/types';
 import { rollD20, successChance } from './dice';
@@ -32,6 +34,15 @@ interface LogLine extends LogEntry {
 }
 
 let nextLogId = 1;
+
+/** A piece on the board or riding on one. */
+function findPiece(board: GameState['board'], id: string): Piece | undefined {
+  for (const p of board) {
+    if (p?.id === id) return p;
+    if (p?.rider?.id === id) return p.rider;
+  }
+  return undefined;
+}
 
 function createGm(config: GmConfig): GameMaster {
   switch (config.provider) {
@@ -84,6 +95,7 @@ export default function App() {
   // The API key lives only here, in memory: never persisted.
   const [gmConfig, setGmConfig] = useState<GmConfig>({ provider: 'fake' });
   const [showGmSettings, setShowGmSettings] = useState(false);
+  const [hovered, setHovered] = useState<Square | null>(null);
   const gm = useMemo(() => createGm(gmConfig), [gmConfig]);
 
   const targets = useMemo(
@@ -108,7 +120,7 @@ export default function App() {
       say(REJECT_MESSAGE[result.reason] + (result.detail ? ` (${result.detail})` : ''), 'error');
       return null;
     }
-    const typeOf = (id: string) => from.board.find((p) => p?.id === id)?.type;
+    const typeOf = (id: string) => findPiece(from.board, id)?.type ?? findPiece(result.state.board, id)?.type;
     addLog(describeEvents(result.events, typeOf));
     const exposed = result.events.find((e) => e.type === 'ownKingExposed');
     if (exposed) setWarning('방금 행동으로 내 킹이 공격받는 위치에 놓였습니다.');
@@ -212,6 +224,7 @@ export default function App() {
         checkedKing={checkedKing}
         camera={camera}
         onSquareClick={onSquareClick}
+        onHoverSquare={setHovered}
       />
 
       <header className="hud top">
@@ -230,6 +243,12 @@ export default function App() {
         )}
         {warning && !winner && <div className="badge warn">⚠ {warning}</div>}
       </header>
+
+      {(() => {
+        const sq = hovered ?? selected;
+        const piece = sq === null ? null : game.board[sq];
+        return piece ? <PieceInfo piece={piece} square={sq!} /> : null;
+      })()}
 
       <div className="hud camera-buttons">
         <button onClick={() => setShowGmSettings(true)} disabled={gmBusy} title="GM 설정">
