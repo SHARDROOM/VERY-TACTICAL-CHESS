@@ -50,7 +50,7 @@ function online(gm = new TestGm(), roll = () => 20) {
   const host = new HostSession(gm, { code: 'ABC234', link: 'http://x/#room=ABC234', roll, heartbeatMs: 0 });
   const hostRec = record(host);
   host.attachGuest(spy(hostEnd, sentToGuest));
-  const guest = new GuestSession(spy(guestEnd, sentToHost), undefined, 0);
+  const guest = new GuestSession(spy(guestEnd, sentToHost), { heartbeatMs: 0 });
   const guestRec = record(guest);
   return { gm, host, guest, hostRec, guestRec, sentToGuest, sentToHost, hostEnd, guestEnd };
 }
@@ -236,7 +236,7 @@ describe('liveness', () => {
       const [hostEnd, guestEnd] = memoryChannelPair();
       const host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', heartbeatMs: 1000, silenceTimeoutMs: 5000 });
       host.attachGuest(hostEnd);
-      const guest = new GuestSession(guestEnd, undefined, 1000, 5000);
+      const guest = new GuestSession(guestEnd, { heartbeatMs: 1000, silenceTimeoutMs: 5000 });
       await vi.advanceTimersByTimeAsync(20_000);
       expect(host.view().connection).toEqual({ kind: 'connected' });
       expect(guest.view().connection).toEqual({ kind: 'connected' });

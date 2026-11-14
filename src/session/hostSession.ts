@@ -1,4 +1,4 @@
-import { opponent, type Color } from '../engine';
+import { opponent, type Color, type GameState } from '../engine';
 import { rollD20 } from '../dice';
 import type { GameMaster } from '../gm/types';
 import { Authority, type AuthorityEvent } from './authority';
@@ -11,6 +11,8 @@ import type { ConnectionStatus, Request, Session, SessionView } from './types';
 export interface HostOptions {
   code: string;
   link: string;
+  /** Resume a saved game instead of starting fresh. */
+  initialState?: GameState;
   roll?: () => number;
   /** Liveness ping interval; 0 turns it off. Default 10 s. */
   heartbeatMs?: number;
@@ -18,6 +20,11 @@ export interface HostOptions {
   silenceTimeoutMs?: number;
   /** Called on dispose, e.g. to close the room on the signalling server. */
   onDispose?: () => void;
+}
+
+interface GuestLink {
+  channel: Channel;
+  id: string | undefined;
 }
 
 /**
@@ -29,11 +36,11 @@ export class HostSession implements Session {
   readonly hostColor: Color = 'white';
   private readonly emitter = new Emitter();
   private readonly authority: Authority;
-  private guest: Channel | null = null;
+  private guest: GuestLink | null = null;
   private connection: ConnectionStatus;
 
   constructor(gm: GameMaster, private readonly options: HostOptions) {
-    this.authority = new Authority(gm, options.roll ?? rollD20, (e) => this.onAuthority(e));
+    this.authority = new Authority(gm, options.roll ?? rollD20, (e) => this.onAuthority(e), options.initialState);
     this.connection = { kind: 'waiting', code: options.code, link: options.link, guestLeft: false };
   }
 
@@ -54,42 +61,53 @@ export class HostSession implements Session {
 
   subscribe = (listener: Parameters<Emitter['subscribe']>[0]) => this.emitter.subscribe(listener);
 
-  /** A guest connected to the room. One guest at a time; a guest who left can come back. */
+  /**
+   * Someone connected to the room. Whether they get the guest seat is decided at
+   * their hello: free seat, or the same player (same id) coming back, gets it;
+   * anyone else while the seat is taken is turned away.
+   */
   attachGuest(channel: Channel): void {
-    if (this.guest) {
-      channel.send({ t: 'full' } satisfies HostMessage);
-      setTimeout(() => channel.close(), 200);
-      return;
-    }
-    this.guest = channel;
     const heartbeat = startHeartbeat(channel, this.options.heartbeatMs ?? 10_000, this.options.silenceTimeoutMs);
     channel.onMessage((raw) => {
-      if (this.guest !== channel) return;
       heartbeat.seen();
       const msg = parseGuestMessage(raw);
       if (!msg || msg.t === 'ping') return;
-      if (msg.t === 'hello') {
-        this.send({
-          t: 'welcome',
-          v: PROTOCOL_VERSION,
-          color: this.guestColor,
-          state: this.authority.state,
-          gmName: this.authority.gm.name,
-          busy: this.authority.busy,
-        });
-        this.setConnection({ kind: 'connected' });
-        this.emitter.emit({ kind: 'notice', text: '상대가 방에 들어왔습니다.', tone: 'normal' });
-      } else {
-        void this.authority.handle(msg.req, this.guestColor);
-      }
+      if (msg.t === 'hello') return this.onHello(channel, msg.id);
+      if (this.guest?.channel === channel) void this.authority.handle(msg.req, this.guestColor);
     });
     channel.onClose(() => {
       heartbeat.stop();
-      if (this.guest !== channel) return;
+      if (this.guest?.channel !== channel) return;
       this.guest = null;
       this.setConnection({ kind: 'waiting', code: this.options.code, link: this.options.link, guestLeft: true });
       this.emitter.emit({ kind: 'notice', text: '상대와의 연결이 끊겼습니다. 같은 방 코드로 다시 들어올 수 있습니다.', tone: 'warn' });
     });
+  }
+
+  private onHello(channel: Channel, id: string | undefined): void {
+    const current = this.guest;
+    const returning = !!current && !!id && current.id === id;
+    if (current && current.channel !== channel && !returning) {
+      channel.send({ t: 'full' } satisfies HostMessage);
+      setTimeout(() => channel.close(), 200);
+      return;
+    }
+    if (current && current.channel !== channel) {
+      // The same player on a new connection (refresh, network change): the old link is stale.
+      this.guest = null;
+      current.channel.close();
+    }
+    this.guest = { channel, id };
+    channel.send({
+      t: 'welcome',
+      v: PROTOCOL_VERSION,
+      color: this.guestColor,
+      state: this.authority.state,
+      gmName: this.authority.gm.name,
+      busy: this.authority.busy,
+    } satisfies HostMessage);
+    this.setConnection({ kind: 'connected' });
+    this.emitter.emit({ kind: 'notice', text: returning ? '상대가 다시 들어왔습니다.' : '상대가 방에 들어왔습니다.', tone: 'normal' });
   }
 
   request(req: Request): void {
@@ -107,13 +125,14 @@ export class HostSession implements Session {
   }
 
   dispose(): void {
-    this.guest?.close();
+    const guest = this.guest;
     this.guest = null;
+    guest?.channel.close();
     this.options.onDispose?.();
   }
 
   private send(msg: HostMessage): void {
-    this.guest?.send(msg);
+    this.guest?.channel.send(msg);
   }
 
   private setConnection(c: ConnectionStatus): void {

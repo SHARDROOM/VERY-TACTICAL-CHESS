@@ -99,30 +99,52 @@ function waitFor<T>(start: (resolve: (v: T) => void, reject: (e: unknown) => voi
 
 export interface OpenRoom {
   code: string;
+  /** False when a requested code could not be reclaimed and a new one was used instead. */
+  reusedCode: boolean;
   close(): void;
 }
 
-/** Host: registers a room code on the signalling server and hands each incoming guest to `onGuest`. */
-export async function openRoom(onGuest: (channel: Channel) => void): Promise<OpenRoom> {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const code = newRoomCode();
-    const peer = new Peer(peerIdFor(code), peerOptions());
-    try {
-      await waitFor<void>((resolve, reject) => {
-        peer.once('open', () => resolve());
-        peer.once('error', reject);
-      });
-    } catch (err) {
-      peer.destroy();
-      if ((err as { type?: string }).type === 'unavailable-id') continue; // code taken: try another
-      throw new Error(describePeerError(err));
-    }
-    peer.on('connection', (conn) => conn.once('open', () => onGuest(wrap(conn))));
-    // Stay reachable if the signalling socket drops; open games keep running over WebRTC.
-    peer.on('disconnected', () => {
-      if (!peer.destroyed) peer.reconnect();
+async function tryOpen(code: string, onGuest: (channel: Channel) => void): Promise<OpenRoom | 'taken'> {
+  const peer = new Peer(peerIdFor(code), peerOptions());
+  try {
+    await waitFor<void>((resolve, reject) => {
+      peer.once('open', () => resolve());
+      peer.once('error', reject);
     });
-    return { code, close: () => peer.destroy() };
+  } catch (err) {
+    peer.destroy();
+    if ((err as { type?: string }).type === 'unavailable-id') return 'taken';
+    throw new Error(describePeerError(err));
+  }
+  peer.on('connection', (conn) => conn.once('open', () => onGuest(wrap(conn))));
+  // Stay reachable if the signalling socket drops; open games keep running over WebRTC.
+  peer.on('disconnected', () => {
+    if (!peer.destroyed) peer.reconnect();
+  });
+  return { code, reusedCode: false, close: () => peer.destroy() };
+}
+
+/**
+ * Host: registers a room code on the signalling server and hands each incoming guest to `onGuest`.
+ * With `preferredCode` (resuming a saved room) it keeps trying that code for a while: after a reload
+ * the server may still hold the old registration for a few seconds. If it never frees up, a new
+ * code is used and `reusedCode` is false.
+ */
+export async function openRoom(
+  onGuest: (channel: Channel) => void,
+  options: { preferredCode?: string; onWaiting?: (attempt: number) => void } = {},
+): Promise<OpenRoom> {
+  if (options.preferredCode) {
+    for (let attempt = 1; attempt <= 10; attempt++) {
+      const room = await tryOpen(options.preferredCode, onGuest);
+      if (room !== 'taken') return { ...room, reusedCode: true };
+      options.onWaiting?.(attempt);
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const room = await tryOpen(newRoomCode(), onGuest);
+    if (room !== 'taken') return room;
   }
   throw new Error('방 코드를 만들지 못했습니다. 다시 시도해 주세요.');
 }

@@ -3,7 +3,8 @@ import type { NoticeTone, Request } from './types';
 
 export const PROTOCOL_VERSION = 1;
 
-export type GuestMessage = { t: 'hello'; v: number } | { t: 'req'; req: Request } | { t: 'ping' };
+/** `id` is a random per-browser id, so a guest coming back can be told apart from a stranger. */
+export type GuestMessage = { t: 'hello'; v: number; id?: string } | { t: 'req'; req: Request } | { t: 'ping' };
 
 export type HostMessage =
   | { t: 'welcome'; v: number; color: Color; state: GameState; gmName: string; busy: boolean }
@@ -20,7 +21,11 @@ const isSquare = (v: unknown) => typeof v === 'number' && Number.isInteger(v) &&
 /** The host must not trust anything the guest sends: this is the only door in. */
 export function parseGuestMessage(raw: unknown): GuestMessage | null {
   if (!isObj(raw)) return null;
-  if (raw.t === 'hello') return typeof raw.v === 'number' ? { t: 'hello', v: raw.v } : null;
+  if (raw.t === 'hello') {
+    if (typeof raw.v !== 'number') return null;
+    const id = typeof raw.id === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(raw.id) ? raw.id : undefined;
+    return id ? { t: 'hello', v: raw.v, id } : { t: 'hello', v: raw.v };
+  }
   if (raw.t === 'ping') return { t: 'ping' };
   if (raw.t !== 'req' || !isObj(raw.req)) return null;
   const r = raw.req;

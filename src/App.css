@@ -137,3 +137,6 @@ button.big { padding: 12px; font-size: 1.02em; }
 .badge.me { background: var(--panel); border: 1px solid #44454f; }
 .badge.me-white { border-left: 4px solid #ece4cf; }
 .badge.me-black { border-left: 4px solid #55555f; }
+
+.saved-card { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: rgba(201, 162, 39, 0.08); border: 1px solid rgba(201, 162, 39, 0.45); border-radius: 10px; padding: 10px 12px; }
+.saved-actions { display: flex; align-items: center; gap: 6px; }

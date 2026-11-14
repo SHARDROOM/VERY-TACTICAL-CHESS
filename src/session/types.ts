@@ -19,6 +19,8 @@ export type ConnectionStatus =
   /** Guest: connected to the host, waiting for the welcome. */
   | { kind: 'connecting' }
   | { kind: 'connected' }
+  /** Guest: the host went away; the game is paused while we keep trying to reconnect. */
+  | { kind: 'paused'; reason: string }
   | { kind: 'disconnected'; reason: string };
 
 export interface SessionView {

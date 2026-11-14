@@ -1,4 +1,5 @@
 import { rollD20 } from '../dice';
+import type { GameState } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { Authority, type AuthorityEvent } from './authority';
 import { Emitter } from './emitter';
@@ -9,8 +10,8 @@ export class LocalSession implements Session {
   private readonly emitter = new Emitter();
   private readonly authority: Authority;
 
-  constructor(gm: GameMaster, roll: () => number = rollD20) {
-    this.authority = new Authority(gm, roll, (e) => this.onAuthority(e));
+  constructor(gm: GameMaster, roll: () => number = rollD20, initialState?: GameState) {
+    this.authority = new Authority(gm, roll, (e) => this.onAuthority(e), initialState);
   }
 
   view(): SessionView {

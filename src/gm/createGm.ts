@@ -4,8 +4,10 @@ import { ClaudeGameMaster } from './claudeGm';
 import { OpenAiGameMaster } from './openaiGm';
 import { GeminiGameMaster } from './geminiGm';
 import { FakeGameMaster } from './fakeGm';
+import { MissingKeyGameMaster } from './missingKeyGm';
 
 export function createGm(config: GmConfig): GameMaster {
+  if (config.provider !== 'fake' && !config.apiKey) return new MissingKeyGameMaster(PROVIDER_LABEL[config.provider]);
   switch (config.provider) {
     case 'claude':
       return new ClaudeGameMaster({ apiKey: config.apiKey, model: config.model, effort: config.effort });

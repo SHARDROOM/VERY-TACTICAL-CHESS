@@ -56,9 +56,13 @@ interface Props {
   gmConfig: GmConfig;
   onGmConfig: (config: GmConfig) => void;
   onLeave: () => void;
+  /** Open the GM settings right away (a resumed game whose API key must be typed again). */
+  openGmSettings?: boolean;
+  /** A line to show in the log when the screen opens. */
+  startNotice?: string | null;
 }
 
-export function GameScreen({ session, gmConfig, onGmConfig, onLeave }: Props) {
+export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSettings = false, startNotice = null }: Props) {
   const [view, setView] = useState<SessionView>(() => session.view());
   const game = view.state;
   const seat = view.seat;
@@ -67,13 +71,13 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave }: Props) {
 
   const [selected, setSelected] = useState<Square | null>(null);
   const [hovered, setHovered] = useState<Square | null>(null);
-  const [log, setLog] = useState<LogLine[]>([]);
+  const [log, setLog] = useState<LogLine[]>(() => (startNotice ? [{ id: nextLogId++, text: startNotice, tone: 'warn' }] : []));
   const [text, setText] = useState('');
   const [camera, setCamera] = useState<CameraRequest>({ mode: 'side', side: homeSide, nonce: 0 });
   const [warning, setWarning] = useState<string | null>(null);
   const [lastRoll, setLastRoll] = useState<{ roll: number; outcome: Outcome } | null>(null);
   const [showPrecedents, setShowPrecedents] = useState(false);
-  const [showGmSettings, setShowGmSettings] = useState(false);
+  const [showGmSettings, setShowGmSettings] = useState(openGmSettings);
   const [promotionChoice, setPromotionChoice] = useState<{ from: Square; to: Square } | null>(null);
   const [copied, setCopied] = useState(false);
   const logRef = useRef<HTMLOListElement>(null);
@@ -412,6 +416,17 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave }: Props) {
               <button onClick={() => setShowGmSettings(true)}>⚙ GM 설정</button>
               <button onClick={onLeave}>방 닫기</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {conn.kind === 'paused' && (
+        <div className="overlay">
+          <div className="dialog">
+            <h2>게임 일시정지</h2>
+            <p>{conn.reason} 방장이 돌아오면 자동으로 이어집니다.</p>
+            <p className="muted-line">다시 연결을 시도하고 있습니다…</p>
+            <button onClick={onLeave}>나가기</button>
           </div>
         </div>
       )}

@@ -7,7 +7,9 @@ import { LocalSession } from './session/localSession';
 import { HostSession } from './session/hostSession';
 import { GuestSession } from './session/guestSession';
 import { inviteLink, joinRoom, normalizeRoomCode, openRoom } from './session/peerTransport';
+import { browserId, clearSavedGame, gmForSave, gmFromSave, loadSavedGame, saveGame, type SavedGame } from './session/storage';
 import type { Session } from './session/types';
+import { rollD20 } from './dice';
 import './App.css';
 
 function roomFromHash(): string | null {
@@ -19,6 +21,9 @@ function clearHash() {
   history.replaceState(null, '', `${location.pathname}${location.search}`);
 }
 
+/** How the current game is saved (only the side that runs the game saves it). */
+type SaveTarget = { kind: 'hotseat' } | { kind: 'host'; code: string } | null;
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   // The API key lives only here, in memory: never persisted, never sent to the other player.
@@ -26,30 +31,92 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState(0);
+  const [saved, setSaved] = useState<SavedGame | null>(() => loadSavedGame());
+  const [askForKey, setAskForKey] = useState(false);
+  const [startNotice, setStartNotice] = useState<string | null>(null);
   const autoJoined = useRef(false);
+  const saveTarget = useRef<SaveTarget>(null);
+  const gmRef = useRef(gmConfig);
+  gmRef.current = gmConfig;
 
-  const start = (s: Session) => {
+  const start = (s: Session, target: SaveTarget, notice: string | null = null) => {
     setError(null);
     setBusy(null);
+    saveTarget.current = target;
+    setStartNotice(notice);
     setSessionId((n) => n + 1);
     setSession(s);
   };
 
-  const hotseat = () => start(new LocalSession(createGm(gmConfig)));
+  // Auto-save: after every change, the side that runs the game writes a snapshot.
+  useEffect(() => {
+    if (!session) return;
+    let last = session.view().state;
+    const write = () => {
+      const target = saveTarget.current;
+      if (!target) return;
+      const state = session.view().state;
+      saveGame({ kind: target.kind, code: target.kind === 'host' ? target.code : undefined, state, gm: gmForSave(gmRef.current) });
+      last = state;
+    };
+    write();
+    return session.subscribe((e) => {
+      if (e.kind === 'notice') return;
+      if (session.view().state !== last) write();
+    });
+  }, [session]);
 
-  const host = async () => {
+  const resumeGm = (game: SavedGame | null): GmConfig => {
+    const config = game ? gmFromSave(game.gm) : gmConfig;
+    setGmConfig(config);
+    setAskForKey(config.provider !== 'fake' && !config.apiKey);
+    return config;
+  };
+
+  const keyNotice = (config: GmConfig) =>
+    config.provider !== 'fake' && !config.apiKey ? ' API 키는 저장되지 않으므로 ⚙ GM 설정에서 다시 입력해 주세요.' : '';
+
+  const hotseat = (resume: SavedGame | null = null) => {
+    const config = resumeGm(resume);
+    start(
+      new LocalSession(createGm(config), rollD20, resume?.state),
+      { kind: 'hotseat' },
+      resume ? `저장된 게임을 이어 갑니다.${keyNotice(config)}` : null,
+    );
+  };
+
+  const host = async (resume: SavedGame | null = null) => {
     setError(null);
-    setBusy('방을 여는 중…');
+    setBusy(resume?.code ? `방 ${resume.code}을(를) 다시 여는 중…` : '방을 여는 중…');
+    const config = resumeGm(resume);
     let hostSession: HostSession | null = null;
     const pendingGuests: Parameters<HostSession['attachGuest']>[0][] = [];
     try {
-      const room = await openRoom((channel) => {
-        if (hostSession) hostSession.attachGuest(channel);
-        else pendingGuests.push(channel);
+      const room = await openRoom(
+        (channel) => {
+          if (hostSession) hostSession.attachGuest(channel);
+          else pendingGuests.push(channel);
+        },
+        {
+          preferredCode: resume?.code,
+          onWaiting: (n) => setBusy(`방 ${resume?.code}을(를) 다시 여는 중… 이전 연결이 정리되기를 기다리고 있습니다 (${n}/10)`),
+        },
+      );
+      hostSession = new HostSession(createGm(config), {
+        code: room.code,
+        link: inviteLink(room.code),
+        initialState: resume?.state,
+        onDispose: room.close,
       });
-      hostSession = new HostSession(createGm(gmConfig), { code: room.code, link: inviteLink(room.code), onDispose: room.close });
       pendingGuests.forEach((c) => hostSession!.attachGuest(c));
-      start(hostSession);
+      let notice: string | null = null;
+      if (resume) {
+        notice = room.reusedCode
+          ? `저장된 게임을 같은 방 코드(${room.code})로 다시 열었습니다. 상대가 자동으로 다시 연결됩니다.`
+          : `이전 방 코드를 다시 쓸 수 없어 새 코드 ${room.code}로 열었습니다. 친구에게 새 링크를 보내 주세요.`;
+        notice += keyNotice(config);
+      }
+      start(hostSession, { kind: 'host', code: room.code }, notice);
     } catch (err) {
       setBusy(null);
       setError(err instanceof Error ? err.message : String(err));
@@ -59,9 +126,22 @@ export default function App() {
   const join = async (code: string) => {
     setError(null);
     setBusy(`방 ${code}에 연결하는 중…`);
+    let closePeer: (() => void) | null = null;
     try {
-      const { channel, close } = await joinRoom(code);
-      start(new GuestSession(channel, close));
+      const first = await joinRoom(code);
+      closePeer = first.close;
+      const guest = new GuestSession(first.channel, {
+        id: browserId(),
+        // If the host goes away (reload, network), keep knocking on the same room.
+        reconnect: async () => {
+          closePeer?.();
+          const next = await joinRoom(code);
+          closePeer = next.close;
+          return next.channel;
+        },
+        onDispose: () => closePeer?.(),
+      });
+      start(guest, null);
     } catch (err) {
       setBusy(null);
       setError(err instanceof Error ? err.message : String(err));
@@ -87,14 +167,43 @@ export default function App() {
   const leave = () => {
     session?.dispose();
     setSession(null);
+    saveTarget.current = null;
+    setSaved(loadSavedGame());
     clearHash();
   };
 
   const changeGm = (config: GmConfig) => {
     setGmConfig(config);
+    setAskForKey(false);
     session?.setGm(createGm(config));
   };
 
-  if (!session) return <Lobby busy={busy} error={error} onHotseat={hotseat} onHost={host} onJoin={join} />;
-  return <GameScreen key={sessionId} session={session} gmConfig={gmConfig} onGmConfig={changeGm} onLeave={leave} />;
+  if (!session) {
+    return (
+      <Lobby
+        busy={busy}
+        error={error}
+        saved={saved}
+        onHotseat={() => hotseat()}
+        onHost={() => void host()}
+        onJoin={join}
+        onResume={() => (saved?.kind === 'host' ? void host(saved) : hotseat(saved))}
+        onDiscard={() => {
+          clearSavedGame();
+          setSaved(null);
+        }}
+      />
+    );
+  }
+  return (
+    <GameScreen
+      key={sessionId}
+      session={session}
+      gmConfig={gmConfig}
+      onGmConfig={changeGm}
+      onLeave={leave}
+      openGmSettings={askForKey}
+      startNotice={startNotice}
+    />
+  );
 }
