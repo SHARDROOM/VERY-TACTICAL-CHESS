@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { CanvasTexture, SRGBColorSpace } from 'three';
 import { Canvas, type ThreeEvent } from '@react-three/fiber';
-import { CameraControls } from '@react-three/drei';
+import { CameraControls, Environment, Lightformer } from '@react-three/drei';
 import { fileOf, rankOf, type Board, type Color, type Square } from '../engine';
 import { squareToWorld } from './coords';
 import { PieceMesh } from './PieceMesh';
@@ -24,8 +24,8 @@ interface Props {
   onSquareClick: (sq: Square) => void;
 }
 
-const LIGHT = '#d9c7a3';
-const DARK = '#8a6a4a';
+const LIGHT = '#d4bf98';
+const DARK = '#7d5a3b';
 
 function CameraRig({ camera }: { camera: CameraRequest }) {
   const ref = useRef<CameraControls>(null);
@@ -92,7 +92,14 @@ export function BoardScene({ board, selected, targets, checkedKing, camera, onSq
   return (
     <Canvas shadows camera={{ position: [0, 8.5, 8], fov: 45 }}>
       <color attach="background" args={['#15161b']} />
-      <ambientLight intensity={0.55} />
+      <ambientLight intensity={0.35} />
+      {/* Procedural studio reflections: no downloaded HDR files. */}
+      <Environment resolution={256} environmentIntensity={0.55}>
+        <Lightformer form="rect" intensity={2.5} position={[0, 6, 0]} rotation-x={Math.PI / 2} scale={[10, 10, 1]} />
+        <Lightformer form="rect" intensity={1.2} position={[-6, 3, 3]} rotation-y={Math.PI / 2} scale={[8, 3, 1]} />
+        <Lightformer form="rect" intensity={1.2} position={[6, 3, -3]} rotation-y={-Math.PI / 2} scale={[8, 3, 1]} />
+        <Lightformer form="ring" intensity={0.8} color="#ffd9a0" position={[0, 2, 8]} scale={3} />
+      </Environment>
       <directionalLight position={[4, 10, 6]} intensity={1.4} castShadow shadow-mapSize={[2048, 2048]}>
         <orthographicCamera attach="shadow-camera" args={[-6, 6, 6, -6, 0.5, 30]} />
       </directionalLight>

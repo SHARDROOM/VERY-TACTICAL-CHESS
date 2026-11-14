@@ -2,9 +2,12 @@ import { useRef } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import type { Group } from 'three';
 import type { Piece } from '../engine';
-import { pieceBodyGeometry } from './pieceGeometry';
+import { pieceParts } from './pieceGeometry';
 
-const COLORS = { white: '#ece4cf', black: '#3b3b46' } as const;
+const LOOK = {
+  white: { body: '#efe5cf', accent: '#5a4632', sheen: 0.55 },
+  black: { body: '#2e2b31', accent: '#b89a5e', sheen: 0.75 },
+} as const;
 
 interface Props {
   piece: Piece;
@@ -14,12 +17,12 @@ interface Props {
 }
 
 /**
- * One chess piece. All piece visuals live here so they can later be swapped
- * for model files without touching the rest of the scene.
+ * One chess piece. All piece visuals live here and in pieceGeometry, so they
+ * can later be swapped for model files without touching the rest of the scene.
  */
 export function PieceMesh({ piece, position, selected, onClick }: Props) {
   const group = useRef<Group>(null);
-  const color = COLORS[piece.color];
+  const look = LOOK[piece.color];
   const lift = selected ? 0.25 : 0;
 
   // Glide toward the target square: gives every move a short animation.
@@ -32,8 +35,16 @@ export function PieceMesh({ piece, position, selected, onClick }: Props) {
     g.position.y += (position[1] + lift - g.position.y) * k;
   });
 
-  const facing = piece.color === 'white' ? Math.PI : 0;
-  const material = <meshStandardMaterial color={color} roughness={0.45} metalness={0.1} />;
+  // Knights look toward the opponent, turned toward the board's centre line so
+  // their profile (not the thin front) is what the players see.
+  const KNIGHT_TURN = 0.9;
+  const inward = position[0] < 0 ? 1 : -1;
+  const facing =
+    piece.type === 'knight'
+      ? piece.color === 'white'
+        ? Math.PI / 2 - inward * KNIGHT_TURN
+        : -Math.PI / 2 + inward * KNIGHT_TURN
+      : 0;
 
   return (
     <group
@@ -43,33 +54,18 @@ export function PieceMesh({ piece, position, selected, onClick }: Props) {
       onPointerOver={() => (document.body.style.cursor = 'pointer')}
       onPointerOut={() => (document.body.style.cursor = '')}
     >
-      <mesh geometry={pieceBodyGeometry(piece.type)} castShadow>
-        {material}
-      </mesh>
-      {piece.type === 'knight' && (
-        <group rotation={[0, facing, 0]}>
-          <mesh position={[0, 0.58, 0.02]} rotation={[0.35, 0, 0]} castShadow>
-            <boxGeometry args={[0.2, 0.36, 0.26]} />
-            {material}
+      <group rotation={[0, facing, 0]}>
+        {pieceParts(piece.type).map((part, i) => (
+          <mesh key={i} geometry={part.geometry} position={part.position} rotation={part.rotation} castShadow receiveShadow>
+            <meshPhysicalMaterial
+              color={part.accent ? look.accent : look.body}
+              roughness={0.32}
+              clearcoat={look.sheen}
+              clearcoatRoughness={0.25}
+            />
           </mesh>
-          <mesh position={[0, 0.66, 0.2]} rotation={[0.9, 0, 0]} castShadow>
-            <boxGeometry args={[0.17, 0.3, 0.16]} />
-            {material}
-          </mesh>
-        </group>
-      )}
-      {piece.type === 'king' && (
-        <>
-          <mesh position={[0, 1.1, 0]} castShadow>
-            <boxGeometry args={[0.06, 0.22, 0.06]} />
-            {material}
-          </mesh>
-          <mesh position={[0, 1.12, 0]} castShadow>
-            <boxGeometry args={[0.18, 0.06, 0.06]} />
-            {material}
-          </mesh>
-        </>
-      )}
+        ))}
+      </group>
     </group>
   );
 }
