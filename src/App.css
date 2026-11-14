@@ -95,7 +95,8 @@ button.primary:disabled { background: #2c2d36; color: var(--muted); border-color
 .settings .radio { display: flex; gap: 8px; align-items: center; cursor: pointer; }
 .settings .field { display: flex; flex-direction: column; gap: 4px; font-size: 0.9em; }
 .settings .field span { color: var(--muted); }
-.settings input[type='password'], .settings select {
+.settings .field small { color: var(--muted); font-size: 0.85em; }
+.settings input[type='password'], .settings input[list], .settings select {
   background: #101116; color: var(--text); border: 1px solid #44454f; border-radius: 8px; padding: 7px 10px; font: inherit;
 }
 .settings .notes { margin: 0; padding-left: 18px; color: var(--muted); font-size: 0.82em; display: flex; flex-direction: column; gap: 3px; }

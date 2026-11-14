@@ -16,7 +16,10 @@ import {
 import { BoardScene, type CameraRequest } from './scene/BoardScene';
 import { COLOR_NAME, PIECE_NAME, REJECT_MESSAGE, describeEvents, type LogEntry, type LogTone } from './ui/messages';
 import { FakeGameMaster } from './gm/fakeGm';
-import { ClaudeGameMaster, GmError } from './gm/claudeGm';
+import { ClaudeGameMaster } from './gm/claudeGm';
+import { OpenAiGameMaster } from './gm/openaiGm';
+import { GeminiGameMaster } from './gm/geminiGm';
+import { GmError } from './gm/errors';
 import { GmSettings, type GmConfig } from './ui/GmSettings';
 import { parseGmRuling } from './gm/parse';
 import type { GameMaster } from './gm/types';
@@ -31,10 +34,24 @@ interface LogLine extends LogEntry {
 let nextLogId = 1;
 
 function createGm(config: GmConfig): GameMaster {
-  return config.provider === 'claude'
-    ? new ClaudeGameMaster({ apiKey: config.apiKey, model: config.model, effort: config.effort })
-    : new FakeGameMaster();
+  switch (config.provider) {
+    case 'claude':
+      return new ClaudeGameMaster({ apiKey: config.apiKey, model: config.model, effort: config.effort });
+    case 'openai':
+      return new OpenAiGameMaster({ apiKey: config.apiKey, model: config.model });
+    case 'gemini':
+      return new GeminiGameMaster({ apiKey: config.apiKey, model: config.model });
+    case 'fake':
+      return new FakeGameMaster();
+  }
 }
+
+const PROVIDER_LABEL: Record<GmConfig['provider'], string> = {
+  claude: 'Claude GM',
+  openai: 'OpenAI GM',
+  gemini: 'Gemini GM',
+  fake: '가짜 GM',
+};
 
 function ApMeter({ color, ap, max, active }: { color: Color; ap: number; max: number; active: boolean }) {
   return (
@@ -216,7 +233,7 @@ export default function App() {
 
       <div className="hud camera-buttons">
         <button onClick={() => setShowGmSettings(true)} disabled={gmBusy} title="GM 설정">
-          ⚙ {gmConfig.provider === 'claude' ? 'Claude GM' : '가짜 GM'}
+          ⚙ {PROVIDER_LABEL[gmConfig.provider]}
         </button>
         <button onClick={() => setCamera((c) => ({ mode: 'side', side: game.turn, nonce: c.nonce + 1 }))}>시점 초기화</button>
         <button onClick={() => setCamera((c) => ({ ...c, mode: c.mode === 'top' ? 'side' : 'top', nonce: c.nonce + 1 }))}>
@@ -230,7 +247,7 @@ export default function App() {
             <li className="hint">
               기물을 클릭하거나 수를 입력하세요 (예: e2e4). 규칙 밖의 행동은 그대로 문장으로 쓰면 GM이 판정합니다.
               <br />
-              지금 GM: {gm.name}. 예: "b1 나이트를 투석기로 e5까지 날린다", "d7 폰을 저격한다". 진짜 GM은 ⚙ 버튼에서 Claude API 키를 넣으면 켜집니다.
+              지금 GM: {gm.name}. 예: "b1 나이트를 투석기로 e5까지 날린다", "d7 폰을 저격한다". 진짜 GM은 ⚙ 버튼에서 Claude, OpenAI, Gemini 중 하나의 API 키를 넣으면 켜집니다.
             </li>
           )}
           {log.map((l) => (

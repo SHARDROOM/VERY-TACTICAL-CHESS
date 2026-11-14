@@ -3,6 +3,10 @@ import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import type { GameMaster, GmRequest, GmRulingJson } from './types';
 import { GmRulingSchema } from './schema';
 import { buildSystemPrompt, buildUserMessage } from './prompt';
+import { GmError } from './errors';
+import { REFUSED, TRUNCATED, rulingFromText } from './llmReply';
+
+export { GmError };
 
 export const CLAUDE_MODELS = [
   { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 (기본, 가장 정확)' },
@@ -20,9 +24,6 @@ export interface ClaudeGmOptions {
   /** Injected in tests. */
   fetch?: typeof fetch;
 }
-
-/** An error whose message is already written for the player. */
-export class GmError extends Error {}
 
 /**
  * GM backed by the Claude Messages API, called straight from the host's browser
@@ -61,23 +62,11 @@ export class ClaudeGameMaster implements GameMaster {
       throw new GmError(describeApiError(err));
     }
 
-    if (response.stop_reason === 'refusal') {
-      throw new GmError('GM이 이 선언의 판정을 거절했습니다. 표현을 바꿔 다시 선언해 주세요.');
-    }
-    if (response.stop_reason === 'max_tokens') {
-      throw new GmError('GM의 응답이 너무 길어 중간에 끊겼습니다. 다시 시도해 주세요.');
-    }
+    if (response.stop_reason === 'refusal') throw new GmError(REFUSED);
+    if (response.stop_reason === 'max_tokens') throw new GmError(TRUNCATED);
     // Read content only after the stop reason says it is complete.
     const text = response.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
-    let json: unknown;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      throw new GmError('GM의 응답을 해석하지 못했습니다. 다시 시도해 주세요.');
-    }
-    const checked = GmRulingSchema.safeParse(json);
-    if (!checked.success) throw new GmError('GM의 응답 형식이 올바르지 않습니다. 다시 시도해 주세요.');
-    return checked.data;
+    return rulingFromText(text);
   }
 }
 

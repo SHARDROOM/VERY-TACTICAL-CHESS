@@ -3,6 +3,7 @@ import { createInitialState } from '../engine';
 import { ClaudeGameMaster, GmError } from './claudeGm';
 import { buildSystemPrompt, buildUserMessage } from './prompt';
 import { parseGmRuling } from './parse';
+import { fakeFetch, type Captured } from './fakeHttp';
 
 const ruling = {
   interpretation: '나이트가 투석기를 타고 날아간다',
@@ -12,27 +13,6 @@ const ruling = {
   effects: [{ type: 'move', from: 'b1', to: 'e5' }],
   narration: { success: '성공!', failure: '실패!' },
 };
-
-interface Captured {
-  url: string;
-  headers: Headers;
-  body: Record<string, any>;
-}
-
-/** A fake fetch that records the request and answers with a canned Messages API response. */
-function fakeFetch(reply: { status?: number; body: unknown }, captured: Captured[] = []): typeof fetch {
-  return (async (input: RequestInfo | URL, init?: RequestInit) => {
-    captured.push({
-      url: String(input),
-      headers: new Headers(init?.headers),
-      body: JSON.parse(String(init?.body ?? '{}')),
-    });
-    return new Response(JSON.stringify(reply.body), {
-      status: reply.status ?? 200,
-      headers: { 'content-type': 'application/json' },
-    });
-  }) as typeof fetch;
-}
 
 const message = (text: string, stop_reason = 'end_turn') => ({
   id: 'msg_test',
