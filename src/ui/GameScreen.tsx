@@ -29,6 +29,9 @@ import { skinRotationFor } from '../dice3d/d20';
 import type { ActiveRoll } from '../dice3d/DiceTray';
 import { CHAT_MAX_LENGTH, timeLeft, type Session, type SessionView, type TurnTimer } from '../session/types';
 import { ConnectionOverlay } from './ConnectionOverlay';
+import { DoodleToolbar } from './DoodleToolbar';
+import type { DoodleTool } from '../scene/DoodleLayer';
+import { DOODLE_COLORS, type DoodleOp } from '../session/doodle';
 import { clockText, rulesSummary } from './rules';
 
 interface LogLine extends LogEntry {
@@ -92,6 +95,10 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   tabRef.current = tab;
   const chat = view.chat;
   const [chatText, setChatText] = useState('');
+  /** The doodle tool in hand (null: the pointer moves the camera and the pieces). */
+  const [doodleTool, setDoodleTool] = useState<DoodleTool | null>(null);
+  const lastTool = useRef<DoodleTool>({ kind: 'pen', color: DOODLE_COLORS[1], width: 0.06, noteText: '' });
+  const onDoodle = useMemo(() => (op: DoodleOp) => session.doodle(op), [session]);
   /** A chaos event being announced across the screen. */
   const [chaosBanner, setChaosBanner] = useState<{ title: string; narration: string } | null>(null);
   const [unread, setUnread] = useState(0);
@@ -278,7 +285,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   };
 
   const onSquareClick = (sq: Square) => {
-    if (locked) return;
+    if (locked || doodleTool) return;
     const piece = game.board[sq];
     if (selected !== null && targets.includes(sq)) {
       if (promotes(selected, sq)) setPromotionChoice({ from: selected, to: sq });
@@ -355,6 +362,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         onDiceLanded={onDiceLanded}
         ap={game.ap}
         captured={game.captured ?? []}
+        doodle={
+          game.rules.doodle
+            ? { doodles: view.doodles, tool: doodleTool, myKey: view.myKey, moderator: view.isAuthority, onDoodle }
+            : undefined
+        }
       />
 
       <div className="hud topbar">
@@ -380,6 +392,15 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
           시점 초기화
         </button>
         <button onClick={toggleTopView}>{camera.mode === 'top' ? '비스듬히 보기' : '위에서 보기'}</button>
+        {game.rules.doodle && (
+          <button
+            className={doodleTool ? 'active' : ''}
+            onClick={() => setDoodleTool((t) => (t ? null : lastTool.current))}
+            title="테이블과 보드에 그리거나 메모하기"
+          >
+            ✏️ 낙서
+          </button>
+        )}
         <button onClick={() => setShowPrecedents(true)} title="지금까지의 GM 판정 기록">
           📜 판례 ({game.precedents.length})
         </button>
@@ -595,6 +616,21 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             </button>
           </div>
         </div>
+      )}
+
+      {doodleTool && game.rules.doodle && (
+        <DoodleToolbar
+          tool={doodleTool}
+          onTool={(t) => {
+            lastTool.current = t;
+            setDoodleTool(t);
+          }}
+          onClose={() => setDoodleTool(null)}
+          doodles={view.doodles}
+          myKey={view.myKey}
+          moderator={view.isAuthority}
+          onDoodle={onDoodle}
+        />
       )}
 
       <ConnectionOverlay connection={view.connection} onLeave={onLeave} />

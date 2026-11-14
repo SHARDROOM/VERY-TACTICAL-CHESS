@@ -9,6 +9,8 @@ import { TABLE_TOP_Y, WoodTable } from './WoodTable';
 import { CoinTable } from '../coins/CoinTable';
 import { DiceTray, trayCenterX, type ActiveRoll } from '../dice3d/DiceTray';
 import { TourCamera, type TourInset, type TourPhase } from './TourCamera';
+import { DoodleLayer, type DoodleTool } from './DoodleLayer';
+import type { Doodle, DoodleOp } from '../session/doodle';
 
 /** 'dice' looks at the dice tray beside the board while a roll plays. */
 export type ViewMode = 'side' | 'top' | 'dice';
@@ -38,6 +40,8 @@ interface Props {
   captured: Piece[];
   /** Title screen: a camera tour of the table instead of the player's view. */
   tour?: { inset: TourInset; onPhase: (phase: TourPhase) => void };
+  /** Doodles on the table; with a tool picked, pointer drags draw and the camera holds still. */
+  doodle?: { doodles: Doodle[]; tool: DoodleTool | null; myKey: string; moderator: boolean; onDoodle: (op: DoodleOp) => void };
 }
 
 /**
@@ -61,7 +65,7 @@ export function graveyardLayout(captured: Piece[], side: 1 | -1): { piece: Piece
 const LIGHT = '#d4bf98';
 const DARK = '#7d5a3b';
 
-function CameraRig({ camera, diceSide }: { camera: CameraRequest; diceSide: 1 | -1 }) {
+function CameraRig({ camera, diceSide, locked }: { camera: CameraRequest; diceSide: 1 | -1; locked: boolean }) {
   const ref = useRef<CameraControls>(null);
   const aspect = useThree((st) => st.size.width / Math.max(1, st.size.height));
   // Portrait screens (phones) need the camera further back to fit the board's width.
@@ -78,7 +82,7 @@ function CameraRig({ camera, diceSide }: { camera: CameraRequest; diceSide: 1 | 
       c.setLookAt(x * 0.85, 5.2 * zoom, 4.6 * s * zoom, x, -0.2, 0, true);
     }
   }, [camera.mode, camera.side, camera.nonce, zoom, diceSide]);
-  return <CameraControls ref={ref} minDistance={4} maxDistance={30} maxPolarAngle={Math.PI / 2.2} />;
+  return <CameraControls ref={ref} enabled={!locked} minDistance={4} maxDistance={30} maxPolarAngle={Math.PI / 2.2} />;
 }
 
 /** Frame with file/rank labels painted into a texture (stays under the pieces, unlike DOM overlays). */
@@ -139,6 +143,7 @@ export function BoardScene({
   ap,
   captured,
   tour,
+  doodle,
 }: Props) {
   // Pieces that appear after the first render (spawned by a special action) pop in.
   const mountedRef = useRef(false);
@@ -171,13 +176,14 @@ export function BoardScene({
       {tour ? (
         <TourCamera diceSide={diceSide} inset={tour.inset} onPhase={tour.onPhase} />
       ) : (
-        <CameraRig camera={camera} diceSide={diceSide} />
+        <CameraRig camera={camera} diceSide={diceSide} locked={!!doodle?.tool} />
       )}
 
       <WoodTable />
       <DiceTray side={diceSide} roll={diceRoll} onLanded={onDiceLanded} />
       <CoinTable ap={ap} side={diceSide === 1 ? -1 : 1} />
       <LabeledFrame />
+      {doodle && <DoodleLayer {...doodle} />}
 
       {Array.from({ length: 64 }, (_, sq) => {
         const [x, , z] = squareToWorld(sq);

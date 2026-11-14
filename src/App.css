@@ -287,3 +287,17 @@ button.big { padding: 12px; font-size: 1.02em; }
 .chaos-title { font-size: 1.35em; font-weight: 800; color: #f1d4ff; letter-spacing: 0.02em; }
 .chaos-text { margin-top: 6px; color: #e8dcf5; font-style: italic; }
 @keyframes chaos-in { from { opacity: 0; transform: translateX(-50%) scale(0.7) rotate(-3deg); } }
+
+/* ---- doodle mode ---- */
+.camera-buttons button.active, .doodle-bar button.active { border-color: var(--accent); background: rgba(201, 162, 39, 0.22); }
+.doodle-bar {
+  left: 12px; top: 64px; z-index: 2; display: flex; flex-direction: column; gap: 6px; background: var(--panel);
+  border: 1px solid #44454f; border-radius: 12px; padding: 8px; max-width: min(340px, calc(100% - 24px));
+}
+.doodle-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.doodle-row button { padding: 6px 10px; }
+.doodle-row.small button { font-size: 0.85em; }
+.doodle-bar .close { margin-left: auto; }
+.doodle-bar .swatch { width: 26px; height: 26px; padding: 0; border-radius: 50%; border: 2px solid #44454f; }
+.doodle-bar .swatch.active { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+.doodle-note { background: #101116; color: var(--text); border: 1px solid #44454f; border-radius: 8px; padding: 7px 10px; font: inherit; }
