@@ -39,7 +39,7 @@ button {
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: 0.5; cursor: default; }
 .panel {
-  right: 12px; bottom: 12px; width: min(360px, calc(100% - 24px)); max-height: 45%;
+  right: 12px; bottom: 12px; width: min(360px, calc(100% - 24px)); max-height: 36%;
   background: var(--panel); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px;
 }
 .log { list-style: none; margin: 0; padding: 0; overflow-y: auto; font-size: 0.9em; display: flex; flex-direction: column; gap: 4px; }
@@ -162,3 +162,21 @@ button.big { padding: 12px; font-size: 1.02em; }
 .chat-who.who-white { color: #ece4cf; }
 .chat-who.who-black { color: #a9a9b8; }
 .chat-text { overflow-wrap: anywhere; }
+
+.menu-backdrop { position: absolute; inset: 0; z-index: 4; }
+.settings-menu {
+  position: absolute; top: 56px; right: 12px; width: min(300px, calc(100% - 24px)); max-height: calc(100% - 72px); overflow-y: auto;
+  background: var(--panel); border: 1px solid #44454f; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.settings-menu section { display: flex; flex-direction: column; gap: 6px; }
+.settings-menu section + section { border-top: 1px solid #44454f; padding-top: 10px; }
+.settings-menu h3 { margin: 0; font-size: 0.8em; color: var(--muted); font-weight: 600; letter-spacing: 0.05em; }
+.settings-menu button { text-align: left; }
+.settings-menu button.danger { color: #f0a39d; }
+.menu-note { color: var(--muted); font-size: 0.85em; }
+
+.panel-tabs .collapse { margin-left: auto; padding: 4px 8px; }
+.panel.collapsed .log { display: none; }
+.panel.collapsed .panel-footer .counter { display: none; }
+.panel.collapsed .panel-footer { justify-content: flex-end; }

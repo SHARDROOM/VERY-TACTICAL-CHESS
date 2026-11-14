@@ -20,6 +20,7 @@ import { COLOR_NAME, OUTCOME_LABEL, PIECE_NAME, REJECT_MESSAGE, describeEvents, 
 import { PrecedentList } from './PrecedentList';
 import { GmSettings, type GmConfig } from './GmSettings';
 import { PieceInfo } from './PieceInfo';
+import { SettingsMenu, useFullscreen } from './SettingsMenu';
 import { successChance } from '../dice';
 import { loadPhysics, simulateRoll } from '../dice3d/simulate';
 import { skinRotationFor } from '../dice3d/d20';
@@ -51,19 +52,6 @@ function findPiece(board: GameState['board'], id: string): Piece | undefined {
   return undefined;
 }
 
-function ApMeter({ color, ap, max, active }: { color: Color; ap: number; max: number; active: boolean }) {
-  return (
-    <div className={`ap ${active ? 'active' : ''}`} title={`${COLOR_NAME[color]} AP ${ap}/${max}`}>
-      <span className="ap-label">{COLOR_NAME[color]} AP</span>
-      <span className="ap-pips">
-        {Array.from({ length: max }, (_, i) => (
-          <span key={i} className={`pip ${i < ap ? 'full' : ''}`} />
-        ))}
-      </span>
-      <span className="ap-num">{ap}</span>
-    </div>
-  );
-}
 
 interface Props {
   session: Session;
@@ -88,12 +76,15 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const [text, setText] = useState('');
   const [camera, setCamera] = useState<CameraRequest>({ mode: 'side', side: homeSide, nonce: 0 });
   const [warning, setWarning] = useState<string | null>(null);
-  const [lastRoll, setLastRoll] = useState<{ roll: number; outcome: Outcome } | null>(null);
   const [showPrecedents, setShowPrecedents] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const fullscreen = useFullscreen();
   const [showGmSettings, setShowGmSettings] = useState(openGmSettings);
   const [promotionChoice, setPromotionChoice] = useState<{ from: Square; to: Square } | null>(null);
   const [copied, setCopied] = useState(false);
   const [tab, setTab] = useState<'log' | 'chat'>('log');
+  // A folded panel keeps only the input row, leaving the table in view.
+  const [collapsed, setCollapsed] = useState(false);
   const tabRef = useRef(tab);
   tabRef.current = tab;
   const [chat, setChat] = useState<{ id: number; from: Color; text: string; mine: boolean }[]>([]);
@@ -141,9 +132,6 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       const exposed = events.find((ev) => ev.type === 'ownKingExposed');
       if (exposed) setWarning(`${COLOR_NAME[exposed.color]} 킹이 공격받는 위치에 놓였습니다.`);
       else if (passed) setWarning(null);
-      const resolved = events.find((ev) => ev.type === 'specialResolved');
-      if (resolved) setLastRoll({ roll: resolved.roll, outcome: resolved.outcome });
-      else if (passed) setLastRoll(null);
       const proposed = events.find((ev) => ev.type === 'specialProposed');
       if (proposed && (seat === 'both' || proposed.color === seat)) setText('');
       setSelected(null);
@@ -311,7 +299,6 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const restart = () => {
     setLog([]);
     setWarning(null);
-    setLastRoll(null);
     setSelected(null);
     session.restart();
     setCamera((c) => ({ mode: 'side', side: seat === 'both' ? 'white' : seat, nonce: c.nonce + 1 }));
@@ -352,6 +339,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         diceSide={seat === 'black' ? 1 : -1}
         diceRoll={diceRoll}
         onDiceLanded={onDiceLanded}
+        ap={game.ap}
       />
 
       <div className="hud topbar">
@@ -361,38 +349,17 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
           <span className="turn-number">턴 {game.turnNumber}</span>
         </div>
         {seat !== 'both' && <div className={`badge me me-${seat}`}>나: {COLOR_NAME[seat]}</div>}
-        <ApMeter color="white" ap={game.ap.white} max={game.rules.apMax} active={sideToMove === 'white'} />
-        <ApMeter color="black" ap={game.ap.black} max={game.rules.apMax} active={sideToMove === 'black'} />
         {inCheck && <div className="badge check">체크!</div>}
         {view.gmBusy && <div className="badge busy">GM 판정 중…</div>}
-        {lastRoll && (
-          <div className={`badge roll ${lastRoll.outcome}`}>
-            🎲 {lastRoll.roll} — {OUTCOME_LABEL[lastRoll.outcome]}
-          </div>
-        )}
         {warning && !winner && <div className="badge warn">⚠ {warning}</div>}
         {conn.kind === 'waiting' && conn.guestLeft && <div className="badge warn">상대 연결 끊김 · 재접속 대기 중 (코드 {conn.code})</div>}
       </header>
 
 
       <div className="camera-buttons">
-        <button onClick={() => setShowPrecedents(true)} title="이번 게임의 판례">
-          📜 판례 {game.precedents.length}
+        <button className="menu-button" onClick={() => setShowMenu(true)} aria-haspopup="menu" title="설정">
+          ⚙ 설정
         </button>
-        {view.isAuthority ? (
-          <button onClick={() => setShowGmSettings(true)} disabled={view.gmBusy} title="GM 설정">
-            ⚙ {PROVIDER_LABEL[gmConfig.provider]}
-          </button>
-        ) : (
-          <button disabled title="GM은 방장이 설정합니다">🎙 {view.gmName || 'GM'}</button>
-        )}
-        <button onClick={() => setCamera((c) => ({ mode: 'side', side: seat === 'both' ? sideToMove : seat, nonce: c.nonce + 1 }))}>
-          시점 초기화
-        </button>
-        <button onClick={() => setCamera((c) => ({ ...c, mode: c.mode === 'top' ? 'side' : 'top', nonce: c.nonce + 1 }))}>
-          {camera.mode === 'top' ? '비스듬히 보기' : '위에서 보기'}
-        </button>
-        <button onClick={onLeave} title="로비로 나가기">나가기</button>
       </div>
       </div>
 
@@ -402,7 +369,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         return piece ? <PieceInfo piece={piece} square={sq!} /> : null;
       })()}
 
-      <aside className="hud panel">
+      <aside className={`hud panel ${collapsed ? 'collapsed' : ''}`}>
         <div className="panel-tabs" role="tablist">
           <button role="tab" aria-selected={tab === 'log'} className={tab === 'log' ? 'active' : ''} onClick={() => setTab('log')}>
             게임
@@ -417,6 +384,14 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             }}
           >
             채팅{unread > 0 && <span className="unread">{unread}</span>}
+          </button>
+          <button
+            className="collapse"
+            onClick={() => setCollapsed((c) => !c)}
+            title={collapsed ? '기록 펼치기' : '기록 접기'}
+            aria-label={collapsed ? '기록 펼치기' : '기록 접기'}
+          >
+            {collapsed ? '▴' : '▾'}
           </button>
         </div>
         {tab === 'log' ? (
@@ -514,7 +489,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
                 <div>
                   <dt>비용</dt>
                   <dd>
-                    AP {pending.ruling.cost} <small>(보유 {game.ap[pending.color]})</small>
+                    AP {pending.ruling.cost}
                   </dd>
                 </div>
                 <div>
@@ -548,6 +523,20 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             )}
           </div>
         </div>
+      )}
+
+      {showMenu && (
+        <SettingsMenu
+          onClose={() => setShowMenu(false)}
+          gm={{ isAuthority: view.isAuthority, name: view.gmName, busy: view.gmBusy, onOpen: () => setShowGmSettings(true) }}
+          view={{
+            topDown: camera.mode === 'top',
+            onReset: () => setCamera((c) => ({ mode: 'side', side: seat === 'both' ? sideToMove : seat, nonce: c.nonce + 1 })),
+            onToggleTop: () => setCamera((c) => ({ ...c, mode: c.mode === 'top' ? 'side' : 'top', nonce: c.nonce + 1 })),
+          }}
+          fullscreen={fullscreen}
+          game={{ precedents: game.precedents.length, onShowPrecedents: () => setShowPrecedents(true), onLeave, online }}
+        />
       )}
 
       {showPrecedents && <PrecedentList precedents={game.precedents} onClose={() => setShowPrecedents(false)} />}

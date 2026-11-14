@@ -6,6 +6,7 @@ import { fileOf, rankOf, type Board, type Color, type Square } from '../engine';
 import { squareToWorld } from './coords';
 import { PieceMesh } from './PieceMesh';
 import { WoodTable } from './WoodTable';
+import { CoinTable } from '../coins/CoinTable';
 import { DiceTray, trayCenterX, type ActiveRoll } from '../dice3d/DiceTray';
 
 /** 'dice' looks at the dice tray beside the board while a roll plays. */
@@ -30,6 +31,8 @@ interface Props {
   diceSide: 1 | -1;
   diceRoll: ActiveRoll | null;
   onDiceLanded: () => void;
+  /** Each player's AP, shown as gold coins on the table (opposite side from the dice). */
+  ap: Record<Color, number>;
 }
 
 const LIGHT = '#d4bf98';
@@ -110,6 +113,7 @@ export function BoardScene({
   diceSide,
   diceRoll,
   onDiceLanded,
+  ap,
 }: Props) {
   const click = (sq: Square) => (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
@@ -137,6 +141,7 @@ export function BoardScene({
 
       <WoodTable />
       <DiceTray side={diceSide} roll={diceRoll} onLanded={onDiceLanded} />
+      <CoinTable ap={ap} side={diceSide === 1 ? -1 : 1} />
       <LabeledFrame />
 
       {Array.from({ length: 64 }, (_, sq) => {
