@@ -1,5 +1,6 @@
 import type { Color, GameState, Piece, PieceType } from './types';
 import { squareAt } from './squares';
+import { FULL_CASTLING } from './castling';
 
 const BACK_RANK: PieceType[] = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
 
@@ -14,13 +15,24 @@ export function createInitialState(): GameState {
     place('black', 'pawn', f, 6);
     place('black', BACK_RANK[f], f, 7);
   }
-  return { board, turn: 'white', turnNumber: 1, status: { kind: 'playing' } };
+  return {
+    board,
+    turn: 'white',
+    turnNumber: 1,
+    status: { kind: 'playing' },
+    castling: FULL_CASTLING,
+    enPassant: null,
+  };
 }
 
-/** Build a state from a sparse placement map, for tests and scenarios. */
+/**
+ * Build a state from a sparse placement map, for tests and scenarios.
+ * Castling rights default to none; pass them explicitly when needed.
+ */
 export function createStateFrom(
   placements: Record<string, { color: Color; type: PieceType }>,
   turn: Color = 'white',
+  extra: Partial<Pick<GameState, 'castling' | 'enPassant'>> = {},
 ): GameState {
   const board: (Piece | null)[] = Array(64).fill(null);
   for (const [name, p] of Object.entries(placements)) {
@@ -30,5 +42,16 @@ export function createStateFrom(
     if (sq === null) throw new Error(`bad square ${name}`);
     board[sq] = { id: `${p.color}-${p.type}-${name}`, color: p.color, type: p.type };
   }
-  return { board, turn, turnNumber: 1, status: { kind: 'playing' } };
+  return {
+    board,
+    turn,
+    turnNumber: 1,
+    status: { kind: 'playing' },
+    castling: {
+      white: { kingSide: false, queenSide: false },
+      black: { kingSide: false, queenSide: false },
+    },
+    enPassant: null,
+    ...extra,
+  };
 }

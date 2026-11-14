@@ -1,18 +1,20 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   applyCommand,
   createInitialState,
   findKing,
   isInCheck,
-  movesFrom,
+  legalTargets,
   opponent,
+  rankOf,
   parseMoveText,
   type Command,
   type GameState,
+  type PromotionType,
   type Square,
 } from './engine';
 import { BoardScene, type CameraRequest } from './scene/BoardScene';
-import { COLOR_NAME, REJECT_MESSAGE, describeEvents } from './ui/messages';
+import { COLOR_NAME, PIECE_NAME, REJECT_MESSAGE, describeEvents } from './ui/messages';
 import './App.css';
 
 interface LogLine {
@@ -30,10 +32,15 @@ export default function App() {
   const [text, setText] = useState('');
   const [camera, setCamera] = useState<CameraRequest>({ mode: 'side', side: 'white', nonce: 0 });
   const [warning, setWarning] = useState<string | null>(null);
+  const logRef = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
+  }, [log]);
+  const [promotionChoice, setPromotionChoice] = useState<{ from: Square; to: Square } | null>(null);
 
   const targets = useMemo(
-    () => (selected === null ? [] : movesFrom(game.board, selected)),
-    [game.board, selected],
+    () => (selected === null ? [] : legalTargets(game, selected).map((t) => t.to)),
+    [game, selected],
   );
 
   const sideToMove = game.turn;
@@ -66,7 +73,10 @@ export default function App() {
     if (game.status.kind !== 'playing') return;
     const piece = game.board[sq];
     if (selected !== null && targets.includes(sq)) {
-      run({ type: 'move', from: selected, to: sq });
+      const mover = game.board[selected];
+      const lastRank = mover?.color === 'white' ? 7 : 0;
+      if (mover?.type === 'pawn' && rankOf(sq) === lastRank) setPromotionChoice({ from: selected, to: sq });
+      else run({ type: 'move', from: selected, to: sq });
       return;
     }
     if (piece && piece.color === game.turn) setSelected(sq === selected ? null : sq);
@@ -83,6 +93,12 @@ export default function App() {
       return;
     }
     if (run({ type: 'move', ...parsed })) setText('');
+  };
+
+  const promote = (type: PromotionType) => {
+    if (!promotionChoice) return;
+    run({ type: 'move', ...promotionChoice, promotion: type });
+    setPromotionChoice(null);
   };
 
   const restart = () => {
@@ -123,7 +139,7 @@ export default function App() {
       </div>
 
       <aside className="hud panel">
-        <ol className="log">
+        <ol className="log" ref={logRef}>
           {log.length === 0 && <li className="hint">기물을 클릭하거나 아래에 수를 입력하세요. 예: e2e4</li>}
           {log.map((l) => (
             <li key={l.id} className={l.tone}>{l.text}</li>
@@ -133,13 +149,28 @@ export default function App() {
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={winner ? '게임 종료' : `${COLOR_NAME[sideToMove]}: 수 입력 (예: e2e4)`}
+            placeholder={winner ? '게임 종료' : `${COLOR_NAME[sideToMove]}: 수 입력 (예: e2e4, e7e8q)`}
             disabled={!!winner}
             maxLength={200}
           />
           <button type="submit" disabled={!!winner}>두기</button>
         </form>
       </aside>
+
+      {promotionChoice && (
+        <div className="overlay">
+          <div className="dialog">
+            <h2>프로모션</h2>
+            <p>폰을 무엇으로 바꿀까요?</p>
+            <div className="choice-row">
+              {(['queen', 'rook', 'bishop', 'knight'] as const).map((t) => (
+                <button key={t} onClick={() => promote(t)}>{PIECE_NAME[t]}</button>
+              ))}
+            </div>
+            <button className="link" onClick={() => setPromotionChoice(null)}>취소</button>
+          </div>
+        </div>
+      )}
 
       {winner && (
         <div className="overlay">

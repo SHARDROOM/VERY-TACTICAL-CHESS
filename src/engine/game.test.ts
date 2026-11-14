@@ -1,29 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  applyCommand,
-  createInitialState,
-  createStateFrom,
-  movesFrom,
-  parseMoveText,
-  parseSquare,
-  squareName,
-  type CommandResult,
-  type GameState,
-} from './index';
-
-const sq = (name: string) => {
-  const s = parseSquare(name);
-  if (s === null) throw new Error(name);
-  return s;
-};
-const move = (state: GameState, from: string, to: string): CommandResult =>
-  applyCommand(state, { type: 'move', from: sq(from), to: sq(to) });
-const okMove = (state: GameState, from: string, to: string) => {
-  const r = move(state, from, to);
-  if (!r.ok) throw new Error(`${from}${to} rejected: ${r.reason}`);
-  return r;
-};
-const targets = (state: GameState, from: string) => movesFrom(state.board, sq(from)).map(squareName).sort();
+import { createInitialState, createStateFrom, movesFrom, parseMoveText } from './index';
+import { move, okMove, sq, targets } from './testUtil';
 
 describe('initial position', () => {
   it('starts with 32 pieces, white to move', () => {

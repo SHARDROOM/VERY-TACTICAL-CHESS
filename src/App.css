@@ -44,6 +44,13 @@ button:disabled { opacity: 0.5; cursor: default; }
   border-radius: 8px; padding: 7px 10px; font: inherit;
 }
 .overlay { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); }
+.dialog { background: var(--panel); padding: 20px 24px; border-radius: 14px; border: 1px solid #44454f; min-width: min(340px, calc(100vw - 32px)); max-width: calc(100vw - 32px); }
+.dialog h2 { margin: 0 0 6px; font-size: 1.15em; }
+.dialog p { margin: 6px 0; }
+.choice-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 8px; }
+.choice-row button { flex: 1; }
+button.link { background: none; border: none; color: var(--muted); padding: 4px 0; }
+button.primary { background: var(--accent); color: #1a1a1a; border-color: var(--accent); font-weight: 600; }
 .victory { background: var(--panel); padding: 24px 32px; border-radius: 14px; text-align: center; border: 1px solid var(--accent); }
 .victory h1 { margin: 0 0 6px; color: var(--accent); }
 @media (max-width: 600px) {

@@ -1,5 +1,6 @@
-import type { Board, Color, Square } from './types';
+import type { Board, Color, GameState, MoveSpecial, Square } from './types';
 import { fileOf, rankOf, squareAt } from './squares';
+import { KING_START, ROOK_START } from './castling';
 
 const KNIGHT_STEPS = [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]];
 const KING_STEPS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
@@ -7,10 +8,10 @@ const ROOK_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const BISHOP_DIRS = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
 
 /**
- * Squares the piece on `from` can move to under standard movement rules.
+ * Basic movement: squares the piece on `from` can reach by its normal movement
+ * pattern (no castling, no en passant). This is also what "attacks" means.
  * Moves that leave the mover's own king attacked are included: this game
  * allows them (the king is captured, not mated).
- * Castling, en passant and promotion are not handled yet.
  */
 export function movesFrom(board: Board, from: Square): Square[] {
   const piece = board[from];
@@ -97,4 +98,51 @@ export function isInCheck(board: Board, color: Color): boolean {
   const king = findKing(board, color);
   if (king === null) return false;
   return isAttacked(board, king, color === 'white' ? 'black' : 'white');
+}
+
+export interface Target {
+  to: Square;
+  special?: Extract<MoveSpecial, { kind: 'castle' | 'enPassant' }>;
+}
+
+/** All normal-move destinations for the piece on `from`, including castling and en passant. */
+export function legalTargets(state: GameState, from: Square): Target[] {
+  const { board } = state;
+  const piece = board[from];
+  if (!piece) return [];
+  const out: Target[] = movesFrom(board, from).map((to) => ({ to }));
+
+  if (piece.type === 'pawn' && state.enPassant !== null) {
+    const ep = state.enPassant;
+    const dir = piece.color === 'white' ? 1 : -1;
+    const victim = squareAt(fileOf(ep), rankOf(ep) - dir);
+    const victimPiece = victim === null ? null : board[victim];
+    if (
+      rankOf(ep) === rankOf(from) + dir &&
+      Math.abs(fileOf(ep) - fileOf(from)) === 1 &&
+      !board[ep] &&
+      victimPiece?.type === 'pawn' &&
+      victimPiece.color !== piece.color
+    ) {
+      out.push({ to: ep, special: { kind: 'enPassant' } });
+    }
+  }
+
+  // Castling ignores check entirely: this game lets a king stand in, pass
+  // through, or land on attacked squares (it can then simply be captured).
+  if (piece.type === 'king' && from === KING_START[piece.color]) {
+    const rights = state.castling[piece.color];
+    const rank = rankOf(from);
+    const sides = [
+      { side: 'king' as const, allowed: rights.kingSide, rook: ROOK_START[piece.color].kingSide, between: [5, 6], kingTo: 6 },
+      { side: 'queen' as const, allowed: rights.queenSide, rook: ROOK_START[piece.color].queenSide, between: [1, 2, 3], kingTo: 2 },
+    ];
+    for (const s of sides) {
+      const rook = board[s.rook];
+      if (!s.allowed || rook?.type !== 'rook' || rook.color !== piece.color) continue;
+      if (s.between.some((f) => board[squareAt(f, rank)!])) continue;
+      out.push({ to: squareAt(s.kingTo, rank)!, special: { kind: 'castle', side: s.side } });
+    }
+  }
+  return out;
 }

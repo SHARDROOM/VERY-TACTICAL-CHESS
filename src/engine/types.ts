@@ -1,5 +1,7 @@
 export type Color = 'white' | 'black';
 export type PieceType = 'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn';
+export type PromotionType = 'queen' | 'rook' | 'bishop' | 'knight';
+export const PROMOTION_TYPES: readonly PromotionType[] = ['queen', 'rook', 'bishop', 'knight'];
 
 export interface Piece {
   id: string;
@@ -14,18 +16,28 @@ export type Board = ReadonlyArray<Piece | null>;
 
 export type GameStatus = { kind: 'playing' } | { kind: 'won'; winner: Color };
 
+export type CastlingRights = Record<Color, { kingSide: boolean; queenSide: boolean }>;
+
 export interface GameState {
   board: Board;
   turn: Color;
   /** Starts at 1 and increases every time the turn passes. */
   turnNumber: number;
   status: GameStatus;
+  castling: CastlingRights;
+  /** Square a pawn skipped over with a double step on the previous turn, capturable en passant. */
+  enPassant: Square | null;
 }
 
-export type Command = { type: 'move'; from: Square; to: Square };
+export type Command = { type: 'move'; from: Square; to: Square; promotion?: PromotionType };
+
+export type MoveSpecial =
+  | { kind: 'castle'; side: 'king' | 'queen' }
+  | { kind: 'enPassant' }
+  | { kind: 'promotion'; to: PromotionType };
 
 export type GameEvent =
-  | { type: 'moved'; pieceId: string; from: Square; to: Square; captured: Piece | null }
+  | { type: 'moved'; pieceId: string; from: Square; to: Square; captured: Piece | null; special?: MoveSpecial }
   | { type: 'kingCaptured'; winner: Color }
   /** The given color's king is attacked after the move. */
   | { type: 'check'; color: Color }
@@ -33,7 +45,13 @@ export type GameEvent =
   | { type: 'ownKingExposed'; color: Color }
   | { type: 'turnPassed'; turn: Color; turnNumber: number };
 
-export type RejectReason = 'gameOver' | 'noPiece' | 'notYourPiece' | 'illegalMove';
+export type RejectReason =
+  | 'gameOver'
+  | 'noPiece'
+  | 'notYourPiece'
+  | 'illegalMove'
+  | 'promotionRequired'
+  | 'invalidPromotion';
 
 export type CommandResult =
   | { ok: true; state: GameState; events: GameEvent[] }
