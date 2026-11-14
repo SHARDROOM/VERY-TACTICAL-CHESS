@@ -16,6 +16,8 @@ import {
 import { BoardScene, type CameraRequest } from './scene/BoardScene';
 import { COLOR_NAME, PIECE_NAME, REJECT_MESSAGE, describeEvents, type LogEntry, type LogTone } from './ui/messages';
 import { FakeGameMaster } from './gm/fakeGm';
+import { ClaudeGameMaster, GmError } from './gm/claudeGm';
+import { GmSettings, type GmConfig } from './ui/GmSettings';
 import { parseGmRuling } from './gm/parse';
 import type { GameMaster } from './gm/types';
 import { rollD20, successChance } from './dice';
@@ -27,7 +29,12 @@ interface LogLine extends LogEntry {
 }
 
 let nextLogId = 1;
-const gm: GameMaster = new FakeGameMaster();
+
+function createGm(config: GmConfig): GameMaster {
+  return config.provider === 'claude'
+    ? new ClaudeGameMaster({ apiKey: config.apiKey, model: config.model, effort: config.effort })
+    : new FakeGameMaster();
+}
 
 function ApMeter({ color, ap, max, active }: { color: Color; ap: number; max: number; active: boolean }) {
   return (
@@ -57,6 +64,10 @@ export default function App() {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [log]);
   const [promotionChoice, setPromotionChoice] = useState<{ from: Square; to: Square } | null>(null);
+  // The API key lives only here, in memory: never persisted.
+  const [gmConfig, setGmConfig] = useState<GmConfig>({ provider: 'fake' });
+  const [showGmSettings, setShowGmSettings] = useState(false);
+  const gm = useMemo(() => createGm(gmConfig), [gmConfig]);
 
   const targets = useMemo(
     () => (selected === null ? [] : legalTargets(game, selected).map((t) => t.to)),
@@ -123,7 +134,8 @@ export default function App() {
       }
       if (run({ type: 'proposeSpecial', action, ruling: parsed.ruling }, snapshot)) setText('');
     } catch (err) {
-      say(`GM 호출 실패: ${err instanceof Error ? err.message : String(err)}. AP는 쓰지 않았습니다. 다시 시도해 주세요.`, 'error');
+      const reason = err instanceof GmError ? err.message : `GM 호출 실패: ${err instanceof Error ? err.message : String(err)}`;
+      say(`${reason} (AP는 쓰지 않았습니다. 입력한 문장은 그대로 남아 있으니 다시 보낼 수 있습니다.)`, 'error');
     } finally {
       setGmBusy(false);
     }
@@ -203,6 +215,9 @@ export default function App() {
       </header>
 
       <div className="hud camera-buttons">
+        <button onClick={() => setShowGmSettings(true)} disabled={gmBusy} title="GM 설정">
+          ⚙ {gmConfig.provider === 'claude' ? 'Claude GM' : '가짜 GM'}
+        </button>
         <button onClick={() => setCamera((c) => ({ mode: 'side', side: game.turn, nonce: c.nonce + 1 }))}>시점 초기화</button>
         <button onClick={() => setCamera((c) => ({ ...c, mode: c.mode === 'top' ? 'side' : 'top', nonce: c.nonce + 1 }))}>
           {camera.mode === 'top' ? '비스듬히 보기' : '위에서 보기'}
@@ -215,7 +230,7 @@ export default function App() {
             <li className="hint">
               기물을 클릭하거나 수를 입력하세요 (예: e2e4). 규칙 밖의 행동은 그대로 문장으로 쓰면 GM이 판정합니다.
               <br />
-              지금은 {gm.name}: "b1 나이트를 투석기로 e5까지 날린다", "d7 폰을 저격한다"
+              지금 GM: {gm.name}. 예: "b1 나이트를 투석기로 e5까지 날린다", "d7 폰을 저격한다". 진짜 GM은 ⚙ 버튼에서 Claude API 키를 넣으면 켜집니다.
             </li>
           )}
           {log.map((l) => (
@@ -263,6 +278,18 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {showGmSettings && (
+        <GmSettings
+          current={gmConfig}
+          onClose={() => setShowGmSettings(false)}
+          onSave={(config) => {
+            setGmConfig(config);
+            setShowGmSettings(false);
+            say(`GM이 바뀌었습니다: ${createGm(config).name}`);
+          }}
+        />
       )}
 
       {promotionChoice && (
