@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { CanvasTexture, SRGBColorSpace } from 'three';
-import { Canvas, type ThreeEvent } from '@react-three/fiber';
+import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
 import { CameraControls, Environment, Lightformer } from '@react-three/drei';
 import { fileOf, rankOf, type Board, type Color, type Square } from '../engine';
 import { squareToWorld } from './coords';
@@ -30,14 +30,17 @@ const DARK = '#7d5a3b';
 
 function CameraRig({ camera }: { camera: CameraRequest }) {
   const ref = useRef<CameraControls>(null);
+  const aspect = useThree((st) => st.size.width / Math.max(1, st.size.height));
+  // Portrait screens (phones) need the camera further back to fit the board's width.
+  const zoom = aspect < 1 ? Math.min(2.4, 0.95 / aspect) : 1;
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
     const s = camera.side === 'white' ? 1 : -1;
-    if (camera.mode === 'side') c.setLookAt(0, 7.2, 8.8 * s, 0, 0, 0.6 * s, true);
-    else c.setLookAt(0, 13, 0.001 * s, 0, 0, 0, true);
-  }, [camera.mode, camera.side, camera.nonce]);
-  return <CameraControls ref={ref} minDistance={5} maxDistance={22} maxPolarAngle={Math.PI / 2.1} />;
+    if (camera.mode === 'side') c.setLookAt(0, 7.2 * zoom, 8.8 * s * zoom, 0, 0, 0.6 * s, true);
+    else c.setLookAt(0, 13 * zoom, 0.001 * s, 0, 0, 0, true);
+  }, [camera.mode, camera.side, camera.nonce, zoom]);
+  return <CameraControls ref={ref} minDistance={5} maxDistance={34} maxPolarAngle={Math.PI / 2.1} />;
 }
 
 /** Frame with file/rank labels painted into a texture (stays under the pieces, unlike DOM overlays). */
