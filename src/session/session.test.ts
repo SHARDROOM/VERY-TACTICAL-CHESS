@@ -129,7 +129,7 @@ describe('online: host and guest', () => {
     const rolls: number[] = [];
     const o = online(new TestGm(), () => (rolls.push(20), 20));
     await settle();
-    o.host.request({ type: 'endTurn' });
+    o.host.request({ type: 'move', from: sq('e2'), to: sq('e4') });
     await settle();
     o.guest.request({ type: 'declare', action: 'b8 나이트를 c6로 날린다' });
     await settle();
@@ -146,7 +146,7 @@ describe('online: host and guest', () => {
     gm.fail = true;
     const o = online(gm);
     await settle();
-    o.host.request({ type: 'endTurn' });
+    o.host.request({ type: 'move', from: sq('e2'), to: sq('e4') });
     await settle();
     o.guest.request({ type: 'declare', action: 'b8 나이트를 c6로' });
     await settle();

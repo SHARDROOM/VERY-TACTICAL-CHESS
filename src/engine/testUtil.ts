@@ -25,3 +25,9 @@ export const targets = (state: GameState, from: string) => movesFrom(state.board
 /** Plays a sequence like "e2e4 e7e5" from the given state. */
 export const play = (state: GameState, moves: string) =>
   moves.split(/\s+/).filter(Boolean).reduce((s, m) => okMove(s, m.slice(0, 2), m.slice(2, 4)).state, state);
+
+/**
+ * Ends the turn as if a special action had been tried this turn (ending a turn
+ * with no action at all is refused). For tests that only need to hand the turn over.
+ */
+export const passTurn = (state: GameState) => ok(applyCommand({ ...state, usedApThisTurn: true }, { type: 'endTurn' })).state;

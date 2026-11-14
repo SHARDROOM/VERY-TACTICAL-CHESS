@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Quaternion } from 'three';
 import {
   findKing,
+  hasAnyMove,
   isInCheck,
   legalTargets,
   opponent,
@@ -252,6 +253,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const pending = game.pending;
   const connected = view.connection.kind === 'local' || view.connection.kind === 'connected';
   const locked = !playing || view.gmBusy || !!pending || !myTurn || !connected || !!dice;
+  // A turn has to be used for something: a normal move ends it by itself, so passing is only
+  // for after a special action (or when no piece can move at all).
+  const canEndTurn = game.usedApThisTurn || !hasAnyMove(game);
   const winner = game.status.kind === 'won' ? game.status.winner : null;
 
   const promotes = (from: Square, to: Square) => {
@@ -299,6 +303,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     session.request({ type: 'move', ...promotionChoice, promotion: type });
     setPromotionChoice(null);
   };
+
+  const resetView = () => setCamera((c) => ({ mode: 'side', side: seat === 'both' ? sideToMove : seat, nonce: c.nonce + 1 }));
+  const toggleTopView = () => setCamera((c) => ({ ...c, mode: c.mode === 'top' ? 'side' : 'top', nonce: c.nonce + 1 }));
 
   const restart = () => {
     setLog([]);
@@ -362,6 +369,13 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
 
 
       <div className="camera-buttons">
+        <button onClick={resetView} title="내 쪽에서 비스듬히 보는 시점으로">
+          시점 초기화
+        </button>
+        <button onClick={toggleTopView}>{camera.mode === 'top' ? '비스듬히 보기' : '위에서 보기'}</button>
+        <button onClick={() => setShowPrecedents(true)} title="지금까지의 GM 판정 기록">
+          📜 판례 ({game.precedents.length})
+        </button>
         <button className="menu-button" onClick={() => setShowMenu(true)} aria-haspopup="menu" title="설정">
           ⚙ 설정
         </button>
@@ -434,7 +448,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
               <span className="counter">
                 {text.length}/{game.rules.actionMaxLength}
               </span>
-              <button onClick={() => session.request({ type: 'endTurn' })} disabled={locked}>
+              <button
+                onClick={() => session.request({ type: 'endTurn' })}
+                disabled={locked || !canEndTurn}
+                title={canEndTurn ? '이번 턴을 마칩니다' : '수를 두거나 특수 행동을 시도해야 턴을 끝낼 수 있습니다'}
+              >
                 턴 종료
               </button>
             </div>
@@ -534,13 +552,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         <SettingsMenu
           onClose={() => setShowMenu(false)}
           gm={{ isAuthority: view.isAuthority, name: view.gmName, busy: view.gmBusy, onOpen: () => setShowGmSettings(true) }}
-          view={{
-            topDown: camera.mode === 'top',
-            onReset: () => setCamera((c) => ({ mode: 'side', side: seat === 'both' ? sideToMove : seat, nonce: c.nonce + 1 })),
-            onToggleTop: () => setCamera((c) => ({ ...c, mode: c.mode === 'top' ? 'side' : 'top', nonce: c.nonce + 1 })),
-          }}
           fullscreen={fullscreen}
-          game={{ precedents: game.precedents.length, onShowPrecedents: () => setShowPrecedents(true), onLeave, online }}
+          game={{ onLeave, online }}
         />
       )}
 

@@ -46,13 +46,12 @@ export function useFullscreen() {
 interface Props {
   onClose: () => void;
   gm: { isAuthority: boolean; name: string; busy: boolean; onOpen: () => void };
-  view: { topDown: boolean; onReset: () => void; onToggleTop: () => void };
   fullscreen: ReturnType<typeof useFullscreen>;
-  game: { precedents: number; onShowPrecedents: () => void; onLeave: () => void; online: boolean };
+  game: { onLeave: () => void; online: boolean };
 }
 
-/** Everything that is a setting or an occasional action, in one menu. */
-export function SettingsMenu({ onClose, gm, view, fullscreen, game }: Props) {
+/** Settings and rare actions (GM, fullscreen, sound, leaving); camera and precedents stay on screen. */
+export function SettingsMenu({ onClose, gm, fullscreen, game }: Props) {
   const act = (f: () => void) => () => {
     f();
     onClose();
@@ -71,21 +70,18 @@ export function SettingsMenu({ onClose, gm, view, fullscreen, game }: Props) {
             <div className="menu-note">GM은 방장이 설정합니다.</div>
           )}
         </section>
-        <section>
-          <h3>화면</h3>
-          <button onClick={act(view.onReset)}>시점 초기화</button>
-          <button onClick={act(view.onToggleTop)}>{view.topDown ? '비스듬히 보기' : '위에서 보기'}</button>
-          {fullscreen.supported && (
+        {fullscreen.supported && (
+          <section>
+            <h3>화면</h3>
             <button onClick={act(fullscreen.toggle)}>{fullscreen.active ? '전체화면 끝내기' : '전체화면'}</button>
-          )}
-        </section>
+          </section>
+        )}
         <section>
           <h3>소리</h3>
           <SoundControls />
         </section>
         <section>
           <h3>게임</h3>
-          <button onClick={act(game.onShowPrecedents)}>판례 보기 ({game.precedents})</button>
           <button className="danger" onClick={act(game.onLeave)}>
             {game.online ? '방에서 나가기' : '로비로 나가기'}
           </button>

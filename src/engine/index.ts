@@ -1,5 +1,5 @@
 export * from './types';
-export { applyCommand } from './game';
+export { applyCommand, hasAnyMove } from './game';
 export { createInitialState, createStateFrom } from './setup';
 export { movesFrom, legalTargets, isAttacked, isInCheck, findKing, type Target } from './moves';
 export { parseMoveText } from './notation';

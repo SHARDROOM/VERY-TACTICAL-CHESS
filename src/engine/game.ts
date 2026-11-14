@@ -30,6 +30,9 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
     case 'move':
       return applyMove(state, cmd);
     case 'endTurn':
+      // Passing is for a turn spent on special actions. Doing nothing at all is not a turn,
+      // unless there is no normal move to make (e.g. every piece is stunned or blocked).
+      if (!state.usedApThisTurn && hasAnyMove(state)) return { ok: false, reason: 'nothingDoneThisTurn' };
       return { ok: true, ...passTurn(state, state.board, null, []) };
     case 'proposeSpecial':
       return propose(state, cmd);
@@ -40,6 +43,11 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
       return { ok: true, state: { ...state, pending: null }, events: [{ type: 'specialCancelled', color, action }] };
     }
   }
+}
+
+/** True if the side to move has at least one normal move. */
+export function hasAnyMove(state: GameState): boolean {
+  return state.board.some((p, sq) => p?.color === state.turn && legalTargets(state, sq).length > 0);
 }
 
 /** Records the pieces that left the board in these events (plain: no tags, no rider). */

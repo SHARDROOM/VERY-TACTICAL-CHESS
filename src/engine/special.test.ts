@@ -4,10 +4,11 @@ import {
   applyCommand,
   createInitialState,
   createStateFrom,
+  legalTargets,
   type GameState,
   type Ruling,
 } from './index';
-import { move, ok, okMove, play, sq } from './testUtil';
+import { move, ok, okMove, passTurn, play, sq } from './testUtil';
 
 const ruling = (over: Partial<Ruling> = {}): Ruling => ({
   interpretation: '나이트가 투석기를 타고 날아간다',
@@ -24,6 +25,7 @@ const propose = (state: GameState, r: Ruling = ruling(), action = '나이트를 
 const attempt = (state: GameState, roll: number) => applyCommand(state, { type: 'attemptSpecial', roll });
 const cancel = (state: GameState) => applyCommand(state, { type: 'cancelSpecial' });
 const endTurn = (state: GameState) => applyCommand(state, { type: 'endTurn' });
+const pass = (state: GameState) => passTurn(state);
 
 /** Initial position with plenty of AP for white. */
 const rich = (ap = 5): GameState => ({ ...createInitialState(), ap: { white: ap, black: 0 } });
@@ -41,7 +43,7 @@ describe('AP', () => {
 
   it('caps at the maximum', () => {
     let s = createInitialState();
-    for (let i = 0; i < 12; i++) s = ok(endTurn(s)).state;
+    for (let i = 0; i < 12; i++) s = pass(s);
     expect(s.ap).toEqual({ white: 5, black: 5 });
   });
 
@@ -49,20 +51,42 @@ describe('AP', () => {
     const rules = { ...DEFAULT_RULES, apStart: 2, apPerTurn: 2, apMax: 3 };
     const s = createInitialState(rules);
     expect(s.ap).toEqual({ white: 3, black: 2 });
-    expect(ok(endTurn(s)).state.ap).toEqual({ white: 3, black: 3 });
+    expect(pass(s).ap).toEqual({ white: 3, black: 3 });
   });
 });
 
 describe('end turn', () => {
-  it('passes the turn without moving', () => {
-    const r = ok(endTurn(createInitialState()));
-    expect(r.state.turn).toBe('black');
-    expect(r.state.board).toEqual(createInitialState().board);
+  it('is refused when nothing was done this turn', () => {
+    expect(endTurn(createInitialState())).toEqual({ ok: false, reason: 'nothingDoneThisTurn' });
+  });
+
+  it('is allowed after a special action was attempted, even a failed one, and passes without moving', () => {
+    for (const roll of [20, 2]) {
+      const s = ok(attempt(ok(propose(rich())).state, roll)).state;
+      const r = ok(endTurn(s));
+      expect(r.state.turn).toBe('black');
+      expect(r.state.board).toEqual(s.board);
+    }
+  });
+
+  it('a cancelled proposal does not count', () => {
+    const s = ok(cancel(ok(propose(rich())).state)).state;
+    expect(endTurn(s)).toMatchObject({ ok: false, reason: 'nothingDoneThisTurn' });
+  });
+
+  it('is allowed when there is no normal move to make at all', () => {
+    // White's only piece is a stunned king: nothing can move, so passing must be possible.
+    const start = createStateFrom({ a1: { color: 'white', type: 'king' }, h8: { color: 'black', type: 'king' } });
+    const board = [...start.board];
+    board[sq('a1')] = { ...board[sq('a1')]!, tags: [{ name: '기절', turnsLeft: null, appliedOnTurn: 0 }] };
+    const s = { ...start, board };
+    expect(legalTargets(s, sq('a1'))).toEqual([]);
+    expect(ok(endTurn(s)).state.turn).toBe('black');
   });
 
   it('clears an en passant chance', () => {
     const s = play(createInitialState(), 'e2e4 a7a6 e4e5 d7d5');
-    expect(ok(endTurn(s)).state.enPassant).toBeNull();
+    expect(pass(s).enPassant).toBeNull();
   });
 });
 

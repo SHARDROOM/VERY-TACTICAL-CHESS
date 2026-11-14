@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyCommand, createInitialState, createStateFrom, type Effect, type GameState, type Ruling } from './index';
-import { ok, okMove, play, sq } from './testUtil';
+import { ok, okMove, passTurn, play, sq } from './testUtil';
 
 const act = (s: GameState, effects: Effect[]) => {
   const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 10, cost: 1, effects, narration: { success: 's', failure: 'f' } };
@@ -38,10 +38,10 @@ describe('captured pieces', () => {
       { ap: { white: 0, black: 5 } },
     );
     s = act(s, [{ type: 'tag', at: sq('e8'), tag: '보호막', turns: 0 }]);
-    s = ok(applyCommand(s, { type: 'endTurn' })).state;
+    s = passTurn(s);
     s = okMove(s, 'e4', 'e8').state;
     expect(s.captured).toEqual([]);
-    s = okMove(ok(applyCommand(s, { type: 'endTurn' })).state, 'e4', 'e8').state;
+    s = okMove(passTurn(s), 'e4', 'e8').state;
     expect(s.captured).toEqual([expect.objectContaining({ type: 'king', color: 'black' })]);
   });
 });

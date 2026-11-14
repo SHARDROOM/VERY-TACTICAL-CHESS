@@ -10,7 +10,7 @@ import {
   type GameState,
   type Ruling,
 } from './index';
-import { move, ok, okMove, play, sq } from './testUtil';
+import { move, ok, okMove, passTurn, play, sq } from './testUtil';
 
 const ruling = (effects: Effect[], over: Partial<Ruling> = {}): Ruling => ({
   interpretation: 'x',
@@ -33,7 +33,7 @@ const proposeFails = (state: GameState, ...effects: Effect[]) => {
   expect(r).toMatchObject({ ok: false, reason: 'invalidRuling' });
   return r.ok ? '' : r.detail ?? '';
 };
-const endTurn = (s: GameState) => ok(applyCommand(s, { type: 'endTurn' })).state;
+const endTurn = (s: GameState) => passTurn(s);
 const rich = (): GameState => ({ ...createInitialState(), ap: { white: 5, black: 5 } });
 const legal = (s: GameState, from: string) => legalTargets(s, sq(from)).map((t) => squareName(t.to)).sort();
 const tagsAt = (s: GameState, at: string) => s.board[sq(at)]?.tags?.map((t) => [t.name, t.turnsLeft]) ?? [];

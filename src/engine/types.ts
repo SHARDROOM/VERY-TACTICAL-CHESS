@@ -174,7 +174,8 @@ export type RejectReason =
   | 'notFeasible'
   | 'notEnoughAp'
   | 'invalidRoll'
-  | 'kingProtectedThisTurn';
+  | 'kingProtectedThisTurn'
+  | 'nothingDoneThisTurn';
 
 export type CommandResult =
   | { ok: true; state: GameState; events: GameEvent[] }

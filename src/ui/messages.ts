@@ -23,6 +23,7 @@ export const REJECT_MESSAGE: Record<RejectReason, string> = {
   notEnoughAp: 'AP가 부족합니다.',
   invalidRoll: '주사위 값이 올바르지 않습니다.',
   kingProtectedThisTurn: '이번 턴에 AP를 썼으므로 킹을 잡을 수 없습니다.',
+  nothingDoneThisTurn: '아무것도 하지 않고는 턴을 끝낼 수 없습니다. 수를 두거나 특수 행동을 시도해 주세요.',
 };
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
