@@ -45,9 +45,10 @@ export function useFullscreen() {
 
 interface Props {
   onClose: () => void;
-  gm: { isAuthority: boolean; name: string; busy: boolean; onOpen: () => void };
+  gm: { isAuthority: boolean; name: string; busy: boolean; onOpen: () => void; note?: string };
   fullscreen: ReturnType<typeof useFullscreen>;
-  game: { onLeave: () => void; online: boolean };
+  /** In a game: the way out. Absent on the title screen. */
+  game?: { onLeave: () => void; online: boolean };
 }
 
 /** Settings and rare actions (GM, fullscreen, sound, leaving); camera and precedents stay on screen. */
@@ -69,6 +70,7 @@ export function SettingsMenu({ onClose, gm, fullscreen, game }: Props) {
           ) : (
             <div className="menu-note">GM은 방장이 설정합니다.</div>
           )}
+          {gm.note && <div className="menu-note">{gm.note}</div>}
         </section>
         {fullscreen.supported && (
           <section>
@@ -80,12 +82,14 @@ export function SettingsMenu({ onClose, gm, fullscreen, game }: Props) {
           <h3>소리</h3>
           <SoundControls />
         </section>
-        <section>
-          <h3>게임</h3>
-          <button className="danger" onClick={act(game.onLeave)}>
-            {game.online ? '방에서 나가기' : '로비로 나가기'}
-          </button>
-        </section>
+        {game && (
+          <section>
+            <h3>게임</h3>
+            <button className="danger" onClick={act(game.onLeave)}>
+              {game.online ? '방에서 나가기' : '로비로 나가기'}
+            </button>
+          </section>
+        )}
       </div>
     </div>
   );

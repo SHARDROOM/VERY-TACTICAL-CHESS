@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { GameScreen } from './ui/GameScreen';
 import { Lobby } from './ui/Lobby';
-import type { GmConfig } from './ui/GmSettings';
+import { GmSettings, type GmConfig } from './ui/GmSettings';
 import { createGm } from './gm/createGm';
 import { LocalSession } from './session/localSession';
 import { HostSession } from './session/hostSession';
@@ -35,6 +35,8 @@ export default function App() {
   const [saved, setSaved] = useState<SavedGame | null>(() => loadSavedGame());
   const [askForKey, setAskForKey] = useState(false);
   const [startNotice, setStartNotice] = useState<string | null>(null);
+  const [lobbyGmSettings, setLobbyGmSettings] = useState(false);
+  const gmName = useMemo(() => createGm(gmConfig).name, [gmConfig]);
   const autoJoined = useRef(false);
   const saveTarget = useRef<SaveTarget>(null);
   const gmRef = useRef(gmConfig);
@@ -196,19 +198,33 @@ export default function App() {
 
   if (!session) {
     return (
-      <Lobby
-        busy={busy}
-        error={error}
-        saved={saved}
-        onHotseat={() => hotseat()}
-        onHost={() => void host()}
-        onJoin={join}
-        onResume={() => (saved?.kind === 'host' ? void host(saved) : hotseat(saved))}
-        onDiscard={() => {
-          clearSavedGame();
-          setSaved(null);
-        }}
-      />
+      <>
+        <Lobby
+          busy={busy}
+          error={error}
+          saved={saved}
+          onHotseat={() => hotseat()}
+          onHost={() => void host()}
+          onJoin={join}
+          onResume={() => (saved?.kind === 'host' ? void host(saved) : hotseat(saved))}
+          onDiscard={() => {
+            clearSavedGame();
+            setSaved(null);
+          }}
+          gmName={gmName}
+          onGmSettings={() => setLobbyGmSettings(true)}
+        />
+        {lobbyGmSettings && (
+          <GmSettings
+            current={gmConfig}
+            onClose={() => setLobbyGmSettings(false)}
+            onSave={(config) => {
+              changeGm(config);
+              setLobbyGmSettings(false);
+            }}
+          />
+        )}
+      </>
     );
   }
   return (

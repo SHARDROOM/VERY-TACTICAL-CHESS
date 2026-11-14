@@ -1,6 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { normalizeRoomCode } from '../session/peerTransport';
 import type { SavedGame } from '../session/storage';
+import type { TourInset } from '../scene/TourCamera';
+import { LobbyBackdrop } from './LobbyBackdrop';
+import { SettingsMenu, useFullscreen } from './SettingsMenu';
 
 function ago(ms: number): string {
   const min = Math.round((Date.now() - ms) / 60000);
@@ -19,10 +22,46 @@ interface Props {
   onHotseat: () => void;
   onHost: () => void;
   onJoin: (code: string) => void;
+  /** Display name of the GM a new game would use. */
+  gmName: string;
+  onGmSettings: () => void;
 }
 
-export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onHost, onJoin }: Props) {
+/** Which parts of the screen the title and the menu card cover, for framing the 3D tour. */
+function useCoveredInset(root: React.RefObject<HTMLElement | null>, title: React.RefObject<HTMLElement | null>, card: React.RefObject<HTMLElement | null>) {
+  const [inset, setInset] = useState<TourInset>({ left: 0, top: 0, bottom: 0 });
+  useLayoutEffect(() => {
+    const measure = () => {
+      const r = root.current?.getBoundingClientRect();
+      const t = title.current?.getBoundingClientRect();
+      const c = card.current?.getBoundingClientRect();
+      if (!r || !t || !c) return;
+      const sideBySide = c.right < r.width * 0.55;
+      const next: TourInset = sideBySide
+        ? { left: Math.round(c.right), top: Math.round(t.bottom * 0.6), bottom: 0 }
+        : { left: 0, top: Math.round(t.bottom), bottom: Math.round(Math.min(r.height * 0.6, Math.max(0, r.height - c.top))) };
+      setInset((p) => (p.left === next.left && p.top === next.top && p.bottom === next.bottom ? p : next));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    for (const el of [root.current, title.current, card.current]) if (el) ro.observe(el);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
+  return inset;
+}
+
+export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onHost, onJoin, gmName, onGmSettings }: Props) {
   const [code, setCode] = useState('');
+  const [showMenu, setShowMenu] = useState(false);
+  const fullscreen = useFullscreen();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const inset = useCoveredInset(rootRef, titleRef, cardRef);
   const join = (e: FormEvent) => {
     e.preventDefault();
     const c = normalizeRoomCode(code);
@@ -30,9 +69,21 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onHo
   };
 
   return (
-    <div className="lobby">
-      <div className="lobby-card">
-        <h1>아주 전략적인 체스</h1>
+    <div className="lobby" ref={rootRef}>
+      <LobbyBackdrop inset={inset} />
+      <div className="lobby-shade" />
+      <header className="lobby-title" ref={titleRef}>
+        <h1>
+          <span>VERY TACTICAL</span> <span>CHESS</span>
+        </h1>
+        <p>아주 전략적인 체스</p>
+      </header>
+      <button className="menu-button lobby-menu-button" onClick={() => setShowMenu(true)} aria-haspopup="menu" title="설정">
+        ⚙ <span className="label">설정</span>
+      </button>
+
+      <div className="lobby-scroll">
+      <div className="lobby-card" ref={cardRef}>
         <p className="tagline">체스판 위에서 무엇이든 선언하세요. GM이 판정하고, 주사위가 결정합니다.</p>
 
         {saved && (
@@ -79,11 +130,21 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onHo
         {busy && <p className="lobby-status">{busy}</p>}
         {error && <p className="lobby-error">{error}</p>}
 
-        <p className="lobby-note">
+        <details className="lobby-note">
+          <summary>온라인 대전 안내</summary>
           온라인 대전은 서버 없이 두 브라우저를 직접 연결합니다(P2P). 방장 브라우저가 게임을 진행하고 GM을 호출합니다. 회사나 학교
           네트워크에서는 연결이 막힐 수 있으니, 그럴 때는 핫시트 모드를 이용하세요.
-        </p>
+        </details>
       </div>
+      </div>
+
+      {showMenu && (
+        <SettingsMenu
+          onClose={() => setShowMenu(false)}
+          gm={{ isAuthority: true, name: gmName, busy: false, onOpen: onGmSettings, note: '방을 만들거나 핫시트로 시작하면 이 GM을 씁니다. 다른 방에 참가하면 방장의 GM을 씁니다.' }}
+          fullscreen={fullscreen}
+        />
+      )}
     </div>
   );
 }

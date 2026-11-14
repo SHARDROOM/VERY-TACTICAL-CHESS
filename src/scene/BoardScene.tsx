@@ -8,6 +8,7 @@ import { PieceMesh } from './PieceMesh';
 import { TABLE_TOP_Y, WoodTable } from './WoodTable';
 import { CoinTable } from '../coins/CoinTable';
 import { DiceTray, trayCenterX, type ActiveRoll } from '../dice3d/DiceTray';
+import { TourCamera, type TourInset, type TourPhase } from './TourCamera';
 
 /** 'dice' looks at the dice tray beside the board while a roll plays. */
 export type ViewMode = 'side' | 'top' | 'dice';
@@ -35,6 +36,8 @@ interface Props {
   ap: Record<Color, number>;
   /** Pieces taken off the board, shown small beside it (on the dice side, near whoever took them). */
   captured: Piece[];
+  /** Title screen: a camera tour of the table instead of the player's view. */
+  tour?: { inset: TourInset; onPhase: (phase: TourPhase) => void };
 }
 
 /**
@@ -135,6 +138,7 @@ export function BoardScene({
   onDiceLanded,
   ap,
   captured,
+  tour,
 }: Props) {
   // Pieces that appear after the first render (spawned by a special action) pop in.
   const mountedRef = useRef(false);
@@ -164,7 +168,11 @@ export function BoardScene({
       </directionalLight>
       {/* Warm lamp over the table. */}
       <pointLight position={[0, 9, 0]} intensity={18} distance={30} decay={1.6} color="#ffdcae" />
-      <CameraRig camera={camera} diceSide={diceSide} />
+      {tour ? (
+        <TourCamera diceSide={diceSide} inset={tour.inset} onPhase={tour.onPhase} />
+      ) : (
+        <CameraRig camera={camera} diceSide={diceSide} />
+      )}
 
       <WoodTable />
       <DiceTray side={diceSide} roll={diceRoll} onLanded={onDiceLanded} />

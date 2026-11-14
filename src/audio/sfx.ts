@@ -166,11 +166,13 @@ const SOUNDS: Record<SfxName, (t: number, s: number) => void> = {
   coinWhoosh: (t, s) => {
     burst(t, { freq: 500, q: 0.8, peak: 0.05 * s, attack: 0.08, decay: 0.25, sweepTo: 2200 });
   },
-  // Metal coin: a few inharmonic partials ringing briefly.
+  // A heavy gold coin: a low thud of its weight, then a lower, longer metallic ring.
   coinClink: (t, s) => {
-    const base = 2000 + Math.random() * 500;
-    [1, 1.5, 2.26, 2.9].forEach((m, i) => tone(t, base * m, { peak: (0.09 / (i + 1)) * s, decay: 0.18 + 0.25 / (i + 1) }));
-    burst(t, { freq: 6000, q: 2, peak: 0.04 * s, decay: 0.02 });
+    tone(t, 170 + Math.random() * 40, { peak: 0.22 * s, decay: 0.07, to: 95 });
+    burst(t, { freq: 900, q: 1.2, peak: 0.07 * s, decay: 0.035 });
+    const base = 1350 + Math.random() * 350;
+    [1, 1.5, 2.26, 2.9].forEach((m, i) => tone(t, base * m, { peak: (0.075 / (i + 1)) * s, decay: 0.22 + 0.3 / (i + 1) }));
+    burst(t, { freq: 4800, q: 2, peak: 0.025 * s, decay: 0.02 });
   },
   coinCollect: (t) => {
     for (let i = 0; i < 4; i++) SOUNDS.coinClink(t + i * 0.06 + Math.random() * 0.02, 0.6);

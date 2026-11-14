@@ -21,10 +21,30 @@ export interface CoinThrow {
   coins: { start: number; frames: Float32Array; final: Pose; impacts: { step: number; strength: number }[] }[];
 }
 
-const MAX_STEPS = 60 * 7;
-const G = 9.81 * 1.6;
+const MAX_STEPS = Math.round(60 * 4.5);
+/**
+ * Strong gravity (for the scene's scale) is what makes a coin read as heavy: it drops fast,
+ * lands with a thud and settles at once instead of floating down. Throw speeds scale with
+ * √G, so the arcs keep the same shape and only play faster.
+ */
+const G = 9.81 * 4;
+const SPEED = Math.sqrt(4 / 1.6);
 /** How far before the dish centre a throw is aimed (coins skid on after landing). */
 const AIM_SHORT = 0.3;
+
+/** Still enough to call it done: under a hair's movement over the last third of a second. */
+function settled(frames: number[]): boolean {
+  const n = frames.length / 7;
+  const back = 20;
+  if (n <= back) return false;
+  const a = (n - 1) * 7;
+  const b = (n - 1 - back) * 7;
+  let move = 0;
+  let turn = 0;
+  for (let k = 0; k < 3; k++) move = Math.max(move, Math.abs(frames[a + k] - frames[b + k]));
+  for (let k = 3; k < 7; k++) turn = Math.max(turn, Math.abs(frames[a + k] - frames[b + k]));
+  return move < 0.004 && turn < 0.004;
+}
 
 /**
  * Throws `count` coins from a dealer standing off the table edge (`fromX`) into the dish
@@ -84,9 +104,9 @@ export async function simulateCoinThrow(options: {
     const r = () => random() * 2 - 1;
     const dir = Math.sign(dishX - fromX);
     const spacing = 9; // steps between coins leaving the hand
-    const bodies: { start: number; body: ReturnType<typeof world.createRigidBody> | null; frames: number[] }[] = Array.from(
+    const bodies: { start: number; body: ReturnType<typeof world.createRigidBody> | null; frames: number[]; down: boolean }[] = Array.from(
       { length: count },
-      (_, i) => ({ start: i * spacing, body: null, frames: [] }),
+      (_, i) => ({ start: i * spacing, body: null, frames: [], down: false }),
     );
 
     let step = 0;
@@ -98,7 +118,7 @@ export async function simulateCoinThrow(options: {
         // dish centre (coins skid forward a bit after touching down).
         const y0 = top + 2.4 + random() * 0.4;
         const z0 = dishZ + r() * 0.4;
-        const vy = 6 + random() * 0.8;
+        const vy = (6 + random() * 0.8) * SPEED;
         const drop = y0 - (top + 0.12);
         const t = (vy + Math.sqrt(vy * vy + 2 * G * drop)) / G;
         const aimX = dishX - dir * AIM_SHORT;
@@ -107,13 +127,14 @@ export async function simulateCoinThrow(options: {
             .setTranslation(fromX, y0, z0)
             .setRotation({ x: tilt.x, y: tilt.y, z: tilt.z, w: tilt.w })
             .setLinvel(((aimX - fromX) / t) * (0.98 + random() * 0.04), vy, ((dishZ - z0) / t) * 0.9)
-            .setAngvel({ x: r() * 12, y: r() * 5, z: r() * 12 })
+            // Heavy coins tumble less in the air and stop wobbling quickly once down.
+            .setAngvel({ x: r() * 9 * SPEED, y: r() * 4 * SPEED, z: r() * 9 * SPEED })
             .setLinearDamping(0.05)
-            .setAngularDamping(2.2)
+            .setAngularDamping(2.2 * SPEED)
             .setCcdEnabled(true),
         );
         world.createCollider(
-          RAPIER.ColliderDesc.cylinder(COIN.halfHeight, COIN.radius).setDensity(8).setFriction(0.95).setRestitution(0.05),
+          RAPIER.ColliderDesc.cylinder(COIN.halfHeight, COIN.radius).setDensity(19.3).setFriction(0.95).setRestitution(0.03),
           c.body,
         );
       }
@@ -123,9 +144,18 @@ export async function simulateCoinThrow(options: {
         const p = c.body.translation();
         const q = c.body.rotation();
         c.frames.push(p.x, p.y, p.z, q.x, q.y, q.z, q.w);
+        // Down in the dish and slowed: a heavy coin settles at once instead of rocking on the pile.
+        if (!c.down && p.y < top + 0.5) {
+          const v = c.body.linvel();
+          if (Math.hypot(v.x, v.y, v.z) < 1.2) {
+            c.down = true;
+            c.body.setLinearDamping(2.5);
+            c.body.setAngularDamping(12);
+          }
+        }
       }
       const allOut = bodies.every((c) => c.body);
-      if (allOut && step > bodies[bodies.length - 1].start + 30 && bodies.every((c) => c.body!.isSleeping())) break;
+      if (allOut && step > bodies[bodies.length - 1].start + 30 && bodies.every((c) => c.body!.isSleeping() || settled(c.frames))) break;
     }
 
     return {
@@ -138,7 +168,7 @@ export async function simulateCoinThrow(options: {
         return {
           start: c.start,
           frames,
-          impacts: findImpacts(frames, world.timestep, G, { threshold: 1, fullScale: 7 }),
+          impacts: findImpacts(frames, world.timestep, G, { threshold: 1 * SPEED, fullScale: 7 * SPEED }),
           final: {
             position: new Vector3(f[n], f[n + 1], f[n + 2]),
             quaternion: new Quaternion(f[n + 3], f[n + 4], f[n + 5], f[n + 6]),
