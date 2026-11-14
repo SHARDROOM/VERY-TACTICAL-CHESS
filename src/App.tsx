@@ -7,8 +7,9 @@ import { LocalSession } from './session/localSession';
 import { HostSession } from './session/hostSession';
 import { GuestSession } from './session/guestSession';
 import { inviteLink, joinRoom, normalizeRoomCode, openRoom } from './session/peerTransport';
-import { browserId, clearSavedGame, gmForSave, gmFromSave, loadSavedGame, saveGame, type SavedGame } from './session/storage';
-import type { Session } from './session/types';
+import { browserId, clearSavedGame, gmForSave, gmFromSave, loadSavedGame, saveGame, savedName, type SavedGame } from './session/storage';
+import type { Session, SessionView } from './session/types';
+import { WaitingRoom } from './ui/WaitingRoom';
 import { rollD20 } from './dice';
 import { playSfx, unlockAudio } from './audio/sfx';
 import './App.css';
@@ -51,20 +52,21 @@ export default function App() {
     setSession(s);
   };
 
-  // Auto-save: after every change, the side that runs the game writes a snapshot.
+  // Auto-save: after every change in a game, the side that runs the game writes a snapshot.
   useEffect(() => {
     if (!session) return;
     let last = session.view().state;
     const write = () => {
       const target = saveTarget.current;
-      if (!target) return;
-      const state = session.view().state;
-      saveGame({ kind: target.kind, code: target.kind === 'host' ? target.code : undefined, state, gm: gmForSave(gmRef.current) });
-      last = state;
+      const view = session.view();
+      if (!target || view.phase !== 'playing') return;
+      const black = session instanceof HostSession ? session.blackPlayer() ?? undefined : undefined;
+      saveGame({ kind: target.kind, code: target.kind === 'host' ? target.code : undefined, state: view.state, gm: gmForSave(gmRef.current), black });
+      last = view.state;
     };
     write();
     return session.subscribe((e) => {
-      if (e.kind === 'notice') return;
+      if (e.kind === 'notice' || e.kind === 'chat') return;
       if (session.view().state !== last) write();
     });
   }, [session]);
@@ -82,7 +84,7 @@ export default function App() {
   const hotseat = (resume: SavedGame | null = null) => {
     const config = resumeGm(resume);
     start(
-      new LocalSession(createGm(config), rollD20, resume?.state),
+      new LocalSession(createGm(config), { roll: rollD20, initialState: resume?.state, phase: resume ? 'playing' : 'waiting' }),
       { kind: 'hotseat' },
       resume ? `저장된 게임을 이어 갑니다.${keyNotice(config)}` : null,
     );
@@ -109,6 +111,8 @@ export default function App() {
         code: room.code,
         link: inviteLink(room.code),
         initialState: resume?.state,
+        black: resume?.black,
+        hostName: savedName() || undefined,
         onDispose: room.close,
       });
       pendingGuests.forEach((c) => hostSession!.attachGuest(c));
@@ -135,6 +139,7 @@ export default function App() {
       closePeer = first.close;
       const guest = new GuestSession(first.channel, {
         id: browserId(),
+        name: savedName() || undefined,
         // If the host goes away (reload, network), keep knocking on the same room.
         reconnect: async () => {
           closePeer?.();
@@ -228,7 +233,7 @@ export default function App() {
     );
   }
   return (
-    <GameScreen
+    <RoomScreen
       key={sessionId}
       session={session}
       gmConfig={gmConfig}
@@ -236,6 +241,53 @@ export default function App() {
       onLeave={leave}
       openGmSettings={askForKey}
       startNotice={startNotice}
+    />
+  );
+}
+
+/** The waiting room or the game, whichever phase the room is in. */
+function RoomScreen(props: { session: Session; gmConfig: GmConfig; onGmConfig: (c: GmConfig) => void; onLeave: () => void; openGmSettings: boolean; startNotice: string | null }) {
+  const { session } = props;
+  const [view, setView] = useState<SessionView>(() => session.view());
+  const [gameNo, setGameNo] = useState(0);
+  const [gmSettings, setGmSettings] = useState(false);
+  useEffect(() => {
+    const unsubscribe = session.subscribe((e) => e.kind === 'view' && setView(e.view));
+    setView(session.view());
+    return unsubscribe;
+  }, [session]);
+  // Every game gets a fresh screen (log, camera, dice).
+  const phase = view.phase;
+  useEffect(() => {
+    if (phase === 'playing') setGameNo((n) => n + 1);
+  }, [phase]);
+
+  if (phase === 'waiting') {
+    return (
+      <>
+        <WaitingRoom session={session} view={view} onLeave={props.onLeave} onGmSettings={() => setGmSettings(true)} />
+        {gmSettings && (
+          <GmSettings
+            current={props.gmConfig}
+            onClose={() => setGmSettings(false)}
+            onSave={(config) => {
+              props.onGmConfig(config);
+              setGmSettings(false);
+            }}
+          />
+        )}
+      </>
+    );
+  }
+  return (
+    <GameScreen
+      key={gameNo}
+      session={session}
+      gmConfig={props.gmConfig}
+      onGmConfig={props.onGmConfig}
+      onLeave={props.onLeave}
+      openGmSettings={props.openGmSettings}
+      startNotice={gameNo <= 1 ? props.startNotice : null}
     />
   );
 }

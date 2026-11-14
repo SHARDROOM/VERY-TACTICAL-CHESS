@@ -260,12 +260,15 @@ interface Flight {
   ids: number[];
   /** Last step already given its sounds. */
   sounded: number;
+  /** Set when it has landed: frames can run again before React re-renders, so finish only once. */
+  finished?: boolean;
 }
 
 interface Collect {
   color: Color;
   coins: { id: number; from: Pose }[];
   startedAt: number | null;
+  finished?: boolean;
 }
 
 let nextCoinId = 1;
@@ -339,7 +342,7 @@ export function CoinTable({ ap, side }: { ap: Record<Color, number>; side: 1 | -
 
   useFrame(({ clock }) => {
     const now = clock.elapsedTime;
-    if (flight) {
+    if (flight && !flight.finished) {
       if (flight.startedAt === null) flight.startedAt = now;
       const step = Math.floor((now - flight.startedAt) / flight.throw.dt);
       for (const c of flight.throw.coins) {
@@ -363,12 +366,13 @@ export function CoinTable({ ap, side }: { ap: Record<Color, number>; side: 1 | -
       });
       if (step >= flight.throw.steps) {
         const f = flight;
+        f.finished = true;
         setFlight(null);
         setPiles((p) => ({ ...p, [f.color]: [...p[f.color], ...f.throw.coins.map((c, k) => ({ id: f.ids[k], pose: c.final }))] }));
         done();
       }
     }
-    if (collect) {
+    if (collect && !collect.finished) {
       if (collect.startedAt === null) collect.startedAt = now;
       const t = (now - collect.startedAt) / 0.8;
       collect.coins.forEach((c, k) => {
@@ -383,6 +387,7 @@ export function CoinTable({ ap, side }: { ap: Record<Color, number>; side: 1 | -
         g.visible = p < 1;
       });
       if (t > 1 + collect.coins.length * 0.12) {
+        collect.finished = true;
         setCollect(null);
         done();
       }

@@ -49,10 +49,12 @@ interface Props {
   fullscreen: ReturnType<typeof useFullscreen>;
   /** In a game: the way out. Absent on the title screen. */
   game?: { onLeave: () => void; online: boolean };
+  /** The room's rules, shown read-only in a game. */
+  rules?: string[];
 }
 
 /** Settings and rare actions (GM, fullscreen, sound, leaving); camera and precedents stay on screen. */
-export function SettingsMenu({ onClose, gm, fullscreen, game }: Props) {
+export function SettingsMenu({ onClose, gm, fullscreen, game, rules }: Props) {
   const act = (f: () => void) => () => {
     f();
     onClose();
@@ -82,6 +84,16 @@ export function SettingsMenu({ onClose, gm, fullscreen, game }: Props) {
           <h3>소리</h3>
           <SoundControls />
         </section>
+        {rules && (
+          <section>
+            <h3>이 방의 규칙</h3>
+            {rules.map((line) => (
+              <div key={line} className="menu-note">
+                {line}
+              </div>
+            ))}
+          </section>
+        )}
         {game && (
           <section>
             <h3>게임</h3>

@@ -3,11 +3,27 @@ import type { Channel } from './channel';
 import { Emitter } from './emitter';
 import { PROTOCOL_VERSION, parseHostMessage, type GuestMessage } from './protocol';
 import { startHeartbeat } from './heartbeat';
-import { cleanChat, type ConnectionStatus, type Request, type Seat, type Session, type SessionView } from './types';
+import { applyDoodleChange, type Doodle, type DoodleOp } from './doodle';
+import {
+  cleanChat,
+  cleanName,
+  pushChat,
+  type ChatMessage,
+  type ConnectionStatus,
+  type Member,
+  type Phase,
+  type Request,
+  type Seat,
+  type Session,
+  type SessionView,
+  type TimerSnapshot,
+  type TurnTimer,
+} from './types';
 
 export interface GuestOptions {
   /** Random per-browser id sent with hello, so the host recognises us when we come back. */
   id?: string;
+  name?: string;
   /** Opens a fresh connection to the same room; without it a lost connection is final. */
   reconnect?: () => Promise<Channel>;
   onDispose?: () => void;
@@ -18,54 +34,85 @@ export interface GuestOptions {
 }
 
 /**
- * Online guest: shows the host's state and sends requests; the host decides everything.
- * If the host goes away (refresh, closed tab, network), the game pauses and the guest keeps
- * trying to reconnect to the same room until the host is back or the player leaves.
+ * Online guest (player or spectator): shows the host's state and sends requests; the host
+ * decides everything. If the host goes away (refresh, closed tab, network), the game pauses
+ * and the guest keeps trying to reconnect to the same room until the host is back or the
+ * player leaves.
  */
 export class GuestSession implements Session {
   private readonly emitter = new Emitter();
   private channel: Channel;
   private state: GameState = createInitialState();
-  private seat: Seat = 'black';
+  private myKey = '';
+  private members: Member[] = [];
+  private phase: Phase = 'waiting';
   private gmBusy = false;
   private gmName = '';
+  private timer: TurnTimer | null = null;
+  private chat: ChatMessage[] = [];
+  private doodles: Doodle[] = [];
   private connection: ConnectionStatus = { kind: 'connecting' };
   private welcomed = false;
   private disposed = false;
   private turnedAway = false;
+  private name: string;
 
   constructor(channel: Channel, private readonly options: GuestOptions = {}) {
     this.channel = channel;
+    this.name = cleanName(options.name);
     this.attach(channel);
   }
 
   view(): SessionView {
+    const me = this.members.find((m) => m.key === this.myKey);
+    const seat: Seat = me?.role ?? 'spectator';
     return {
       state: this.state,
-      seat: this.seat,
+      seat,
       gmBusy: this.gmBusy,
       gmName: this.gmName,
       connection: this.connection,
       isAuthority: false,
+      phase: this.phase,
+      members: this.members,
+      myKey: this.myKey,
+      timer: this.timer,
+      chat: this.chat,
+      doodles: this.doodles,
     };
   }
 
   subscribe = (listener: Parameters<Emitter['subscribe']>[0]) => this.emitter.subscribe(listener);
 
+  private send(msg: GuestMessage): void {
+    if (this.connection.kind === 'connected') this.channel.send(msg);
+  }
+
   request(req: Request): void {
-    if (this.connection.kind !== 'connected') return;
-    this.channel.send({ t: 'req', req } satisfies GuestMessage);
+    this.send({ t: 'req', req });
   }
 
   sendChat(text: string): void {
     const clean = cleanChat(text);
-    if (!clean || this.connection.kind !== 'connected' || this.seat === 'both') return;
-    this.emitter.emit({ kind: 'chat', from: this.seat, text: clean, mine: true });
-    this.channel.send({ t: 'chat', text: clean } satisfies GuestMessage);
+    if (clean) this.send({ t: 'chat', text: clean });
+  }
+
+  setName(name: string): void {
+    const clean = cleanName(name);
+    if (!clean) return;
+    this.name = clean;
+    this.send({ t: 'name', name: clean });
+  }
+
+  doodle(op: DoodleOp): void {
+    this.send({ t: 'doodle', op });
   }
 
   setGm(): void {}
+  setRules(): void {}
+  start(): void {}
   restart(): void {}
+  assignRole(): void {}
 
   dispose(): void {
     this.disposed = true;
@@ -96,8 +143,12 @@ export class GuestSession implements Session {
       this.emitView();
       void this.reconnectLoop();
     });
-    const hello: GuestMessage = this.options.id ? { t: 'hello', v: PROTOCOL_VERSION, id: this.options.id } : { t: 'hello', v: PROTOCOL_VERSION };
-    channel.send(hello);
+    channel.send({
+      t: 'hello',
+      v: PROTOCOL_VERSION,
+      ...(this.options.id && { id: this.options.id }),
+      ...(this.name && { name: this.name }),
+    } satisfies GuestMessage);
   }
 
   private async reconnectLoop(): Promise<void> {
@@ -123,6 +174,10 @@ export class GuestSession implements Session {
     this.emitter.emit({ kind: 'view', view: this.view() });
   }
 
+  private setTimer(t: TimerSnapshot | null) {
+    this.timer = t && { ...t, at: Date.now() };
+  }
+
   private onMessage(raw: unknown): void {
     const msg = parseHostMessage(raw);
     if (!msg || msg.t === 'ping') return;
@@ -131,17 +186,28 @@ export class GuestSession implements Session {
         const again = this.welcomed;
         this.welcomed = true;
         this.connection = { kind: 'connected' };
-        this.seat = msg.color;
+        this.myKey = msg.you;
         this.state = msg.state;
+        this.phase = msg.room.phase;
+        this.members = msg.room.members;
         this.gmName = msg.gmName;
         this.gmBusy = msg.busy;
+        this.setTimer(msg.timer);
+        this.chat = msg.chat;
+        this.doodles = msg.doodles;
+        const me = this.members.find((m) => m.key === this.myKey);
+        const role = me?.role === 'black' ? '흑' : me?.role === 'white' ? '백' : '관전자';
         this.emitter.emit({
           kind: 'notice',
-          text: again ? '방장과 다시 연결되었습니다. 게임을 이어 갑니다.' : `방에 들어왔습니다. 당신은 ${msg.color === 'white' ? '백' : '흑'}입니다.`,
+          text: again ? '방장과 다시 연결되었습니다. 이어 갑니다.' : `방에 들어왔습니다. 당신은 ${role}입니다.`,
           tone: 'normal',
         });
         break;
       }
+      case 'room':
+        this.phase = msg.room.phase;
+        this.members = msg.room.members;
+        break;
       case 'update': {
         const before = this.state;
         this.state = msg.state;
@@ -150,21 +216,27 @@ export class GuestSession implements Session {
       }
       case 'sync':
         this.state = msg.state;
-        this.emitter.emit({ kind: 'notice', text: '방장이 새 게임을 시작했습니다.', tone: 'normal' });
         break;
       case 'busy':
         this.gmBusy = msg.busy;
         this.gmName = msg.gmName;
         break;
+      case 'timer':
+        this.setTimer(msg.timer);
+        break;
       case 'notice':
         this.emitter.emit({ kind: 'notice', text: msg.text, tone: msg.tone });
         break;
       case 'chat':
-        this.emitter.emit({ kind: 'chat', from: msg.from, text: msg.text, mine: false });
-        return;
+        this.chat = pushChat(this.chat, msg.message);
+        this.emitter.emit({ kind: 'chat', message: msg.message, mine: msg.message.author === this.myKey });
+        break;
+      case 'doodle':
+        this.doodles = applyDoodleChange(this.doodles, msg.change);
+        break;
       case 'full':
         this.turnedAway = true;
-        this.connection = { kind: 'disconnected', reason: '이미 두 명이 있는 방입니다.' };
+        this.connection = { kind: 'disconnected', reason: '방이 꽉 찼습니다.' };
         break;
     }
     this.emitView();

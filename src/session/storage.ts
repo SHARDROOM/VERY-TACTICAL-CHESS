@@ -1,4 +1,4 @@
-import type { GameState } from '../engine';
+import { withDefaultRules, type GameState } from '../engine';
 import type { GmConfig } from '../ui/GmSettings';
 
 /** What we remember about a GM between visits: never the API key. */
@@ -15,6 +15,8 @@ export interface SavedGame {
   state: GameState;
   gm: SavedGm;
   savedAt: number;
+  /** Host only: who sat at black (their reconnect id stays on this machine), so they get the seat back. */
+  black?: { id: string; name: string };
 }
 
 const KEY = 'vtc.save.v1';
@@ -92,7 +94,10 @@ export function loadSavedGame(storage?: Storage): SavedGame | null {
     return bad();
   }
   if (raw.kind === 'host' && typeof raw.code !== 'string') return bad();
-  return raw as unknown as SavedGame;
+  const game = raw as unknown as SavedGame;
+  const black = isObj(raw.black) && typeof raw.black.id === 'string' && typeof raw.black.name === 'string' ? { id: raw.black.id, name: raw.black.name } : undefined;
+  // Saves from before a rule existed get its default.
+  return { ...game, black, state: { ...game.state, rules: withDefaultRules(game.state.rules) } };
 
   function bad() {
     clearSavedGame(storage);
@@ -117,5 +122,22 @@ export function browserId(storage?: Storage): string {
     return id;
   } catch {
     return make();
+  }
+}
+
+/** The name this browser uses in rooms (empty: let the room pick one). */
+export function savedName(storage?: Storage): string {
+  try {
+    return store(storage)?.getItem('vtc.name') ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function saveName(name: string, storage?: Storage): void {
+  try {
+    store(storage)?.setItem('vtc.name', name);
+  } catch {
+    // ignore
   }
 }

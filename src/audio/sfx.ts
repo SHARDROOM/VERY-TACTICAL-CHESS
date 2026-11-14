@@ -19,7 +19,10 @@ export type SfxName =
   | 'chat'
   | 'ruling'
   | 'critSuccess'
-  | 'critFailure';
+  | 'critFailure'
+  | 'chaos'
+  | 'timeout'
+  | 'tick';
 
 export interface SoundSettings {
   enabled: boolean;
@@ -181,6 +184,22 @@ const SOUNDS: Record<SfxName, (t: number, s: number) => void> = {
   // A knife scoring wood: a rough, scratchy noise.
   carve: (t) => {
     for (let i = 0; i < 9; i++) burst(t + i * 0.045, { freq: 3200 + Math.random() * 1500, q: 2.5, peak: 0.05 + Math.random() * 0.03, decay: 0.04 });
+  },
+  // Chaos: a gust of wind over a low, rolling rumble.
+  chaos: (t) => {
+    burst(t, { freq: 300, q: 0.7, peak: 0.12, attack: 0.25, decay: 1.1, sweepTo: 1800 });
+    tone(t, 70, { type: 'sawtooth', peak: 0.06, attack: 0.15, decay: 1.2, to: 45 });
+    tone(t + 0.35, 523, { type: 'triangle', peak: 0.04, decay: 0.5, to: 392, detune: 15 });
+  },
+  // Time is up: two falling notes.
+  timeout: (t) => {
+    tone(t, 660, { type: 'square', peak: 0.04, decay: 0.18 });
+    tone(t + 0.2, 440, { type: 'square', peak: 0.04, decay: 0.3 });
+  },
+  // A clock tick for the last seconds.
+  tick: (t) => {
+    burst(t, { freq: 3500, q: 6, peak: 0.08, decay: 0.02 });
+    tone(t, 1800, { peak: 0.03, decay: 0.03 });
   },
   chat: (t) => {
     tone(t, 988, { peak: 0.06, decay: 0.12 });

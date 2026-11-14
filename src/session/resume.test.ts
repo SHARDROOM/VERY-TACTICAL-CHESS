@@ -121,8 +121,27 @@ describe('saved games', () => {
 
   it('hotseat and host sessions resume from a saved state', () => {
     const state = busyState();
-    expect(new LocalSession(new TestGm(), () => 20, state).view().state).toBe(state);
-    expect(new HostSession(new TestGm(), { code: 'ABC234', link: 'x', initialState: state, heartbeatMs: 0 }).view().state).toBe(state);
+    const local = new LocalSession(new TestGm(), { roll: () => 20, initialState: state, phase: 'playing' });
+    expect(local.view()).toMatchObject({ state, phase: 'playing' });
+    const host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', initialState: state, heartbeatMs: 0, black: { id: 'guest-1', name: '친구' } });
+    expect(host.view()).toMatchObject({ state, phase: 'playing' });
+    // The black seat waits for its player.
+    expect(host.view().members.map((m) => [m.name, m.role, m.online])).toEqual([['방장', 'white', true], ['친구', 'black', false]]);
+  });
+
+  it('old saves (before the newer rules) load with the default rules filled in', () => {
+    const storage = new MemoryStorage();
+    const state = createInitialState();
+    const { turnSeconds, chaosChance, doodle, timeoutPenalty, ...oldRules } = state.rules;
+    void [turnSeconds, chaosChance, doodle, timeoutPenalty];
+    saveGame({ kind: 'hotseat', state: { ...state, rules: oldRules as never }, gm: { provider: 'fake' } }, storage);
+    expect(loadSavedGame(storage)?.state.rules).toMatchObject({ turnSeconds: 0, chaosChance: 0, doodle: true, timeoutPenalty: 1 });
+  });
+
+  it('a host save remembers who sat at black', () => {
+    const storage = new MemoryStorage();
+    saveGame({ kind: 'host', code: 'ABC234', state: createInitialState(), gm: { provider: 'fake' }, black: { id: 'guest-1', name: '친구' } }, storage);
+    expect(loadSavedGame(storage)?.black).toEqual({ id: 'guest-1', name: '친구' });
   });
 });
 
@@ -154,11 +173,11 @@ describe('reconnecting', () => {
     await settle();
     expect(guest.view().connection).toMatchObject({ kind: 'paused' });
 
-    // The host comes back with the saved state under the same room.
-    host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', initialState: state, heartbeatMs: 0 });
+    // The host comes back with the saved state under the same room, keeping black's seat.
+    host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', initialState: state, heartbeatMs: 0, black: { id: 'guest-1', name: '친구' } });
     reopen = () => {};
     await settle(10);
-    expect(guest.view().connection).toEqual({ kind: 'connected' });
+    expect(guest.view()).toMatchObject({ connection: { kind: 'connected' }, seat: 'black', phase: 'playing' });
     expect(guest.view().state).toEqual(JSON.parse(JSON.stringify(state)));
 
     // ...and play continues: the pending ruling can still be attempted (it is white's).
@@ -174,18 +193,21 @@ describe('reconnecting', () => {
     host.attachGuest(h1);
     new GuestSession(g1, { id: 'same-player', heartbeatMs: 0 });
     await settle();
+    host.start();
+    await settle();
     // The host never noticed the first connection dying; the same player reconnects.
     const [h2, g2] = memoryChannelPair();
     host.attachGuest(h2);
     const again = new GuestSession(g2, { id: 'same-player', heartbeatMs: 0 });
     await settle();
-    expect(again.view().connection).toEqual({ kind: 'connected' });
+    expect(again.view()).toMatchObject({ connection: { kind: 'connected' }, seat: 'black' });
+    expect(host.view().members).toHaveLength(2);
     host.request({ type: 'move', from: sq('e2'), to: sq('e4') });
     await settle();
     expect(again.view().state.turn).toBe('black');
   });
 
-  it('a different player is still turned away while the seat is taken', async () => {
+  it('a different player only watches while the seat is taken', async () => {
     const host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', heartbeatMs: 0 });
     const [h1, g1] = memoryChannelPair();
     host.attachGuest(h1);
@@ -193,9 +215,9 @@ describe('reconnecting', () => {
     await settle();
     const [h2, g2] = memoryChannelPair();
     host.attachGuest(h2);
-    const stranger = new GuestSession(g2, { id: 'player-b', heartbeatMs: 0, reconnect: async () => g2, retryMs: 5 });
+    const stranger = new GuestSession(g2, { id: 'player-b', heartbeatMs: 0 });
     await settle(10);
-    expect(stranger.view().connection).toMatchObject({ kind: 'disconnected', reason: '이미 두 명이 있는 방입니다.' });
+    expect(stranger.view()).toMatchObject({ connection: { kind: 'connected' }, seat: 'spectator' });
   });
 
   it('leaving stops the reconnect attempts', async () => {

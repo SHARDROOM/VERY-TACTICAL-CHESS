@@ -27,7 +27,9 @@ import { successChance } from '../dice';
 import { loadPhysics, simulateRoll } from '../dice3d/simulate';
 import { skinRotationFor } from '../dice3d/d20';
 import type { ActiveRoll } from '../dice3d/DiceTray';
-import { CHAT_MAX_LENGTH, type Session, type SessionView } from '../session/types';
+import { CHAT_MAX_LENGTH, timeLeft, type Session, type SessionView, type TurnTimer } from '../session/types';
+import { ConnectionOverlay } from './ConnectionOverlay';
+import { clockText, rulesSummary } from './rules';
 
 interface LogLine extends LogEntry {
   id: number;
@@ -69,7 +71,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const [view, setView] = useState<SessionView>(() => session.view());
   const seat = view.seat;
   const online = view.connection.kind !== 'local';
-  const homeSide: Color = seat === 'both' ? 'white' : seat;
+  const homeSide: Color = seat === 'black' ? 'black' : 'white';
+  const spectator = seat === 'spectator';
 
   const [selected, setSelected] = useState<Square | null>(null);
   const [hovered, setHovered] = useState<Square | null>(null);
@@ -82,19 +85,25 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const fullscreen = useFullscreen();
   const [showGmSettings, setShowGmSettings] = useState(openGmSettings);
   const [promotionChoice, setPromotionChoice] = useState<{ from: Square; to: Square } | null>(null);
-  const [copied, setCopied] = useState(false);
   const [tab, setTab] = useState<'log' | 'chat'>('log');
   // A folded panel keeps only the input row, leaving the table in view.
   const [collapsed, setCollapsed] = useState(false);
   const tabRef = useRef(tab);
   tabRef.current = tab;
-  const [chat, setChat] = useState<{ id: number; from: Color; text: string; mine: boolean }[]>([]);
+  const chat = view.chat;
   const [chatText, setChatText] = useState('');
+  /** A chaos event being announced across the screen. */
+  const [chaosBanner, setChaosBanner] = useState<{ title: string; narration: string } | null>(null);
   const [unread, setUnread] = useState(0);
   const chatRef = useRef<HTMLOListElement>(null);
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
-  }, [chat, tab]);
+  }, [chat.length, tab]);
+  useEffect(() => {
+    if (!chaosBanner) return;
+    const t = setTimeout(() => setChaosBanner(null), 5000);
+    return () => clearTimeout(t);
+  }, [chaosBanner]);
   /**
    * The roll being shown on the table, and the board as it was before it (kept on screen
    * until the die lands). `landed` flips when the die stops; `done` reveals the result.
@@ -121,7 +130,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
 
   // Online, the camera stays on your side once your color is known.
   useEffect(() => {
-    if (seat !== 'both') setCamera((c) => ({ ...c, side: seat, nonce: c.nonce + 1 }));
+    if (seat === 'white' || seat === 'black') setCamera((c) => ({ ...c, side: seat, nonce: c.nonce + 1 }));
   }, [seat]);
 
   useEffect(() => {
@@ -133,6 +142,12 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       if (passed) playSfx('turn', { delay: 0.25 });
       if (events.some((ev) => ev.type === 'check')) playSfx('check', { delay: 0.45 });
       if (events.some((ev) => ev.type === 'specialProposed')) playSfx('ruling');
+      const chaos = events.find((ev) => ev.type === 'chaos');
+      if (chaos) {
+        playSfx('chaos');
+        setChaosBanner({ title: chaos.title, narration: chaos.narration });
+      }
+      if (events.some((ev) => ev.type === 'timedOut')) playSfx('timeout');
       const exposed = events.find((ev) => ev.type === 'ownKingExposed');
       if (exposed) setWarning(`${COLOR_NAME[exposed.color]} 킹이 공격받는 위치에 놓였습니다.`);
       else if (passed) setWarning(null);
@@ -194,7 +209,6 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       }
       if (e.kind === 'chat') {
         if (!e.mine) playSfx('chat');
-        setChat((c) => [...c.slice(-199), { id: nextLogId++, from: e.from, text: e.text, mine: e.mine }]);
         if (tabRef.current !== 'chat') setUnread((n) => n + 1);
         return;
       }
@@ -251,7 +265,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const inCheck = playing && isInCheck(game.board, sideToMove);
   const checkedKing = inCheck ? findKing(game.board, sideToMove) : null;
   const pending = game.pending;
-  const connected = view.connection.kind === 'local' || view.connection.kind === 'connected';
+  const connected = view.connection.kind === 'local' || view.connection.kind === 'hosting' || view.connection.kind === 'connected';
   const locked = !playing || view.gmBusy || !!pending || !myTurn || !connected || !!dice;
   // A turn has to be used for something: a normal move ends it by itself, so passing is only
   // for after a special action (or when no piece can move at all).
@@ -304,34 +318,23 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     setPromotionChoice(null);
   };
 
-  const resetView = () => setCamera((c) => ({ mode: 'side', side: seat === 'both' ? sideToMove : seat, nonce: c.nonce + 1 }));
+  const resetView = () => setCamera((c) => ({ mode: 'side', side: seat === 'white' || seat === 'black' ? seat : sideToMove, nonce: c.nonce + 1 }));
   const toggleTopView = () => setCamera((c) => ({ ...c, mode: c.mode === 'top' ? 'side' : 'top', nonce: c.nonce + 1 }));
 
-  const restart = () => {
-    setLog([]);
-    setWarning(null);
-    setSelected(null);
-    session.restart();
-    setCamera((c) => ({ mode: 'side', side: seat === 'both' ? 'white' : seat, nonce: c.nonce + 1 }));
-  };
-
-  const copyLink = async (link: string) => {
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard may be blocked; the link is visible to copy by hand.
-    }
-  };
+  /** Back to the waiting room (this screen goes away). */
+  const restart = () => session.restart();
 
   const canAfford = pending ? game.ap[pending.color] >= pending.ruling.cost : false;
   const canActOnPending = !!pending && (seat === 'both' || seat === pending.color) && connected;
-  const conn = view.connection;
+  const nameOf = (color: Color) => view.members.find((m) => m.role === color)?.name;
+  const absent = view.members.find((m) => (m.role === 'white' || m.role === 'black') && !m.online);
+  const watchers = view.members.filter((m) => m.role === 'spectator').length;
 
   const placeholder = winner
     ? '게임 종료'
-    : !connected
+    : spectator
+      ? '관전 중입니다'
+      : !connected
       ? '연결을 기다리는 중'
       : !myTurn
         ? `${COLOR_NAME[sideToMove]}의 차례입니다`
@@ -358,13 +361,17 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       <header className="top">
         <div className={`turn turn-${sideToMove}`}>
           {winner ? `${COLOR_NAME[winner]} 승리!` : `${COLOR_NAME[sideToMove]}의 차례`}
+          {online && !winner && nameOf(sideToMove) && <span className="turn-name">{nameOf(sideToMove)}</span>}
           <span className="turn-number">턴 {game.turnNumber}</span>
         </div>
-        {seat !== 'both' && <div className={`badge me me-${seat}`}>나: {COLOR_NAME[seat]}</div>}
+        {view.timer && playing && !frozen && <TimerBadge timer={view.timer} mine={myTurn && !spectator} />}
+        {(seat === 'white' || seat === 'black') && online && <div className={`badge me me-${seat}`}>나: {COLOR_NAME[seat]}</div>}
+        {spectator && <div className="badge me">👁 관전 중</div>}
+        {online && watchers > 0 && <div className="badge muted-badge">관전 {watchers}명</div>}
         {inCheck && <div className="badge check">체크!</div>}
         {view.gmBusy && <div className="badge busy">GM 판정 중…</div>}
         {warning && !winner && <div className="badge warn">⚠ {warning}</div>}
-        {conn.kind === 'waiting' && conn.guestLeft && <div className="badge warn">상대 연결 끊김 · 재접속 대기 중 (코드 {conn.code})</div>}
+        {absent && playing && <div className="badge warn">{absent.name} 연결 끊김 · 재접속 대기 중</div>}
       </header>
 
 
@@ -462,12 +469,12 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             <ol className="log chat" ref={chatRef}>
               {chat.length === 0 && (
                 <li className="hint">
-                  {online ? '상대와 자유롭게 이야기하세요. 채팅은 게임 행동이 아니라서 GM에게 가지 않습니다.' : '핫시트에서는 지금 차례인 쪽 이름으로 메모가 남습니다.'}
+                  {online ? '방 안의 모두와 자유롭게 이야기하세요. 채팅은 게임 행동이 아니라서 GM에게 가지 않습니다.' : '핫시트에서는 지금 차례인 쪽 이름으로 메모가 남습니다.'}
                 </li>
               )}
               {chat.map((m) => (
-                <li key={m.id} className={`chat-line ${m.mine ? 'mine' : ''}`}>
-                  <span className={`chat-who who-${m.from}`}>{COLOR_NAME[m.from]}</span>
+                <li key={m.id} className={`chat-line ${online ? (m.author === view.myKey ? 'mine' : '') : ''}`}>
+                  <span className={`chat-who who-${m.role}`}>{m.name}</span>
                   <span className="chat-text">{m.text}</span>
                 </li>
               ))}
@@ -542,7 +549,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
                 <button onClick={() => session.request({ type: 'cancel' })}>취소 (AP 사용 안 함)</button>
               </div>
             ) : (
-              <p className="muted-line">상대가 시도할지 정하는 중입니다…</p>
+              <p className="muted-line">{spectator ? `${COLOR_NAME[pending.color]}이(가) 시도할지 정하는 중입니다…` : '상대가 시도할지 정하는 중입니다…'}</p>
             )}
           </div>
         </div>
@@ -554,6 +561,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
           gm={{ isAuthority: view.isAuthority, name: view.gmName, busy: view.gmBusy, onOpen: () => setShowGmSettings(true) }}
           fullscreen={fullscreen}
           game={{ onLeave, online }}
+          rules={rulesSummary(game.rules)}
         />
       )}
 
@@ -589,55 +597,12 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         </div>
       )}
 
-      {conn.kind === 'waiting' && !conn.guestLeft && (
-        <div className="overlay">
-          <div className="dialog invite">
-            <h2>친구를 기다리는 중</h2>
-            <p>친구에게 방 코드나 초대 링크를 보내 주세요. 친구가 들어오면 바로 시작합니다. 당신은 백입니다.</p>
-            <div className="room-code">{conn.code}</div>
-            <div className="link-row">
-              <input readOnly value={conn.link} onFocus={(e) => e.target.select()} />
-              <button onClick={() => copyLink(conn.link)}>{copied ? '복사됨' : '링크 복사'}</button>
-            </div>
-            <p className="muted-line">기다리는 동안 ⚙ 버튼으로 GM을 설정할 수 있습니다. API 키는 이 브라우저에만 있고 친구에게 전송되지 않습니다.</p>
-            <div className="choice-row">
-              <button onClick={() => setShowGmSettings(true)}>⚙ GM 설정</button>
-              <button onClick={onLeave}>방 닫기</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConnectionOverlay connection={view.connection} onLeave={onLeave} />
 
-      {conn.kind === 'paused' && (
-        <div className="overlay">
-          <div className="dialog">
-            <h2>게임 일시정지</h2>
-            <p>{conn.reason} 방장이 돌아오면 자동으로 이어집니다.</p>
-            <p className="muted-line">다시 연결을 시도하고 있습니다…</p>
-            <button onClick={onLeave}>나가기</button>
-          </div>
-        </div>
-      )}
-
-      {conn.kind === 'connecting' && (
-        <div className="overlay">
-          <div className="dialog">
-            <h2>방에 들어가는 중…</h2>
-            <p className="muted-line">방장의 응답을 기다리고 있습니다.</p>
-            <button onClick={onLeave}>취소</button>
-          </div>
-        </div>
-      )}
-
-      {conn.kind === 'disconnected' && (
-        <div className="overlay">
-          <div className="dialog">
-            <h2>연결이 끊겼습니다</h2>
-            <p>{conn.reason}</p>
-            <button className="primary" onClick={onLeave}>
-              로비로
-            </button>
-          </div>
+      {chaosBanner && !dice && (
+        <div className="chaos-banner" role="status" onClick={() => setChaosBanner(null)}>
+          <div className="chaos-title">🌪 혼돈! {chaosBanner.title}</div>
+          <div className="chaos-text">{chaosBanner.narration}</div>
         </div>
       )}
 
@@ -661,9 +626,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             <h1>{COLOR_NAME[winner]} 승리</h1>
             <p>{COLOR_NAME[opponent(winner)]} 킹이 잡혔습니다.</p>
             {view.isAuthority ? (
-              <button onClick={restart}>새 게임</button>
+              <button onClick={restart}>대기실로 (새 게임)</button>
             ) : (
-              <p className="muted-line">방장이 새 게임을 시작할 수 있습니다.</p>
+              <p className="muted-line">방장이 대기실로 돌아가면 새 게임을 준비합니다.</p>
             )}
             {online && (
               <button className="link" onClick={onLeave}>
@@ -673,6 +638,32 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** The turn clock: counts down locally between updates from the authority. */
+function TimerBadge({ timer, mine }: { timer: TurnTimer; mine: boolean }) {
+  const [, tick] = useState(0);
+  const lastBeep = useRef<number | null>(null);
+  useEffect(() => {
+    if (!timer.running) return;
+    const id = setInterval(() => tick((n) => n + 1), 250);
+    return () => clearInterval(id);
+  }, [timer]);
+  const left = timeLeft(timer);
+  const seconds = Math.ceil(left / 1000);
+  const urgent = timer.running && seconds <= 10;
+  // A soft tick for the last five seconds of your own turn.
+  useEffect(() => {
+    if (!mine || !timer.running || seconds > 5 || seconds <= 0 || lastBeep.current === seconds) return;
+    lastBeep.current = seconds;
+    playSfx('tick');
+  }, [seconds, mine, timer.running]);
+  return (
+    <div className={`badge timer ${urgent ? 'urgent' : ''} ${timer.running ? '' : 'paused'}`} title={timer.running ? '이번 턴에 남은 시간' : 'GM이 판정하는 동안 시간이 멈춥니다'}>
+      ⏱ {clockText(left)}
+      {!timer.running && ' ⏸'}
     </div>
   );
 }
