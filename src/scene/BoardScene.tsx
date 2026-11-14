@@ -33,7 +33,7 @@ function CameraRig({ camera }: { camera: CameraRequest }) {
     const c = ref.current;
     if (!c) return;
     const s = camera.side === 'white' ? 1 : -1;
-    if (camera.mode === 'side') c.setLookAt(0, 8.5, 8 * s, 0, 0, 0.4 * s, true);
+    if (camera.mode === 'side') c.setLookAt(0, 7.2, 8.8 * s, 0, 0, 0.6 * s, true);
     else c.setLookAt(0, 13, 0.001 * s, 0, 0, 0, true);
   }, [camera.mode, camera.side, camera.nonce]);
   return <CameraControls ref={ref} minDistance={5} maxDistance={22} maxPolarAngle={Math.PI / 2.1} />;

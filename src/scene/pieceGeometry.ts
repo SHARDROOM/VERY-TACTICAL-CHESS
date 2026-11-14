@@ -27,9 +27,18 @@ const BODY: Record<Exclude<PieceType, 'knight'>, [number, number][]> = {
 
 const KNIGHT_BODY: [number, number][] = [[0.24, 0.16], [0.21, 0.21], [0.22, 0.245], [0.18, 0.26], [0.1, 0.265]];
 
+/**
+ * Pieces are designed compactly, then stretched vertically above the foot so
+ * they stand at roughly tournament (Staunton) proportions: king ≈ 1.6 squares
+ * tall, pawn ≈ 0.9. Round parts (balls, beads) are moved, not squashed.
+ */
+const FOOT_TOP = 0.13;
+const TALL = 1.4;
+const stretch = (y: number) => (y <= FOOT_TOP ? y : FOOT_TOP + (y - FOOT_TOP) * TALL);
+
 function lathe(profile: [number, number][]): LatheGeometry {
   // Smooth the profile, keeping the axis endpoints exact so the solid is closed.
-  const pts = profile.map(([r, h]) => new Vector2(r, h));
+  const pts = profile.map(([r, h]) => new Vector2(r, stretch(h)));
   const smooth = new SplineCurve(pts).getPoints(pts.length * 6);
   const first = smooth[0];
   const last = smooth[smooth.length - 1];
@@ -124,7 +133,10 @@ function buildParts(type: PieceType): PiecePart[] {
         { geometry: new BoxGeometry(0.15, 0.05, 0.05), position: [0, 1.1, 0] },
       ];
     case 'knight':
-      return [{ geometry: lathe([...FOOT, ...KNIGHT_BODY]) }, { geometry: knightHead(), position: [-0.02, 0.24, 0] }];
+      return [
+        { geometry: lathe([...FOOT, ...KNIGHT_BODY]) },
+        { geometry: knightHead().scale(1.15, 1.5, 1.15), position: [-0.02, 0.24, 0] },
+      ];
   }
 }
 
@@ -133,7 +145,9 @@ const cache = new Map<PieceType, PiecePart[]>();
 export function pieceParts(type: PieceType): PiecePart[] {
   let parts = cache.get(type);
   if (!parts) {
-    parts = buildParts(type);
+    parts = buildParts(type).map((p) =>
+      p.position ? { ...p, position: [p.position[0], stretch(p.position[1]), p.position[2]] as [number, number, number] } : p,
+    );
     cache.set(type, parts);
   }
   return parts;
