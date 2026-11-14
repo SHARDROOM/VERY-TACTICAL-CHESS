@@ -42,6 +42,16 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
   }
 }
 
+/** Records the pieces that left the board in these events (plain: no tags, no rider). */
+function withCaptured(state: GameState, events: GameEvent[]): GameState {
+  const gone: Piece[] = [];
+  for (const e of events) {
+    const piece = e.type === 'moved' ? e.captured : e.type === 'removed' ? e.piece : null;
+    if (piece) gone.push({ id: piece.id, color: piece.color, type: piece.type });
+  }
+  return gone.length ? { ...state, captured: [...(state.captured ?? []), ...gone] } : state;
+}
+
 /** Ends the current player's turn: the opponent moves next and gains AP. */
 function passTurn(
   state: GameState,
@@ -140,7 +150,7 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
     events.push({ type: 'kingCaptured', winner: piece.color });
     return {
       ok: true,
-      state: { ...state, board, status: { kind: 'won', winner: piece.color } },
+      state: withCaptured({ ...state, board, status: { kind: 'won', winner: piece.color } }, events),
       events,
     };
   }
@@ -149,7 +159,7 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   const enPassant = doubleStep ? squareAt(fileOf(cmd.from), (rankOf(cmd.from) + rankOf(cmd.to)) / 2) : null;
 
   events.push(...checkEvents(board, piece.color));
-  const withRights = { ...state, castling: revokeCastling(state.castling, touched) };
+  const withRights = withCaptured({ ...state, castling: revokeCastling(state.castling, touched) }, events);
   return { ok: true, ...passTurn(withRights, board, enPassant, events) };
 }
 
@@ -224,7 +234,7 @@ function attempt(state: GameState, roll: number): CommandResult {
     roll,
     outcome,
   };
-  const after: GameState = {
+  const after: GameState = withCaptured({
     ...state,
     board,
     castling,
@@ -233,7 +243,7 @@ function attempt(state: GameState, roll: number): CommandResult {
     usedApThisTurn: true,
     pending: null,
     precedents: [...state.precedents, precedent],
-  };
+  }, events);
 
   // One-turn-kill guard: if the opponent's king is attacked after a special action, the
   // turn ends at once (remaining AP carries over), so the opponent always gets to respond.

@@ -5,6 +5,7 @@ import type { Outcome } from '../engine';
 import { D20_FACES, d20Vertices, faceWithNumber } from './d20';
 import { DIE_RADIUS, TRAY, type DiceRun } from './simulate';
 import { TABLE_TOP_Y } from '../scene/WoodTable';
+import { playSfx } from '../audio/sfx';
 
 /** The tray is drawn smaller than the physics units so the die is in scale with the pieces. */
 export const TRAY_SCALE = 0.7;
@@ -141,6 +142,7 @@ export function DiceTray({ side, roll, onLanded }: Props) {
   const rest = useRef(initialPose());
   const restSkin = useRef(new Quaternion());
   const startedAt = useRef<number | null>(null);
+  const soundedTo = useRef(-1);
   const landedFor = useRef<DiceRun | null>(null);
   const [lit, setLit] = useState<Outcome | null>(null);
 
@@ -148,6 +150,7 @@ export function DiceTray({ side, roll, onLanded }: Props) {
   useEffect(() => {
     startedAt.current = null;
     landedFor.current = null;
+    soundedTo.current = -1;
     if (!roll) setLit(null);
   }, [roll?.run, roll === null]);
 
@@ -165,6 +168,10 @@ export function DiceTray({ side, roll, onLanded }: Props) {
     if (startedAt.current === null) startedAt.current = clock.elapsedTime;
     const last = run.steps - 1;
     const step = roll.skipped ? last : Math.min(last, Math.floor((clock.elapsedTime - startedAt.current) / run.dt));
+    if (!roll.skipped) {
+      for (const hit of run.impacts) if (hit.step > soundedTo.current && hit.step <= step) playSfx('diceHit', { strength: hit.strength });
+    }
+    soundedTo.current = step;
     const o = step * 7;
     g.position.set(run.frames[o], run.frames[o + 1], run.frames[o + 2]);
     g.quaternion.set(run.frames[o + 3], run.frames[o + 4], run.frames[o + 5], run.frames[o + 6]);
@@ -174,6 +181,8 @@ export function DiceTray({ side, roll, onLanded }: Props) {
       rest.current = { position: g.position.clone(), quaternion: g.quaternion.clone() };
       restSkin.current = roll.skin.clone();
       setLit(roll.outcome);
+      if (roll.outcome === 'critSuccess') playSfx('critSuccess');
+      if (roll.outcome === 'critFailure') playSfx('critFailure');
       onLanded();
     }
   });

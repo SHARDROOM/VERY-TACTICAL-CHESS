@@ -34,6 +34,7 @@ export function createInitialState(rules: RuleConfig = DEFAULT_RULES): GameState
     usedApThisTurn: false,
     pending: null,
     precedents: [],
+    captured: [],
   };
 }
 
@@ -70,6 +71,7 @@ export function createStateFrom(
     usedApThisTurn: false,
     pending: null,
     precedents: [],
+    captured: [],
     ...extra,
   };
 }

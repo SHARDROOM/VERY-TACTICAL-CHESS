@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef } from 'react';
 import { CanvasTexture, SRGBColorSpace } from 'three';
 import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
 import { CameraControls, Environment, Lightformer } from '@react-three/drei';
-import { fileOf, rankOf, type Board, type Color, type Square } from '../engine';
+import { fileOf, rankOf, type Board, type Color, type Piece, type Square } from '../engine';
 import { squareToWorld } from './coords';
 import { PieceMesh } from './PieceMesh';
-import { WoodTable } from './WoodTable';
+import { TABLE_TOP_Y, WoodTable } from './WoodTable';
 import { CoinTable } from '../coins/CoinTable';
 import { DiceTray, trayCenterX, type ActiveRoll } from '../dice3d/DiceTray';
 
@@ -33,6 +33,26 @@ interface Props {
   onDiceLanded: () => void;
   /** Each player's AP, shown as gold coins on the table (opposite side from the dice). */
   ap: Record<Color, number>;
+  /** Pieces taken off the board, shown small beside it (on the dice side, near whoever took them). */
+  captured: Piece[];
+}
+
+/**
+ * Where captured pieces stand: on the dice side of the table, in front of and behind the
+ * dice tray. Black pieces (taken by white) wait near white's edge, white pieces near black's.
+ */
+export function graveyardLayout(captured: Piece[], side: 1 | -1): { piece: Piece; position: [number, number, number] }[] {
+  const counts = { white: 0, black: 0 };
+  return captured.map((piece) => {
+    const i = counts[piece.color]++;
+    const col = i % 7;
+    const row = Math.floor(i / 7);
+    const towardWhite = piece.color === 'black' ? 1 : -1;
+    return {
+      piece,
+      position: [side * (5.75 + col * 0.58), TABLE_TOP_Y, towardWhite * (2.45 + row * 0.72)] as [number, number, number],
+    };
+  });
 }
 
 const LIGHT = '#d4bf98';
@@ -114,7 +134,14 @@ export function BoardScene({
   diceRoll,
   onDiceLanded,
   ap,
+  captured,
 }: Props) {
+  // Pieces that appear after the first render (spawned by a special action) pop in.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+  }, []);
+  const graveyard = useMemo(() => graveyardLayout(captured, diceSide), [captured, diceSide]);
   const click = (sq: Square) => (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
     onSquareClick(sq);
@@ -166,6 +193,7 @@ export function BoardScene({
         );
       })}
 
+      {/* Board pieces and captured pieces share keys, so a captured piece flies from its square to the side. */}
       {board.map((piece, sq) =>
         piece ? (
           <PieceMesh
@@ -173,11 +201,15 @@ export function BoardScene({
             piece={piece}
             position={squareToWorld(sq)}
             selected={sq === selected}
+            popIn={mountedRef.current}
             onClick={click(sq)}
             onHover={(on) => onHoverSquare(on ? sq : null)}
           />
         ) : null,
       )}
+      {graveyard.map(({ piece, position }) => (
+        <PieceMesh key={piece.id} piece={piece} position={position} selected={false} captured />
+      ))}
 
     </Canvas>
   );

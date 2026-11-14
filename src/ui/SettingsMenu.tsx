@@ -1,4 +1,31 @@
 import { useEffect, useState } from 'react';
+import { getSoundSettings, onSoundSettings, playSfx, setSoundSettings } from '../audio/sfx';
+
+function SoundControls() {
+  const [sound, setSound] = useState(getSoundSettings);
+  useEffect(() => onSoundSettings(setSound), []);
+  return (
+    <>
+      <label className="menu-row">
+        <input type="checkbox" checked={sound.enabled} onChange={(e) => setSoundSettings({ enabled: e.target.checked })} />
+        효과음
+      </label>
+      <label className="menu-row">
+        <span>음량</span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={sound.volume}
+          disabled={!sound.enabled}
+          onChange={(e) => setSoundSettings({ volume: Number(e.target.value) })}
+          onPointerUp={() => playSfx('coinClink', { strength: 0.8 })}
+        />
+      </label>
+    </>
+  );
+}
 
 /** Fullscreen for the whole page, where the browser allows it (not on iPhone Safari). */
 export function useFullscreen() {
@@ -51,6 +78,10 @@ export function SettingsMenu({ onClose, gm, view, fullscreen, game }: Props) {
           {fullscreen.supported && (
             <button onClick={act(fullscreen.toggle)}>{fullscreen.active ? '전체화면 끝내기' : '전체화면'}</button>
           )}
+        </section>
+        <section>
+          <h3>소리</h3>
+          <SoundControls />
         </section>
         <section>
           <h3>게임</h3>

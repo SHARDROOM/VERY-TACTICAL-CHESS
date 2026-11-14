@@ -4,6 +4,7 @@ import { CanvasTexture, CylinderGeometry, Quaternion, SRGBColorSpace, Vector3, t
 import type { Color } from '../engine';
 import { TABLE_TOP_Y } from '../scene/WoodTable';
 import { COIN, DISH, simulateCoinThrow, type CoinThrow, type Pose } from './coinSim';
+import { playSfx } from '../audio/sfx';
 
 /** Where things sit, for a dealer standing on `side` (+1 = +x) of the table. */
 export function coinLayout(side: 1 | -1) {
@@ -151,9 +152,10 @@ function Knife() {
 
 interface MarkState {
   i: number;
-  /** 0..1 carved; < 0 while fading out. */
+  /** When carving starts (seconds on the tally's clock); < 0 for marks already there. */
   born: number;
   dying: number | null;
+  sounded?: boolean;
 }
 
 /** Tally marks carved into the table; new ones are scored by a knife, removed ones fade away. */
@@ -194,7 +196,13 @@ function Tally({ count, x, z, flip }: { count: number; x: number; z: number; fli
       mesh.position.set(place.x - dirX * off, 0.003, place.z - dirZ * off);
       const mat = mesh.material as MeshStandardMaterial;
       mat.opacity = m.dying === null ? 1 : Math.max(0, 1 - (now - m.dying) / 0.6);
-      if (m.born >= 0 && p > 0 && p < 1) carving = { m, p };
+      if (m.born >= 0 && p > 0 && p < 1) {
+        carving = { m, p };
+        if (!m.sounded) {
+          m.sounded = true;
+          playSfx('carve');
+        }
+      }
     });
     const k = knife.current;
     if (k) {
@@ -250,6 +258,8 @@ interface Flight {
   throw: CoinThrow;
   startedAt: number | null;
   ids: number[];
+  /** Last step already given its sounds. */
+  sounded: number;
 }
 
 interface Collect {
@@ -296,7 +306,7 @@ export function CoinTable({ ap, side }: { ap: Record<Color, number>; side: 1 | -
     if (op.kind === 'throw') {
       const [dishX, dishZ] = layout.dish[op.color];
       simulateCoinThrow({ count: op.count, dishX, dishZ, fromX: layout.dealerX, pile: pilesRef.current[op.color].map((c) => c.pose) })
-        .then((t) => setFlight({ color: op.color, throw: t, startedAt: null, ids: t.coins.map(() => nextCoinId++) }))
+        .then((t) => setFlight({ color: op.color, throw: t, startedAt: null, ids: t.coins.map(() => nextCoinId++), sounded: -1 }))
         .catch(() => {
           // No physics: drop the coins straight into the dish.
           setPiles((p) => ({
@@ -318,6 +328,7 @@ export function CoinTable({ ap, side }: { ap: Record<Color, number>; side: 1 | -
       const taken = pile.slice(0, op.count);
       setPiles((p) => ({ ...p, [op.color]: p[op.color].filter((c) => !taken.includes(c)) }));
       setCollect({ color: op.color, coins: taken.map((c) => ({ id: c.id, from: c.pose })), startedAt: null });
+      playSfx('coinCollect');
     }
   };
 
@@ -331,6 +342,14 @@ export function CoinTable({ ap, side }: { ap: Record<Color, number>; side: 1 | -
     if (flight) {
       if (flight.startedAt === null) flight.startedAt = now;
       const step = Math.floor((now - flight.startedAt) / flight.throw.dt);
+      for (const c of flight.throw.coins) {
+        if (c.start > flight.sounded && c.start <= step) playSfx('coinWhoosh', { strength: 0.7 });
+        for (const hit of c.impacts) {
+          const at = c.start + hit.step;
+          if (at > flight.sounded && at <= step) playSfx('coinClink', { strength: hit.strength });
+        }
+      }
+      flight.sounded = step;
       flight.throw.coins.forEach((c, k) => {
         const g = coinRefs.current.get(flight.ids[k]);
         if (!g) return;

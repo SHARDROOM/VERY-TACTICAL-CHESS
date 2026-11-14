@@ -108,6 +108,8 @@ export interface GameState {
   pending: PendingAction | null;
   /** Every attempted special action this game, oldest first. */
   precedents: Precedent[];
+  /** Pieces taken off the board (captured or removed), oldest first, as plain pieces. */
+  captured: Piece[];
 }
 
 export type Command =

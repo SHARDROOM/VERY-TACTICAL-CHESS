@@ -10,6 +10,7 @@ import { inviteLink, joinRoom, normalizeRoomCode, openRoom } from './session/pee
 import { browserId, clearSavedGame, gmForSave, gmFromSave, loadSavedGame, saveGame, type SavedGame } from './session/storage';
 import type { Session } from './session/types';
 import { rollD20 } from './dice';
+import { playSfx, unlockAudio } from './audio/sfx';
 import './App.css';
 
 function roomFromHash(): string | null {
@@ -147,6 +148,21 @@ export default function App() {
       setError(err instanceof Error ? err.message : String(err));
     }
   };
+
+  // Sound needs a user gesture to start; every button press gives a small click.
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      unlockAudio();
+      if ((e.target as Element | null)?.closest?.('button:not(:disabled)')) playSfx('click');
+    };
+    const onKey = () => unlockAudio();
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, []);
 
   // Opening an invite link joins straight away.
   useEffect(() => {

@@ -1,6 +1,7 @@
 import { Quaternion, Vector3 } from 'three';
 import { loadPhysics } from '../dice3d/simulate';
 import { TABLE_TOP_Y } from '../scene/WoodTable';
+import { findImpacts } from '../audio/impacts';
 
 /** A gold coin: radius and half thickness, in board squares. */
 export const COIN = { radius: 0.27, halfHeight: 0.032 };
@@ -17,7 +18,7 @@ export interface CoinThrow {
   dt: number;
   steps: number;
   /** Per new coin: the step it leaves the dealer's hand, and 7 numbers per step from then on. */
-  coins: { start: number; frames: Float32Array; final: Pose }[];
+  coins: { start: number; frames: Float32Array; final: Pose; impacts: { step: number; strength: number }[] }[];
 }
 
 const MAX_STEPS = 60 * 7;
@@ -133,9 +134,11 @@ export async function simulateCoinThrow(options: {
       coins: bodies.map((c) => {
         const f = c.frames;
         const n = f.length - 7;
+        const frames = Float32Array.from(f);
         return {
           start: c.start,
-          frames: Float32Array.from(f),
+          frames,
+          impacts: findImpacts(frames, world.timestep, G, { threshold: 1, fullScale: 7 }),
           final: {
             position: new Vector3(f[n], f[n + 1], f[n + 2]),
             quaternion: new Quaternion(f[n + 3], f[n + 4], f[n + 5], f[n + 6]),

@@ -21,6 +21,7 @@ import { PrecedentList } from './PrecedentList';
 import { GmSettings, type GmConfig } from './GmSettings';
 import { PieceInfo } from './PieceInfo';
 import { SettingsMenu, useFullscreen } from './SettingsMenu';
+import { playSfx } from '../audio/sfx';
 import { successChance } from '../dice';
 import { loadPhysics, simulateRoll } from '../dice3d/simulate';
 import { skinRotationFor } from '../dice3d/d20';
@@ -128,6 +129,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       const typeOf = (id: string) => findPiece(before.board, id)?.type ?? findPiece(after.board, id)?.type;
       addLog(describeEvents(events, typeOf));
       const passed = events.some((ev) => ev.type === 'turnPassed');
+      if (passed) playSfx('turn', { delay: 0.25 });
+      if (events.some((ev) => ev.type === 'check')) playSfx('check', { delay: 0.45 });
+      if (events.some((ev) => ev.type === 'specialProposed')) playSfx('ruling');
       const exposed = events.find((ev) => ev.type === 'ownKingExposed');
       if (exposed) setWarning(`${COLOR_NAME[exposed.color]} 킹이 공격받는 위치에 놓였습니다.`);
       else if (passed) setWarning(null);
@@ -188,6 +192,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         return;
       }
       if (e.kind === 'chat') {
+        if (!e.mine) playSfx('chat');
         setChat((c) => [...c.slice(-199), { id: nextLogId++, from: e.from, text: e.text, mine: e.mine }]);
         if (tabRef.current !== 'chat') setUnread((n) => n + 1);
         return;
@@ -339,6 +344,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         diceRoll={diceRoll}
         onDiceLanded={onDiceLanded}
         ap={game.ap}
+        captured={game.captured ?? []}
       />
 
       <div className="hud topbar">

@@ -1,9 +1,10 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
-import type { Group } from 'three';
+import { Vector3, type Group } from 'three';
 import { CORE_TAGS, RIDE, SHIELD, STUN, hasTag, type Color, type Piece, type PieceType } from '../engine';
 import { PIECE_HEIGHT, pieceParts } from './pieceGeometry';
 import { ShieldBubble, StunStars, TagLabel } from './TagEffects';
+import { playSfx } from '../audio/sfx';
 
 const LOOK = {
   white: { body: '#efe5cf', accent: '#5a4632', sheen: 0.55 },
@@ -56,8 +57,42 @@ interface Props {
   piece: Piece;
   position: [number, number, number];
   selected: boolean;
-  onClick: (e: ThreeEvent<MouseEvent>) => void;
-  onHover: (hovering: boolean) => void;
+  /** Taken off the board: shown small beside it, not clickable. */
+  captured?: boolean;
+  /** Animate in (a piece created mid-game) instead of just being there. */
+  popIn?: boolean;
+  onClick?: (e: ThreeEvent<MouseEvent>) => void;
+  onHover?: (hovering: boolean) => void;
+}
+
+const CAPTURED_SCALE = 0.62;
+
+interface Motion {
+  from: Vector3;
+  to: Vector3;
+  fromScale: number;
+  toScale: number;
+  /** Seconds; the motion starts `delay` after it is planned. */
+  delay: number;
+  duration: number;
+  arc: number;
+  startedAt: number | null;
+  kind: 'move' | 'captured' | 'pop';
+}
+
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+
+/** How a piece travels between two points: knights jump, sliders glide with a small lift. */
+function planMove(piece: Piece, from: Vector3, to: Vector3, captured: boolean): Omit<Motion, 'from' | 'to' | 'fromScale' | 'toScale' | 'startedAt'> {
+  const dist = Math.hypot(to.x - from.x, to.z - from.z);
+  if (captured) {
+    // Knocked off when the attacker lands, then carried to the side.
+    return { delay: 0.3, duration: 0.75, arc: 1.4, kind: 'captured' };
+  }
+  if (piece.type === 'knight' && dist < 2.5) return { delay: 0, duration: 0.42, arc: 0.85, kind: 'move' };
+  // Long special-action flights arc higher.
+  const arc = dist > 3.2 ? Math.min(1.8, 0.3 * dist) : 0.16 + 0.05 * dist;
+  return { delay: 0, duration: Math.min(0.85, 0.26 + 0.07 * dist), arc, kind: 'move' };
 }
 
 /**
@@ -65,18 +100,67 @@ interface Props {
  * visuals live here and in pieceGeometry, so they can later be swapped for
  * model files without touching the rest of the scene.
  */
-export function PieceMesh({ piece, position, selected, onClick, onHover }: Props) {
+export function PieceMesh({ piece, position, selected, captured = false, popIn = false, onClick, onHover }: Props) {
   const group = useRef<Group>(null);
-  const lift = selected ? 0.25 : 0;
+  const lift = selected && !captured ? 0.25 : 0;
+  const targetScale = captured ? CAPTURED_SCALE : 1;
+  const motion = useRef<Motion | null>(
+    popIn
+      ? {
+          from: new Vector3(...position).setY(position[1] + 0.8),
+          to: new Vector3(...position),
+          fromScale: 0.01,
+          toScale: targetScale,
+          delay: 0.1,
+          duration: 0.45,
+          arc: 0,
+          startedAt: null,
+          kind: 'pop',
+        }
+      : null,
+  );
+  const shownAt = useRef(new Vector3(...position));
+  const shownScale = useRef(popIn ? 0.01 : targetScale);
+  const lastTarget = useRef(`${position[0]},${position[2]},${targetScale}`);
 
-  // Glide toward the target square: gives every move a short animation.
-  useFrame((_, dt) => {
+  // A new destination: plan the trip from wherever the piece is now.
+  useEffect(() => {
+    const key = `${position[0]},${position[2]},${targetScale}`;
+    if (key === lastTarget.current) return;
+    lastTarget.current = key;
+    const to = new Vector3(...position);
+    const from = shownAt.current.clone();
+    motion.current = { from, to, fromScale: shownScale.current, toScale: targetScale, startedAt: null, ...planMove(piece, from, to, captured) };
+  }, [position[0], position[2], targetScale]);
+
+  useFrame(({ clock }, dt) => {
     const g = group.current;
     if (!g) return;
-    const k = 1 - Math.exp(-dt * 12);
-    g.position.x += (position[0] - g.position.x) * k;
-    g.position.z += (position[2] - g.position.z) * k;
-    g.position.y += (position[1] + lift - g.position.y) * k;
+    const m = motion.current;
+    if (m) {
+      if (m.startedAt === null) {
+        m.startedAt = clock.elapsedTime + m.delay;
+        if (m.kind === 'captured') playSfx('knock', { strength: 0.8, delay: m.delay });
+      }
+      const p = Math.min(1, Math.max(0, (clock.elapsedTime - m.startedAt) / m.duration));
+      const e = m.kind === 'pop' ? 1 - (1 - p) ** 3 : easeInOut(p);
+      shownAt.current.lerpVectors(m.from, m.to, e);
+      shownAt.current.y += Math.sin(Math.PI * p) * m.arc;
+      shownScale.current = m.fromScale + (m.toScale - m.fromScale) * e;
+      if (p >= 1) {
+        motion.current = null;
+        shownAt.current.copy(m.to);
+        shownScale.current = m.toScale;
+        if (m.kind === 'move') playSfx('move', { strength: Math.min(1, 0.55 + 0.1 * m.from.distanceTo(m.to)) });
+        else if (m.kind === 'captured') playSfx('land', { strength: 0.6 });
+      }
+    }
+    g.position.copy(shownAt.current);
+    // Selection lifts the piece gently (on top of any motion).
+    const k = 1 - Math.exp(-dt * 14);
+    g.userData.lift = (g.userData.lift ?? 0) + (lift - (g.userData.lift ?? 0)) * k;
+    g.position.y += g.userData.lift;
+    g.scale.setScalar(shownScale.current);
   });
 
   const facing = (p: Piece) => (p.type === 'knight' ? knightFacing(p.color, position[0]) : 0);
@@ -88,19 +172,21 @@ export function PieceMesh({ piece, position, selected, onClick, onHover }: Props
     <group
       ref={group}
       position={position}
-      onClick={onClick}
+      onClick={captured ? undefined : onClick}
       onPointerOver={(e) => {
+        if (captured) return;
         e.stopPropagation();
         document.body.style.cursor = 'pointer';
-        onHover(true);
+        onHover?.(true);
       }}
       onPointerOut={() => {
+        if (captured) return;
         document.body.style.cursor = '';
-        onHover(false);
+        onHover?.(false);
       }}
     >
       <PieceModel type={piece.type} color={piece.color} facing={facing(piece)} />
-      <TagDecorations piece={piece} top={height} />
+      {!captured && <TagDecorations piece={piece} top={height} />}
       {rider && (
         <group position={[0, riderBase, 0]} scale={RIDER_SCALE}>
           <PieceModel type={rider.type} color={rider.color} facing={facing(rider)} />

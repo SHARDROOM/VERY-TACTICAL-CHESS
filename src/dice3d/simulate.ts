@@ -1,5 +1,6 @@
 import { Quaternion } from 'three';
 import { d20Vertices } from './d20';
+import { findImpacts } from '../audio/impacts';
 
 /** Size of the dice tray (inner half-extents, in die-sized units) and of the die. */
 export const TRAY = { halfX: 3.2, halfZ: 2.2, wallHeight: 3 };
@@ -12,9 +13,12 @@ export interface DiceRun {
   /** Seconds per recorded step. */
   dt: number;
   final: Quaternion;
+  /** Steps where the die hit the felt or a wall, with how hard (0..1): for the clack sounds. */
+  impacts: { step: number; strength: number }[];
 }
 
 const MAX_STEPS = 60 * 8;
+const GRAVITY = 9.81 * 2.2;
 
 let physics: Promise<typeof import('@dimforge/rapier3d-compat').default> | null = null;
 
@@ -35,7 +39,7 @@ export function loadPhysics() {
  */
 export async function simulateRoll(random: () => number = Math.random): Promise<DiceRun> {
   const RAPIER = await loadPhysics();
-  const world = new RAPIER.World({ x: 0, y: -9.81 * 2.2, z: 0 });
+  const world = new RAPIER.World({ x: 0, y: -GRAVITY, z: 0 });
   try {
     const walls = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
     const t = 0.25;
@@ -80,7 +84,14 @@ export async function simulateRoll(random: () => number = Math.random): Promise<
       if (body.isSleeping()) break;
     }
     const q = body.rotation();
-    return { frames: frames.slice(0, steps * 7), steps, dt: world.timestep, final: new Quaternion(q.x, q.y, q.z, q.w) };
+    const recorded = frames.slice(0, steps * 7);
+    return {
+      frames: recorded,
+      steps,
+      dt: world.timestep,
+      final: new Quaternion(q.x, q.y, q.z, q.w),
+      impacts: findImpacts(recorded, world.timestep, GRAVITY, { threshold: 1.2, fullScale: 9 }),
+    };
   } finally {
     world.free();
   }
