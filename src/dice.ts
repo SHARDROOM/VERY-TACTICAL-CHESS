@@ -8,7 +8,9 @@ export function rollD20(): number {
   }
 }
 
-/** Probability that a d20 roll meets or beats `dc`. */
+/** Probability that an attempt succeeds: a natural 20 always does, a natural 1 never does. */
 export function successChance(dc: number): number {
-  return Math.min(1, Math.max(0, (21 - dc) / 20));
+  let wins = 0;
+  for (let roll = 1; roll <= 20; roll++) if (roll === 20 || (roll !== 1 && roll >= dc)) wins++;
+  return wins / 20;
 }

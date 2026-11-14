@@ -1,5 +1,5 @@
 import { josa } from './josa';
-import { squareName, type Color, type GameEvent, type PieceType, type RejectReason } from '../engine';
+import { squareName, type Color, type GameEvent, type Outcome, type PieceType, type RejectReason } from '../engine';
 
 export const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑' };
 
@@ -23,6 +23,13 @@ export const REJECT_MESSAGE: Record<RejectReason, string> = {
   notEnoughAp: 'AP가 부족합니다.',
   invalidRoll: '주사위 값이 올바르지 않습니다.',
   kingProtectedThisTurn: '이번 턴에 AP를 썼으므로 킹을 잡을 수 없습니다.',
+};
+
+export const OUTCOME_LABEL: Record<Outcome, string> = {
+  critSuccess: '대성공!!',
+  success: '성공!',
+  failure: '실패',
+  critFailure: '대실패!!',
 };
 
 export type LogTone = 'normal' | 'warn' | 'error' | 'gm' | 'roll';
@@ -109,7 +116,7 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         add(`${josa(COLOR_NAME[e.color], '이/가')} 행동을 취소했습니다.`);
         break;
       case 'specialResolved':
-        add(`🎲 d20 = ${e.roll} (DC ${e.dc}) → ${e.success ? '성공!' : '실패'} · AP -${e.cost}`, 'roll');
+        add(`🎲 d20 = ${e.roll} (DC ${e.dc}) → ${OUTCOME_LABEL[e.outcome]} · AP -${e.cost}`, 'roll');
         if (e.narration) add(e.narration, 'gm');
         break;
     }

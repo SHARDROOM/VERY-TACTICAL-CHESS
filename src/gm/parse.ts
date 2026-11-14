@@ -14,15 +14,31 @@ export function parseGmRuling(raw: unknown): ParseResult {
     const issue = checked.error.issues[0];
     return { ok: false, error: `${issue.path.join('.') || '판정'}: ${issue.message}` };
   }
-  const { effects, ...rest } = checked.data;
+  const { effects, critSuccessEffects, critFailureEffects, ...rest } = checked.data;
 
-  const out: Effect[] = [];
-  for (const [i, e] of effects.entries()) {
-    const converted = convert(e);
-    if (typeof converted === 'string') return { ok: false, error: `효과 ${i + 1}: 칸 이름 "${converted}"이(가) 올바르지 않음` };
-    out.push(converted);
+  const lists: Record<string, Effect[]> = {};
+  for (const [key, label, list] of [
+    ['effects', '', effects],
+    ['critSuccessEffects', '대성공 ', critSuccessEffects],
+    ['critFailureEffects', '대실패 ', critFailureEffects],
+  ] as const) {
+    const out: Effect[] = [];
+    for (const [i, e] of list.entries()) {
+      const converted = convert(e);
+      if (typeof converted === 'string') return { ok: false, error: `${label}효과 ${i + 1}: 칸 이름 "${converted}"이(가) 올바르지 않음` };
+      out.push(converted);
+    }
+    lists[key] = out;
   }
-  return { ok: true, ruling: { ...rest, effects: out } };
+  return {
+    ok: true,
+    ruling: {
+      ...rest,
+      effects: lists.effects,
+      critSuccessEffects: lists.critSuccessEffects,
+      critFailureEffects: lists.critFailureEffects,
+    },
+  };
 }
 
 /** Converts one effect, or returns the first bad square name. */

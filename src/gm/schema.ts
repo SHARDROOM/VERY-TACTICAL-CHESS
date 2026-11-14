@@ -35,8 +35,16 @@ export const GmRulingSchema = z.object({
   dc: z.number().int().describe('난이도. d20 결과가 이 값 이상이면 성공. 불가능하면 0'),
   cost: z.number().int().describe('시도할 때 드는 AP. 불가능하면 0'),
   effects: z.array(GmEffectSchema).describe('성공했을 때 순서대로 적용할 효과'),
+  critSuccessEffects: z
+    .array(GmEffectSchema)
+    .describe('주사위 20(대성공)일 때 effects 대신 적용할 효과. 성공보다 조금 더 좋은 결과. 비우면 effects가 적용됨'),
+  critFailureEffects: z
+    .array(GmEffectSchema)
+    .describe('주사위 1(대실패)일 때 적용할 역효과. 비우면 아무 일도 없음'),
   narration: z.object({
     success: z.string().describe('성공했을 때의 서술 (한국어, 1~2문장)'),
     failure: z.string().describe('실패했을 때의 서술 (한국어, 1~2문장)'),
+    critSuccess: z.string().describe('대성공(20)일 때의 서술 (한국어, 1~2문장)'),
+    critFailure: z.string().describe('대실패(1)일 때의 서술 (한국어, 1~2문장)'),
   }),
 });

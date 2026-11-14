@@ -7,7 +7,9 @@ import {
   type GameEvent,
   type GameState,
   type MoveSpecial,
+  type Outcome,
   type Piece,
+  type Precedent,
   type Square,
 } from './types';
 import { isInCheck, legalTargets } from './moves';
@@ -175,13 +177,19 @@ function attempt(state: GameState, roll: number): CommandResult {
   if (state.ap[color] < ruling.cost) return { ok: false, reason: 'notEnoughAp' };
   if (!Number.isInteger(roll) || roll < 1 || roll > 20) return { ok: false, reason: 'invalidRoll' };
 
-  const success = roll >= ruling.dc;
+  // A natural 20 always succeeds and a natural 1 always fails, whatever the DC.
+  const outcome: Outcome =
+    roll === 20 ? 'critSuccess' : roll === 1 ? 'critFailure' : roll >= ruling.dc ? 'success' : 'failure';
+  const success = outcome === 'critSuccess' || outcome === 'success';
+  const crit = ruling.critSuccessEffects?.length ? ruling.critSuccessEffects : ruling.effects;
+  const toApply = outcome === 'critSuccess' ? crit : outcome === 'success' ? ruling.effects : outcome === 'critFailure' ? ruling.critFailureEffects ?? [] : [];
+
   let board = state.board;
   let castling = state.castling;
   let nextSpawnId = state.nextSpawnId;
   const effectEvents: GameEvent[] = [];
-  if (success) {
-    const applied = applyEffects(board, ruling.effects, { turnNumber: state.turnNumber, nextSpawnId });
+  if (toApply.length) {
+    const applied = applyEffects(board, toApply, { turnNumber: state.turnNumber, nextSpawnId });
     // Validated on proposal and nothing can change the board while pending, so this is an invariant.
     if (!applied.ok) return { ok: false, reason: 'invalidRuling', detail: applied.detail };
     board = applied.board;
@@ -193,19 +201,29 @@ function attempt(state: GameState, roll: number): CommandResult {
     effectEvents.push({ type: 'check', color: opponent(color) });
   }
 
+  const narration =
+    outcome === 'critSuccess'
+      ? ruling.narration.critSuccess || ruling.narration.success
+      : outcome === 'critFailure'
+        ? ruling.narration.critFailure || ruling.narration.failure
+        : success
+          ? ruling.narration.success
+          : ruling.narration.failure;
+
   const events: GameEvent[] = [
-    {
-      type: 'specialResolved',
-      color,
-      action,
-      roll,
-      dc: ruling.dc,
-      cost: ruling.cost,
-      success,
-      narration: success ? ruling.narration.success : ruling.narration.failure,
-    },
+    { type: 'specialResolved', color, action, roll, dc: ruling.dc, cost: ruling.cost, success, outcome, narration },
     ...effectEvents,
   ];
+  const precedent: Precedent = {
+    turnNumber: state.turnNumber,
+    color,
+    action,
+    interpretation: ruling.interpretation,
+    dc: ruling.dc,
+    cost: ruling.cost,
+    roll,
+    outcome,
+  };
   const after: GameState = {
     ...state,
     board,
@@ -214,6 +232,7 @@ function attempt(state: GameState, roll: number): CommandResult {
     ap: { ...state.ap, [color]: state.ap[color] - ruling.cost },
     usedApThisTurn: true,
     pending: null,
+    precedents: [...state.precedents, precedent],
   };
 
   // One-turn-kill guard: if the opponent's king is attacked after a special action, the

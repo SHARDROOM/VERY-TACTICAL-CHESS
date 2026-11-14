@@ -10,12 +10,14 @@ import {
   type Color,
   type Command,
   type GameState,
+  type Outcome,
   type Piece,
   type PromotionType,
   type Square,
 } from './engine';
 import { BoardScene, type CameraRequest } from './scene/BoardScene';
-import { COLOR_NAME, PIECE_NAME, REJECT_MESSAGE, describeEvents, type LogEntry, type LogTone } from './ui/messages';
+import { COLOR_NAME, OUTCOME_LABEL, PIECE_NAME, REJECT_MESSAGE, describeEvents, type LogEntry, type LogTone } from './ui/messages';
+import { PrecedentList } from './ui/PrecedentList';
 import { FakeGameMaster } from './gm/fakeGm';
 import { ClaudeGameMaster } from './gm/claudeGm';
 import { OpenAiGameMaster } from './gm/openaiGm';
@@ -86,7 +88,8 @@ export default function App() {
   const [camera, setCamera] = useState<CameraRequest>({ mode: 'side', side: 'white', nonce: 0 });
   const [warning, setWarning] = useState<string | null>(null);
   const [gmBusy, setGmBusy] = useState(false);
-  const [lastRoll, setLastRoll] = useState<{ roll: number; success: boolean } | null>(null);
+  const [lastRoll, setLastRoll] = useState<{ roll: number; outcome: Outcome } | null>(null);
+  const [showPrecedents, setShowPrecedents] = useState(false);
   const logRef = useRef<HTMLOListElement>(null);
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
@@ -126,7 +129,7 @@ export default function App() {
     if (exposed) setWarning('방금 행동으로 내 킹이 공격받는 위치에 놓였습니다.');
     else if (result.events.some((e) => e.type === 'turnPassed')) setWarning(null);
     const resolved = result.events.find((e) => e.type === 'specialResolved');
-    if (resolved) setLastRoll({ roll: resolved.roll, success: resolved.success });
+    if (resolved) setLastRoll({ roll: resolved.roll, outcome: resolved.outcome });
     else if (result.events.some((e) => e.type === 'turnPassed')) setLastRoll(null);
     setGame(result.state);
     setSelected(null);
@@ -237,8 +240,8 @@ export default function App() {
         {inCheck && <div className="badge check">체크!</div>}
         {gmBusy && <div className="badge busy">GM 판정 중…</div>}
         {lastRoll && (
-          <div className={`badge roll ${lastRoll.success ? 'success' : 'fail'}`}>
-            🎲 {lastRoll.roll} — {lastRoll.success ? '성공' : '실패'}
+          <div className={`badge roll ${lastRoll.outcome}`}>
+            🎲 {lastRoll.roll} — {OUTCOME_LABEL[lastRoll.outcome]}
           </div>
         )}
         {warning && !winner && <div className="badge warn">⚠ {warning}</div>}
@@ -251,6 +254,9 @@ export default function App() {
       })()}
 
       <div className="hud camera-buttons">
+        <button onClick={() => setShowPrecedents(true)} title="이번 게임의 판례">
+          📜 판례 {game.precedents.length}
+        </button>
         <button onClick={() => setShowGmSettings(true)} disabled={gmBusy} title="GM 설정">
           ⚙ {PROVIDER_LABEL[gmConfig.provider]}
         </button>
@@ -305,6 +311,12 @@ export default function App() {
             ) : (
               <p className="infeasible">GM이 불가능한 행동으로 판정했습니다.</p>
             )}
+            {pending.ruling.feasible && (
+              <ul className="crit-notes">
+                <li>🎲 20: 대성공{pending.ruling.critSuccessEffects?.length ? ' — 더 좋은 결과' : ' — 성공과 같은 결과'} (DC와 상관없이 성공)</li>
+                <li>🎲 1: 대실패{pending.ruling.critFailureEffects?.length ? ' — ⚠ 역효과가 있습니다' : ''} (DC와 상관없이 실패)</li>
+              </ul>
+            )}
             {pending.ruling.feasible && !canAfford && <p className="infeasible">AP가 부족해서 시도할 수 없습니다.</p>}
             <div className="choice-row">
               <button className="primary" onClick={attempt} disabled={!pending.ruling.feasible || !canAfford}>
@@ -315,6 +327,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {showPrecedents && <PrecedentList precedents={game.precedents} onClose={() => setShowPrecedents(false)} />}
 
       {showGmSettings && (
         <GmSettings

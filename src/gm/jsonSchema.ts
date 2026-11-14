@@ -48,16 +48,28 @@ export const GM_RULING_JSON_SCHEMA = {
       description: '성공했을 때 순서대로 적용할 효과',
       items: { anyOf: GM_EFFECT_JSON_SCHEMAS },
     },
+    critSuccessEffects: {
+      type: 'array',
+      description: '주사위 20(대성공)일 때 effects 대신 적용할 효과. 성공보다 조금 더 좋은 결과. 비우면 effects가 적용됨',
+      items: { anyOf: GM_EFFECT_JSON_SCHEMAS },
+    },
+    critFailureEffects: {
+      type: 'array',
+      description: '주사위 1(대실패)일 때 적용할 역효과. 비우면 아무 일도 없음',
+      items: { anyOf: GM_EFFECT_JSON_SCHEMAS },
+    },
     narration: {
       type: 'object',
       properties: {
         success: { type: 'string', description: '성공했을 때의 서술 (한국어, 1~2문장)' },
         failure: { type: 'string', description: '실패했을 때의 서술 (한국어, 1~2문장)' },
+        critSuccess: { type: 'string', description: '대성공(20)일 때의 서술 (한국어, 1~2문장)' },
+        critFailure: { type: 'string', description: '대실패(1)일 때의 서술 (한국어, 1~2문장)' },
       },
-      required: ['success', 'failure'],
+      required: ['success', 'failure', 'critSuccess', 'critFailure'],
       additionalProperties: false,
     },
   },
-  required: ['interpretation', 'feasible', 'dc', 'cost', 'effects', 'narration'],
+  required: ['interpretation', 'feasible', 'dc', 'cost', 'effects', 'critSuccessEffects', 'critFailureEffects', 'narration'],
   additionalProperties: false,
 } as const;

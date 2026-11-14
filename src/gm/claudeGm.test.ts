@@ -11,7 +11,9 @@ const ruling = {
   dc: 13,
   cost: 2,
   effects: [{ type: 'move', from: 'b1', to: 'e5' }],
-  narration: { success: '성공!', failure: '실패!' },
+  critSuccessEffects: [],
+  critFailureEffects: [{ type: 'tag', at: 'b1', tag: '기절', turns: 1 }],
+  narration: { success: '성공!', failure: '실패!', critSuccess: '대성공!', critFailure: '대실패!' },
 };
 
 const message = (text: string, stop_reason = 'end_turn') => ({
@@ -128,5 +130,32 @@ describe('prompt shows tags and riders', () => {
     const m = buildUserMessage('y', state);
     expect(m).toContain('나이트 g8 [기절(1턴 남음)]');
     expect(m).toContain('나이트 b1 [불타는 중(영구)] (탑승: 폰)');
+  });
+});
+
+describe('prompt shows precedents', () => {
+  it('lists earlier rulings in this game (oldest first), or says there are none', () => {
+    expect(buildUserMessage('x', createInitialState())).toContain('(아직 없음)');
+    const state = {
+      ...createInitialState(),
+      precedents: [
+        { turnNumber: 3, color: 'white' as const, action: '나이트 <발사>', interpretation: '투석기', dc: 12, cost: 1, roll: 20, outcome: 'critSuccess' as const },
+        { turnNumber: 4, color: 'black' as const, action: '폰 저격', interpretation: '저격', dc: 14, cost: 2, roll: 1, outcome: 'critFailure' as const },
+      ],
+    };
+    const m = buildUserMessage('x', state);
+    expect(m).toContain('- 턴 3 백: "나이트 ‹발사›" → 투석기 / DC 12, AP 1, 주사위 20 (대성공)');
+    expect(m.indexOf('턴 3 백')).toBeLessThan(m.indexOf('턴 4 흑'));
+    expect(m).toContain('주사위 1 (대실패)');
+  });
+
+  it('keeps only the most recent 20', () => {
+    const precedents = Array.from({ length: 25 }, (_, i) => ({
+      turnNumber: i + 1, color: 'white' as const, action: `행동${i + 1}`, interpretation: 'i', dc: 10, cost: 1, roll: 10, outcome: 'success' as const,
+    }));
+    const m = buildUserMessage('x', { ...createInitialState(), precedents });
+    expect(m).not.toContain('"행동5"');
+    expect(m).toContain('"행동6"');
+    expect(m).toContain('"행동25"');
   });
 });

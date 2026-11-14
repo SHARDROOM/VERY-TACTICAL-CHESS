@@ -33,6 +33,7 @@ export function createInitialState(rules: RuleConfig = DEFAULT_RULES): GameState
     nextSpawnId: 1,
     usedApThisTurn: false,
     pending: null,
+    precedents: [],
   };
 }
 
@@ -68,6 +69,7 @@ export function createStateFrom(
     nextSpawnId: 1,
     usedApThisTurn: false,
     pending: null,
+    precedents: [],
     ...extra,
   };
 }

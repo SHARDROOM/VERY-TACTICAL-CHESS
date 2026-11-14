@@ -175,7 +175,17 @@ export function validateRuling(board: Board, ruling: Ruling, rules: RuleConfig, 
   if (!isInt(ruling.cost) || ruling.cost < rules.costMin || ruling.cost > rules.costMax) {
     return `AP 비용 ${ruling.cost}이(가) 허용 범위(${rules.costMin}~${rules.costMax})를 벗어남`;
   }
-  if (ruling.effects.length > rules.maxEffects) return `효과가 너무 많음 (최대 ${rules.maxEffects}개)`;
-  const dry = applyEffects(board, ruling.effects, ctx);
-  return dry.ok ? null : dry.detail;
+  const lists: [string, Effect[] | undefined][] = [
+    ['', ruling.effects],
+    ['대성공 ', ruling.critSuccessEffects],
+    ['대실패 ', ruling.critFailureEffects],
+  ];
+  for (const [label, list] of lists) {
+    if (list === undefined) continue;
+    if (!Array.isArray(list)) return `${label}효과 목록 형식이 올바르지 않음`;
+    if (list.length > rules.maxEffects) return `${label}효과가 너무 많음 (최대 ${rules.maxEffects}개)`;
+    const dry = applyEffects(board, list, ctx);
+    if (!dry.ok) return label + dry.detail;
+  }
+  return null;
 }

@@ -14,7 +14,9 @@ const ruling = {
   dc: 11,
   cost: 1,
   effects: [{ type: 'move', from: 'a1', to: 'a5' }, { type: 'remove', at: 'd7' }],
-  narration: { success: '성공!', failure: '실패!' },
+  critSuccessEffects: [],
+  critFailureEffects: [],
+  narration: { success: '성공!', failure: '실패!', critSuccess: '대성공!', critFailure: '대실패!' },
 };
 const state = createInitialState();
 const req = { action: 'a1 룩이 성벽을 타고 미끄러진다', state };
@@ -40,6 +42,11 @@ describe('shared JSON schema', () => {
   it('describes the same shape as the zod schema', () => {
     expect(GmRulingSchema.safeParse(ruling).success).toBe(true);
     expect(Object.keys(GM_RULING_JSON_SCHEMA.properties).sort()).toEqual(Object.keys(GmRulingSchema.shape).sort());
+    expect(Object.keys(GM_RULING_JSON_SCHEMA.properties.narration.properties).sort()).toEqual(
+      Object.keys(GmRulingSchema.shape.narration.shape).sort(),
+    );
+    const effectTypes = GM_RULING_JSON_SCHEMA.properties.effects.items.anyOf.map((e) => e.properties.type.enum[0]).sort();
+    expect(effectTypes).toEqual(GmRulingSchema.shape.effects.element.options.map((o) => o.shape.type.value).sort());
   });
 });
 

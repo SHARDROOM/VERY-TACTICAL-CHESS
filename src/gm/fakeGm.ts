@@ -25,6 +25,27 @@ export class FakeGameMaster implements GameMaster {
 }
 
 export function fakeRuling(action: string): GmRulingJson {
+  const base = fakeBaseRuling(action);
+  // The fake GM keeps crits simple: a 20 does the same thing, a 1 stuns the acting piece for a turn.
+  const actor = base.effects[0];
+  const actorSquare = actor?.type === 'move' ? actor.from : actor?.type === 'board' ? actor.rider : null;
+  return {
+    ...base,
+    critSuccessEffects: [],
+    critFailureEffects: actorSquare ? [{ type: 'tag', at: actorSquare, tag: '기절', turns: 1 }] : [],
+    narration: {
+      ...base.narration,
+      critSuccess: base.narration.success ? `완벽하다! ${base.narration.success}` : '',
+      critFailure: actorSquare ? `대참사! 기물이 비틀거리다 정신을 잃었다.` : base.narration.failure,
+    },
+  };
+}
+
+type BaseRuling = Omit<GmRulingJson, 'critSuccessEffects' | 'critFailureEffects' | 'narration'> & {
+  narration: { success: string; failure: string };
+};
+
+function fakeBaseRuling(action: string): BaseRuling {
   const names = [...action.toLowerCase().matchAll(/[a-h][1-8]/g)].map((m) => m[0]);
   const squares = names.map(parseSquare).filter((s): s is Square => s !== null);
 

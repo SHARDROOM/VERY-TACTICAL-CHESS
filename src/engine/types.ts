@@ -62,7 +62,25 @@ export interface Ruling {
   cost: number;
   /** Applied in order when the attempt succeeds. */
   effects: Effect[];
-  narration: { success: string; failure: string };
+  /** Applied instead of `effects` on a natural 20. Empty or missing: `effects` apply. */
+  critSuccessEffects?: Effect[];
+  /** Backfire applied on a natural 1. Empty or missing: nothing happens. */
+  critFailureEffects?: Effect[];
+  narration: { success: string; failure: string; critSuccess?: string; critFailure?: string };
+}
+
+export type Outcome = 'critSuccess' | 'success' | 'failure' | 'critFailure';
+
+/** A past ruling in this game, shown to the GM so similar declarations get similar rulings. */
+export interface Precedent {
+  turnNumber: number;
+  color: Color;
+  action: string;
+  interpretation: string;
+  dc: number;
+  cost: number;
+  roll: number;
+  outcome: Outcome;
 }
 
 /** A ruled special action waiting for the player to attempt or cancel it. */
@@ -88,6 +106,8 @@ export interface GameState {
   /** True once the current player has attempted any special action this turn. */
   usedApThisTurn: boolean;
   pending: PendingAction | null;
+  /** Every attempted special action this game, oldest first. */
+  precedents: Precedent[];
 }
 
 export type Command =
@@ -133,6 +153,7 @@ export type GameEvent =
       dc: number;
       cost: number;
       success: boolean;
+      outcome: Outcome;
       narration: string;
     };
 

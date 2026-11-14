@@ -16,7 +16,9 @@ describe('parseGmRuling', () => {
       { type: 'move', from: 'b1', to: 'e5' },
       { type: 'remove', at: 'D7' },
     ],
-    narration: { success: 's', failure: 'f' },
+    critSuccessEffects: [{ type: 'move', from: 'b1', to: 'e6' }],
+    critFailureEffects: [],
+    narration: { success: 's', failure: 'f', critSuccess: 'cs', critFailure: 'cf' },
   };
 
   it('converts algebraic squares to engine squares', () => {
@@ -29,6 +31,8 @@ describe('parseGmRuling', () => {
           { type: 'move', from: sq('b1'), to: sq('e5') },
           { type: 'remove', at: sq('d7') },
         ],
+        critSuccessEffects: [{ type: 'move', from: sq('b1'), to: sq('e6') }],
+        critFailureEffects: [],
       },
     });
   });
@@ -87,10 +91,10 @@ describe('dice', () => {
     expect(seen.size).toBe(20);
   });
 
-  it('computes success chance', () => {
+  it('computes success chance, counting natural 20 as a win and natural 1 as a loss', () => {
     expect(successChance(11)).toBe(0.5);
-    expect(successChance(1)).toBe(1);
-    expect(successChance(25)).toBe(0);
+    expect(successChance(2)).toBe(0.95);
+    expect(successChance(25)).toBe(0.05);
   });
 });
 
@@ -109,7 +113,9 @@ describe('full effect vocabulary through the GM boundary', () => {
         { type: 'transform', at: 'a3', into: 'queen' },
         { type: 'spawn', at: 'e4', color: 'black', piece: 'knight' },
       ],
-      narration: { success: 's', failure: 'f' },
+      critSuccessEffects: [],
+      critFailureEffects: [],
+      narration: { success: 's', failure: 'f', critSuccess: 'cs', critFailure: 'cf' },
     };
     const r = parseGmRuling(raw);
     if (!r.ok) throw new Error(r.error);
@@ -126,7 +132,15 @@ describe('full effect vocabulary through the GM boundary', () => {
   });
 
   it('rejects kings in transform/spawn at the schema level', () => {
-    const base = { interpretation: 'x', feasible: true, dc: 10, cost: 1, narration: { success: 's', failure: 'f' } };
+    const base = {
+      interpretation: 'x',
+      feasible: true,
+      dc: 10,
+      cost: 1,
+      critSuccessEffects: [],
+      critFailureEffects: [],
+      narration: { success: 's', failure: 'f', critSuccess: 'cs', critFailure: 'cf' },
+    };
     expect(parseGmRuling({ ...base, effects: [{ type: 'spawn', at: 'e4', color: 'white', piece: 'king' }] }).ok).toBe(false);
     expect(parseGmRuling({ ...base, effects: [{ type: 'transform', at: 'e4', into: 'king' }] }).ok).toBe(false);
   });
@@ -135,5 +149,16 @@ describe('full effect vocabulary through the GM boundary', () => {
     expect(fakeRuling('g8 나이트를 기절시킨다').effects).toEqual([{ type: 'tag', at: 'g8', tag: '기절', turns: 1 }]);
     expect(fakeRuling('e1 킹에 보호막').effects).toEqual([{ type: 'tag', at: 'e1', tag: '보호막', turns: 0 }]);
     expect(fakeRuling('a2 폰을 b1 나이트에 태운다').effects).toEqual([{ type: 'board', rider: 'a2', carrier: 'b1' }]);
+  });
+});
+
+describe('fake GM crits', () => {
+  it('backfires by stunning the acting piece on a 1, and its rulings pass engine validation', () => {
+    const r = fakeRuling('b1 나이트를 c3로 보낸다');
+    expect(r.critFailureEffects).toEqual([{ type: 'tag', at: 'b1', tag: '기절', turns: 1 }]);
+    const parsed = parseGmRuling(r);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const state = { ...createInitialState(), ap: { white: 5, black: 0 } };
+    expect(applyCommand(state, { type: 'proposeSpecial', action: 'x', ruling: parsed.ruling }).ok).toBe(true);
   });
 });
