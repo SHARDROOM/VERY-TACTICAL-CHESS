@@ -365,7 +365,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
     };
   }
 
-  if (squares.length >= 1 && /공중부양|떠오르|떠올라|띄운|띄워|띄우|부양/.test(action)) {
+  if (squares.length >= 1 && /공중부양|떠오|떠올|띄운|띄워|띄우|부양/.test(action)) {
     // On itself, or by another of the player's pieces (an enemy's is a harder spell: it may not land well).
     if (!actor) return needsActor()!;
     const target = last.replace('^', '');

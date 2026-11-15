@@ -328,3 +328,21 @@ describe('prop parts as text', () => {
     ]);
   });
 });
+
+describe('fake GM: levitation', () => {
+  it('floats a piece of the player\'s, and drops a floating one (named by its square)', () => {
+    const s = createInitialState();
+    const up = fakeRuling('d1 퀸이 떠오른다', 'white', s.board);
+    expect(up).toMatchObject({ feasible: true, actor: 'd1', effects: [{ type: 'tag', at: 'd1', tag: '공중부양', turns: 2 }] });
+    const parsed = parseGmRuling(up);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const proposed = applyCommand({ ...s, ap: { white: 3, black: 0 } }, { type: 'proposeSpecial', action: 'd1 퀸이 떠오른다', ruling: parsed.ruling });
+    if (!proposed.ok) throw new Error(proposed.reason);
+    const after = applyCommand(proposed.state, { type: 'attemptSpecial', roll: 15 });
+    if (!after.ok) throw new Error(after.reason);
+    expect(after.state.board[parseSquare('d1^')!]?.type).toBe('queen');
+    const down = fakeRuling('e1 킹이 d1 퀸을 떨어뜨린다', 'white', after.state.board);
+    expect(down).toMatchObject({ feasible: true, effects: [{ type: 'untag', at: 'd1^', tag: '공중부양' }] });
+  });
+});
