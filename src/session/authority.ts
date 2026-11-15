@@ -1,4 +1,4 @@
-import { applyCommand, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type GameEvent, type GameState, type RuleConfig, type Staging } from '../engine';
+import { CLASH_ROLLS, applyCommand, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type GameEvent, type GameState, type RuleConfig, type Staging } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
@@ -110,10 +110,7 @@ export class Authority {
 
     switch (req.type) {
       case 'move':
-        this.apply(
-          req.promotion ? { type: 'move', from: req.from, to: req.to, promotion: req.promotion } : { type: 'move', from: req.from, to: req.to },
-          actor,
-        );
+        this.apply(req.promotion ? { type: 'move', from: req.from, to: req.to, promotion: req.promotion } : { type: 'move', from: req.from, to: req.to }, actor);
         return;
       case 'endTurn':
         this.apply({ type: 'endTurn' }, actor);
@@ -129,9 +126,17 @@ export class Authority {
     }
   }
 
+  private clashRolls(): number[] {
+    return Array.from({ length: CLASH_ROLLS }, () => this.roll());
+  }
+
   private apply(cmd: Command, actor: Color | 'any' | 'all'): boolean {
     const before = this.state;
-    const result = applyCommand(before, cmd);
+    let result = applyCommand(before, cmd);
+    // A capture that turns into a clash (합) needs dice: roll them only then.
+    if (!result.ok && result.reason === 'clashRollsNeeded' && (cmd.type === 'move' || cmd.type === 'attemptSpecial')) {
+      result = applyCommand(before, { ...cmd, clashRolls: this.clashRolls() });
+    }
     if (!result.ok) {
       this.emit({
         kind: 'notice',
@@ -150,13 +155,16 @@ export class Authority {
   /** Keeps the clock in step with the game and sets off chaos when a turn begins. */
   private afterChange(events: GameEvent[]): void {
     if (this.state.status.kind !== 'playing') return this.restartClock();
+    // A clash's dice (and its duel) do not eat the time of whoever moves next.
+    const clashTime = events.filter((e) => e.type === 'clash').length * DICE_GRACE_MS;
     if (events.some((e) => e.type === 'turnPassed')) {
       this.restartClock();
+      if (clashTime) this.addTime(clashTime);
       this.maybeChaos();
     } else {
       const resolved = events.find((e) => e.type === 'specialResolved');
       // The roll and the show that follows it do not eat the player's time.
-      if (resolved) this.addTime(DICE_GRACE_MS + showMs(resolved.staging, resolved.effects));
+      if (resolved) this.addTime(DICE_GRACE_MS + showMs(resolved.staging, resolved.effects) + clashTime);
     }
   }
 

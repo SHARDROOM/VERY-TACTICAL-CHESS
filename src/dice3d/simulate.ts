@@ -38,6 +38,14 @@ export function loadPhysics() {
  * Rapier is loaded lazily so the main bundle stays small.
  */
 export async function simulateRoll(random: () => number = Math.random): Promise<DiceRun> {
+  return (await simulateRolls(1, random))[0];
+}
+
+/**
+ * Throws `count` d20s together (a clash rolls two): they fly side by side, can knock into each
+ * other, and are recorded until all of them rest, so every run has the same number of steps.
+ */
+export async function simulateRolls(count: number, random: () => number = Math.random): Promise<DiceRun[]> {
   const RAPIER = await loadPhysics();
   const world = new RAPIER.World({ x: 0, y: -GRAVITY, z: 0 });
   try {
@@ -59,39 +67,49 @@ export async function simulateRoll(random: () => number = Math.random): Promise<
     }
 
     const r = () => random() * 2 - 1;
-    const start = new Quaternion(r(), r(), r(), r()).normalize();
-    const body = world.createRigidBody(
-      RAPIER.RigidBodyDesc.dynamic()
-        .setTranslation(-TRAY.halfX + 0.9, 2.2 + random() * 0.6, r() * (TRAY.halfZ - 0.9))
-        .setRotation({ x: start.x, y: start.y, z: start.z, w: start.w })
-        .setLinvel(7 + random() * 3, 1 + random() * 2, r() * 2)
-        .setAngvel({ x: r() * 18, y: r() * 18, z: r() * 18 })
-        .setLinearDamping(0.15)
-        .setAngularDamping(0.35)
-        .setCcdEnabled(true),
-    );
     const points = new Float32Array(d20Vertices(DIE_RADIUS).flatMap((v) => [v.x, v.y, v.z]));
-    world.createCollider(RAPIER.ColliderDesc.convexHull(points)!.setFriction(0.5).setRestitution(0.35).setDensity(1), body);
+    const bodies = Array.from({ length: count }, (_, i) => {
+      const start = new Quaternion(r(), r(), r(), r()).normalize();
+      const height = 2.2 + random() * 0.6;
+      // One die: anywhere across; several: each in its own lane.
+      const lane = count === 1 ? r() * (TRAY.halfZ - 0.9) : ((i + 0.5) / count - 0.5) * (TRAY.halfZ * 1.4) + r() * 0.2;
+      const body = world.createRigidBody(
+        RAPIER.RigidBodyDesc.dynamic()
+          .setTranslation(-TRAY.halfX + 0.9, height, lane)
+          .setRotation({ x: start.x, y: start.y, z: start.z, w: start.w })
+          .setLinvel(7 + random() * 3, 1 + random() * 2, r() * 2)
+          .setAngvel({ x: r() * 18, y: r() * 18, z: r() * 18 })
+          .setLinearDamping(0.15)
+          .setAngularDamping(0.35)
+          .setCcdEnabled(true),
+      );
+      world.createCollider(RAPIER.ColliderDesc.convexHull(points)!.setFriction(0.5).setRestitution(0.35).setDensity(1), body);
+      return body;
+    });
 
-    const frames = new Float32Array(MAX_STEPS * 7);
+    const frames = bodies.map(() => new Float32Array(MAX_STEPS * 7));
     let steps = 0;
     while (steps < MAX_STEPS) {
       world.step();
-      const p = body.translation();
-      const q = body.rotation();
-      frames.set([p.x, p.y, p.z, q.x, q.y, q.z, q.w], steps * 7);
+      bodies.forEach((body, i) => {
+        const p = body.translation();
+        const q = body.rotation();
+        frames[i].set([p.x, p.y, p.z, q.x, q.y, q.z, q.w], steps * 7);
+      });
       steps++;
-      if (body.isSleeping()) break;
+      if (bodies.every((b) => b.isSleeping())) break;
     }
-    const q = body.rotation();
-    const recorded = frames.slice(0, steps * 7);
-    return {
-      frames: recorded,
-      steps,
-      dt: world.timestep,
-      final: new Quaternion(q.x, q.y, q.z, q.w),
-      impacts: findImpacts(recorded, world.timestep, GRAVITY, { threshold: 1.2, fullScale: 9 }),
-    };
+    return bodies.map((body, i) => {
+      const q = body.rotation();
+      const recorded = frames[i].slice(0, steps * 7);
+      return {
+        frames: recorded,
+        steps,
+        dt: world.timestep,
+        final: new Quaternion(q.x, q.y, q.z, q.w),
+        impacts: findImpacts(recorded, world.timestep, GRAVITY, { threshold: 1.2, fullScale: 9 }),
+      };
+    });
   } finally {
     world.free();
   }

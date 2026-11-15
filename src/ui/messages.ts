@@ -25,6 +25,7 @@ export const REJECT_MESSAGE: Record<RejectReason, string> = {
   kingProtectedThisTurn: '이번 턴에 AP를 썼으므로 킹을 잡을 수 없습니다.',
   nothingDoneThisTurn: '아무것도 하지 않고는 턴을 끝낼 수 없습니다. 수를 두거나 특수 행동을 시도해 주세요.',
   invalidChaos: '혼돈이 규칙에 맞지 않아 일어나지 않았습니다.',
+  clashRollsNeeded: '합 주사위가 없어 처리할 수 없습니다.',
 };
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
@@ -38,6 +39,11 @@ export type LogTone = 'normal' | 'warn' | 'error' | 'gm' | 'roll' | 'chaos' | 't
 export interface LogEntry {
   text: string;
   tone: LogTone;
+}
+
+/** A clash score as shown: "9×1.5=13.5", or just "12" without a multiplier. */
+export function score(roll: number, mult: number): string {
+  return mult === 1 ? String(roll) : `${roll}×${mult}=${Math.round(roll * mult * 100) / 100}`;
 }
 
 /** Log lines for the events of one command. `pieceType` resolves a moved piece's name. */
@@ -64,6 +70,7 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
       case 'removed':
         if (e.cause === 'burn') add(`🔥 ${squareName(e.at)}의 ${COLOR_NAME[e.piece.color]} ${josa(PIECE_NAME[e.piece.type], '이/가')} 끝내 불타 재가 됨`, 'warn');
         else if (e.cause === 'pit') add(`🕳 ${COLOR_NAME[e.piece.color]} ${josa(PIECE_NAME[e.piece.type], '이/가')} ${squareName(e.at)}의 구덩이에 빠짐`);
+        else if (e.cause === 'clash') break; // told with the clash
         else add(`${COLOR_NAME[e.piece.color]} ${PIECE_NAME[e.piece.type]}(${squareName(e.at)}) 제거됨`);
         break;
       case 'tagged': {
@@ -93,6 +100,19 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
       case 'converted':
         add(`🎭 ${squareName(e.at)}의 ${josa(name(e.pieceId), '이/가')} ${COLOR_NAME[e.to]} 편이 됨`, 'warn');
         break;
+      case 'clash': {
+        const rounds = e.rounds.map((r) => `${score(r.attack, e.attack)} 대 ${score(r.defense, e.defense)}`).join(', 동점 → ');
+        add(`⚔ 합! ${name(e.attackerId)}(${squareName(e.from)}) ×${e.attack} 대 ${name(e.defenderId)}(${squareName(e.at)}) ×${e.defense}: ${rounds}`, 'roll');
+        add(
+          e.winner === 'attacker'
+            ? e.shield
+              ? `${josa(name(e.attackerId), '이/가')} 이겨 보호막을 깨뜨렸다`
+              : `${josa(name(e.attackerId), '이/가')} 합에서 이겼다`
+            : `${josa(name(e.defenderId), '이/가')} 버텨 냈다. 공격한 ${josa(name(e.attackerId), '이/가')} 쓰러짐`,
+          e.winner === 'attacker' ? 'normal' : 'warn',
+        );
+        break;
+      }
       case 'swapped':
         add(`🔄 ${squareName(e.a)}의 ${josa(name(e.aId), '와/과')} ${squareName(e.b)}의 ${josa(name(e.bId), '이/가')} 자리를 맞바꿈`);
         break;

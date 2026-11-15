@@ -5,6 +5,7 @@ import {
   exitsOf,
   capturedAfter,
   type Effect,
+  type EffectContext,
   type Element,
   type Exit,
   type Fx,
@@ -99,7 +100,16 @@ export function buildShow(events: GameEvent[], before: GameState, outcomeLabel: 
   const steps: GameState[] = [start];
   const movers: (string | null)[] = [];
   const color = head.type === 'specialResolved' ? head.color : before.turn;
-  const ctx = { turnNumber: before.turnNumber, nextSpawnId: before.nextSpawnId, color, terrain: before.terrain ?? [], captured: before.captured ?? [] };
+  // Clashes come out as they did: the same dice, from the clash events (special actions only).
+  const rolls = events.flatMap((e) => (e.type === 'clash' ? e.rounds.flatMap((r) => [r.attack, r.defense]) : []));
+  const ctx: EffectContext = {
+    turnNumber: before.turnNumber,
+    nextSpawnId: before.nextSpawnId,
+    color,
+    terrain: before.terrain ?? [],
+    captured: before.captured ?? [],
+    ...(head.type === 'specialResolved' && { clash: { mode: 'play' as const, rolls } }),
+  };
   for (let i = 0; i < effects.length; i++) {
     movers.push(moverOf(effects[i], steps[i].board));
     // From the start each time, so spawned pieces get the same ids as in the real result.

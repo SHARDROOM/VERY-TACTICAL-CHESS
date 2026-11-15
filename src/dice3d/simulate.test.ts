@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Vector3 } from 'three';
-import { simulateRoll } from './simulate';
+import { simulateRoll, simulateRolls } from './simulate';
 import { D20_FACES, numberShown, skinRotationFor, topFace } from './d20';
 
 function seeded(seed: number) {
@@ -20,6 +20,20 @@ describe('physical roll', () => {
       expect(last[1]).toBeGreaterThan(0.2);
       expect(last[1]).toBeLessThan(1);
       for (const n of [1, 7, 13, 20]) expect(numberShown(run.final, skinRotationFor(n, run.final))).toBe(n);
+    }
+  }, 30_000);
+});
+
+describe('two dice for a clash', () => {
+  it('both settle flat in the tray, on runs of the same length', async () => {
+    for (let s = 1; s <= 3; s++) {
+      const runs = await simulateRolls(2, seeded(s * 104729));
+      expect(runs).toHaveLength(2);
+      expect(runs[0].steps).toBe(runs[1].steps);
+      for (const run of runs) {
+        const up = D20_FACES[topFace(run.final)].normal.clone().applyQuaternion(run.final);
+        expect(up.dot(new Vector3(0, 1, 0))).toBeGreaterThan(0.97);
+      }
     }
   }, 30_000);
 });

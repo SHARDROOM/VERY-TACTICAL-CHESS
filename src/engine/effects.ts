@@ -1,3 +1,4 @@
+import type { Exit } from './staging';
 import {
   BURN,
   RIDE,
@@ -22,6 +23,7 @@ import { SHIELD } from './types';
 import { MAX_TERRAIN } from './terrain';
 import { capturedAfter } from './captured';
 import { checkActor } from './actor';
+import { canResist, clashMultiplier, resolveClash } from './clash';
 
 const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑' };
 const PIECE_NAME: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
@@ -37,12 +39,21 @@ export interface EffectContext {
   terrain?: readonly TerrainCell[];
   /** Pieces beside the board before the effects (oldest first), for revive. */
   captured?: readonly CapturedPiece[];
+  /**
+   * Whether a move effect into a piece that can stand its ground is a clash (special actions;
+   * not chaos): 'check' while a ruling is only being checked (the attacker is taken to win, the
+   * outcome nobody can know yet), or the d20s to play it out with.
+   */
+  clash?: { mode: 'check' } | { mode: 'play'; rolls: readonly number[] };
 }
 
 export type EffectResult =
-  /** `sources[i]`: which effect (0-based) produced `events[i]`; -1 for the promotions at the end. */
-  | { ok: true; board: Board; terrain: TerrainCell[]; events: GameEvent[]; sources: number[]; touched: Square[]; nextSpawnId: number }
-  | { ok: false; detail: string };
+  /**
+   * `sources[i]`: which effect (0-based) produced `events[i]`; -1 for the promotions at the end.
+   * `cut`: the effect where an attacker lost a clash; the ones after it never happened.
+   */
+  | { ok: true; board: Board; terrain: TerrainCell[]; events: GameEvent[]; sources: number[]; touched: Square[]; nextSpawnId: number; cut?: number }
+  | { ok: false; detail: string; code?: 'clashRollsNeeded' };
 
 const PIECE_TYPES: readonly PieceType[] = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'];
 const isInt = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n);
@@ -74,9 +85,13 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
   const touched: Square[] = [];
   let nextSpawnId = ctx.nextSpawnId;
   const terrainOn = (sq: Square) => terrain.find((c) => c.at === sq) ?? null;
+  /** Clash dice used so far (they are used in order across the effects). */
+  let rollAt = 0;
+  let cut: number | undefined;
 
   const sources: number[] = [];
   for (const [i, e] of effects.entries()) {
+    if (cut !== undefined) break;
     // Everything this effect adds to `events` came from it.
     while (sources.length < events.length) sources.push(i - 1);
     const where = `효과 ${i + 1}`;
@@ -115,6 +130,46 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         const occupant = board[e.to];
         if (occupant?.color === piece.color) return fail(`${squareName(e.to)}에 같은 편 기물이 있음`);
         if (occupant?.type === 'king') return fail('특수 행동으로는 킹을 잡을 수 없음');
+        let capturedExit: Exit | undefined;
+        if (occupant && ctx.clash && canResist(occupant)) {
+          // A clash (합). While only checking a ruling the attacker is taken to win.
+          const attack = clashMultiplier(piece);
+          const defense = clashMultiplier(occupant);
+          let winner: 'attacker' | 'defender' = 'attacker';
+          if (ctx.clash.mode === 'play') {
+            const rolls = ctx.clash.rolls.slice(rollAt);
+            if (rolls.length < 2) return { ok: false, detail: `${where}: 합 주사위가 없음`, code: 'clashRollsNeeded' };
+            const result = resolveClash(attack, defense, rolls);
+            rollAt += result.rounds.length * 2;
+            winner = result.winner;
+            events.push({
+              type: 'clash',
+              attackerId: piece.id,
+              defenderId: occupant.id,
+              attacker: piece.color,
+              from: e.from,
+              at: e.to,
+              attack,
+              defense,
+              rounds: result.rounds,
+              winner,
+              shield: isShielded(occupant),
+              exchanges: result.exchanges,
+            });
+          }
+          if (winner === 'defender') {
+            // The attacker falls where it stood, and the rest of the action never happens.
+            const exit: Exit | undefined = defense > 1 ? 'shatter' : undefined;
+            board[e.from] = null;
+            touched.push(e.from);
+            events.push({ type: 'removed', piece, at: e.from, cause: 'clash', ...(exit && { exit }) });
+            if (piece.rider) events.push({ type: 'removed', piece: piece.rider, at: e.from, cause: 'clash', ...(exit && { exit }) });
+            if (piece.type === 'king') events.push({ type: 'kingCaptured', winner: occupant.color });
+            cut = i;
+            break;
+          }
+          if (!isShielded(occupant)) capturedExit = attack > 1 ? 'shatter' : undefined;
+        }
         if (occupant && isShielded(occupant)) {
           board[e.to] = withoutTag(occupant, SHIELD);
           touched.push(e.to);
@@ -123,8 +178,8 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         }
         board[e.from] = null;
         touched.push(e.from, e.to);
-        events.push({ type: 'moved', pieceId: piece.id, from: e.from, to: e.to, captured: occupant });
-        if (occupant) events.push(...goneEvents(occupant, e.to));
+        events.push({ type: 'moved', pieceId: piece.id, from: e.from, to: e.to, captured: occupant, ...(capturedExit && { capturedExit }) });
+        if (occupant) events.push(...goneEvents(occupant, e.to).map((g) => (capturedExit && g.type === 'removed' ? { ...g, exit: capturedExit } : g)));
         board[e.to] = extinguish(piece, e.to, events);
         break;
       }
@@ -309,7 +364,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         return fail('알 수 없는 효과 종류');
     }
   }
-  while (sources.length < events.length) sources.push(effects.length - 1);
+  while (sources.length < events.length) sources.push(cut ?? effects.length - 1);
   // A pawn carried to its last rank by an effect promotes, like after a normal move (always to a queen).
   for (let sq = 0; sq < 64; sq++) {
     const piece = board[sq];
@@ -319,7 +374,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
     events.push({ type: 'transformed', pieceId: piece.id, at: sq, from: 'pawn', to: 'queen' });
     sources.push(-1);
   }
-  return { ok: true, board, terrain, events, sources, touched, nextSpawnId };
+  return { ok: true, board, terrain, events, sources, touched, nextSpawnId, ...(cut !== undefined && { cut }) };
 }
 
 /** Checks a ruling against the rules and dry-runs its effects. Returns a problem description, or null if valid. */

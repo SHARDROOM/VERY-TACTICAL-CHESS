@@ -21,6 +21,11 @@ export interface Tag {
   appliedOnTurn: number;
   /** A lasting look while the tag lasts (GM staging; no rule meaning). */
   aura?: Aura;
+  /**
+   * Clash multiplier (합 배율, 1.2..2.0), e.g. 검술 ×1.5: a piece with one fights a clash when
+   * someone tries to capture it, and uses it when it attacks into a clash. See clash.ts.
+   */
+  clash?: number;
 }
 
 /** A piece beside the board, and how it left (as the GM staged it; missing = knocked off). */
@@ -186,11 +191,12 @@ export interface GameState {
 }
 
 export type Command =
-  | { type: 'move'; from: Square; to: Square; promotion?: PromotionType }
+  /** `clashRolls`: d20s rolled outside the engine, used in order if the capture becomes a clash. */
+  | { type: 'move'; from: Square; to: Square; promotion?: PromotionType; clashRolls?: number[] }
   | { type: 'endTurn' }
   | { type: 'proposeSpecial'; action: string; ruling: Ruling }
   /** `roll` is a d20 result produced outside the engine, keeping the engine deterministic. */
-  | { type: 'attemptSpecial'; roll: number }
+  | { type: 'attemptSpecial'; roll: number; clashRolls?: number[] }
   | { type: 'cancelSpecial' }
   /** The side to move ran out of time: it loses AP and the turn passes. */
   | { type: 'timeout' }
@@ -203,9 +209,27 @@ export type MoveSpecial =
   | { kind: 'promotion'; to: PromotionType };
 
 export type GameEvent =
-  | { type: 'moved'; pieceId: string; from: Square; to: Square; captured: Piece | null; special?: MoveSpecial }
-  /** `cause`: burnt up by 화상 at the end of its owner's turn, or fell into a pit. */
-  | { type: 'removed'; piece: Piece; at: Square; cause?: 'burn' | 'pit' }
+  /** `capturedExit`: how the captured piece goes, if the rules say (cut down in a clash). */
+  | { type: 'moved'; pieceId: string; from: Square; to: Square; captured: Piece | null; special?: MoveSpecial; capturedExit?: Exit }
+  /** A clash (합): who fought, their multipliers, every round of dice (ties first), who won and how long it looks. */
+  | {
+      type: 'clash';
+      attackerId: string;
+      defenderId: string;
+      attacker: Color;
+      from: Square;
+      at: Square;
+      attack: number;
+      defense: number;
+      rounds: { attack: number; defense: number }[];
+      winner: 'attacker' | 'defender';
+      /** The defender had a shield: losing breaks it instead. */
+      shield: boolean;
+      /** How many times they meet on screen (합 횟수). */
+      exchanges: number;
+    }
+  /** `cause`: burnt up by 화상, fell into a pit, or lost a clash it started. `exit`: how it goes, if the rules say. */
+  | { type: 'removed'; piece: Piece; at: Square; cause?: 'burn' | 'pit' | 'clash'; exit?: Exit }
   | { type: 'tagged'; pieceId: string; at: Square; tag: string; turns: number | null }
   | { type: 'untagged'; pieceId: string; at: Square; tag: string }
   | { type: 'tagExpired'; pieceId: string; tag: string }
@@ -266,7 +290,8 @@ export type RejectReason =
   | 'invalidRoll'
   | 'kingProtectedThisTurn'
   | 'nothingDoneThisTurn'
-  | 'invalidChaos';
+  | 'invalidChaos'
+  | 'clashRollsNeeded';
 
 export type CommandResult =
   | { ok: true; state: GameState; events: GameEvent[] }

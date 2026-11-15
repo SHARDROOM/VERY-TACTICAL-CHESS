@@ -16,7 +16,8 @@ export function capturedAfter(captured: readonly CapturedPiece[] | undefined, ev
   for (const e of events) {
     const piece = e.type === 'moved' ? e.captured : e.type === 'removed' ? e.piece : null;
     if (piece) {
-      const exit = exits?.get(piece.id) ?? plainExit(e);
+      const ruled = e.type === 'removed' ? e.exit : e.type === 'moved' ? e.capturedExit : undefined;
+      const exit = exits?.get(piece.id) ?? ruled ?? plainExit(e);
       out.push({ id: piece.id, color: piece.color, type: piece.type, ...(exit && { exit }) });
     } else if (e.type === 'revived') {
       const i = out.map((p) => p.id).lastIndexOf(e.piece.id);

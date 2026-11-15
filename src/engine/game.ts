@@ -23,6 +23,7 @@ import { extinguish, isShielded, tickTags, withoutTag } from './tags';
 import { SHIELD } from './types';
 import { tickTerrain } from './terrain';
 import { capturedAfter } from './captured';
+import { canResist, clashMultiplier, resolveClash } from './clash';
 
 /** What effects applied now start from: the turn, whose it is, the walls and pits, the side of the board. */
 function effectContext(state: GameState, nextSpawnId = state.nextSpawnId): EffectContext {
@@ -49,7 +50,7 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
     case 'proposeSpecial':
       return propose(state, cmd);
     case 'attemptSpecial':
-      return attempt(state, cmd.roll);
+      return attempt(state, cmd.roll, cmd.clashRolls);
     case 'cancelSpecial': {
       const { color, action } = state.pending!;
       return { ok: true, state: { ...state, pending: null }, events: [{ type: 'specialCancelled', color, action }] };
@@ -119,6 +120,8 @@ export function exitsOf(events: GameEvent[], sources: number[], staging: Staging
     // A piece falls into a pit on the spot: only the exits played in place fit (otherwise it sinks).
     const inPit = e.type === 'removed' && e.cause === 'pit';
     if (inPit && exit && !['ash', 'shatter', 'vanish', 'sink'].includes(exit)) return;
+    // An attacker that lost a clash goes the way the clash says, not the way its victim was staged to.
+    if (e.type === 'removed' && e.cause === 'clash') return;
     if (piece && exit && exit !== 'default' && exit !== 'knock') exits.set(piece.id, exit);
   });
   return exits;
@@ -194,11 +197,36 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
     target.special?.kind === 'enPassant' ? squareAt(fileOf(cmd.to), rankOf(cmd.from))! : cmd.to;
   const victim = board[victimSquare];
 
+  // Capturing a piece that can stand its ground (a clash multiplier or a shield) is a clash (합).
+  const opening: GameEvent[] = [];
+  let capturedExit: Exit | undefined;
+  if (victim && canResist(victim)) {
+    if (!cmd.clashRolls?.length) return { ok: false, reason: 'clashRollsNeeded' };
+    const clash = clashEventFor(piece, victim, cmd.from, victimSquare, cmd.clashRolls);
+    opening.push(clash);
+    if (clash.winner === 'defender') {
+      // The attacker falls on its own square (with whoever rides it); cut down by a fighter, knocked off otherwise.
+      board[cmd.from] = null;
+      const exit: Exit | undefined = clash.defense > 1 ? 'shatter' : undefined;
+      const events: GameEvent[] = [...opening, { type: 'removed', piece, at: cmd.from, cause: 'clash', ...(exit && { exit }) }];
+      if (piece.rider) events.push({ type: 'removed', piece: piece.rider, at: cmd.from, cause: 'clash', ...(exit && { exit }) });
+      const after = withCaptured({ ...state, castling: revokeCastling(state.castling, [cmd.from]) }, events);
+      if (piece.type === 'king') {
+        events.push({ type: 'kingCaptured', winner: victim.color });
+        return { ok: true, state: { ...after, board, status: { kind: 'won', winner: victim.color } }, events };
+      }
+      events.push(...checkEvents(board, piece.color, state.terrain));
+      return { ok: true, ...passTurn(after, board, null, events) };
+    }
+    // Lost by the defender: a shield breaks instead (the attacker goes back to its square), or it is cut down.
+    if (!isShielded(victim)) capturedExit = clash.attack > 1 ? 'shatter' : undefined;
+  }
+
   // A shield absorbs the capture: it breaks, the target stays, the attacker does not move,
   // and the move still uses up the turn.
   if (victim && isShielded(victim)) {
     board[victimSquare] = withoutTag(victim, SHIELD);
-    const events: GameEvent[] = [{ type: 'shieldBroken', pieceId: victim.id, at: victimSquare, attackerId: piece.id }];
+    const events: GameEvent[] = [...opening, { type: 'shieldBroken', pieceId: victim.id, at: victimSquare, attackerId: piece.id }];
     events.push(...checkEvents(board, piece.color, state.terrain));
     return { ok: true, ...passTurn(state, board, null, events) };
   }
@@ -228,10 +256,11 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   }
 
   const events: GameEvent[] = [
-    { type: 'moved', pieceId: piece.id, from: cmd.from, to: cmd.to, captured, ...(special && { special }) },
+    ...opening,
+    { type: 'moved', pieceId: piece.id, from: cmd.from, to: cmd.to, captured, ...(special && { special }), ...(capturedExit && { capturedExit }) },
   ];
   // Whoever rode the captured piece falls with it.
-  if (captured?.rider) events.push({ type: 'removed', piece: captured.rider, at: victimSquare });
+  if (captured?.rider) events.push({ type: 'removed', piece: captured.rider, at: victimSquare, ...(capturedExit && { exit: capturedExit }) });
   events.push(...fireOut);
 
   if (captured?.type === 'king') {
@@ -251,11 +280,32 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   return { ok: true, ...passTurn(withRights, board, enPassant, events) };
 }
 
+/** The clash between `attacker` (from `from`) and `defender` (on `at`), played out with these rolls. */
+export function clashEventFor(attacker: Piece, defender: Piece, from: Square, at: Square, rolls: readonly number[]): Extract<GameEvent, { type: 'clash' }> {
+  const attack = clashMultiplier(attacker);
+  const defense = clashMultiplier(defender);
+  const result = resolveClash(attack, defense, rolls);
+  return {
+    type: 'clash',
+    attackerId: attacker.id,
+    defenderId: defender.id,
+    attacker: attacker.color,
+    from,
+    at,
+    attack,
+    defense,
+    rounds: result.rounds,
+    winner: result.winner,
+    shield: isShielded(defender),
+    exchanges: result.exchanges,
+  };
+}
+
 function propose(state: GameState, cmd: Extract<Command, { type: 'proposeSpecial' }>): CommandResult {
   const action = cmd.action.trim();
   if (!action) return { ok: false, reason: 'emptyAction' };
   if (action.length > state.rules.actionMaxLength) return { ok: false, reason: 'actionTooLong' };
-  const problem = validateRuling(state.board, cmd.ruling, state.rules, effectContext(state));
+  const problem = validateRuling(state.board, cmd.ruling, state.rules, { ...effectContext(state), clash: { mode: 'check' } });
   if (problem) return { ok: false, reason: 'invalidRuling', detail: problem };
 
   const pending = { color: state.turn, action, ruling: cmd.ruling };
@@ -266,7 +316,7 @@ function propose(state: GameState, cmd: Extract<Command, { type: 'proposeSpecial
   };
 }
 
-function attempt(state: GameState, roll: number): CommandResult {
+function attempt(state: GameState, roll: number, clashRolls: readonly number[] = []): CommandResult {
   const { color, action, ruling } = state.pending!;
   if (!ruling.feasible) return { ok: false, reason: 'notFeasible' };
   if (state.ap[color] < ruling.cost) return { ok: false, reason: 'notEnoughAp' };
@@ -277,7 +327,7 @@ function attempt(state: GameState, roll: number): CommandResult {
     roll === 20 ? 'critSuccess' : roll === 1 ? 'critFailure' : roll >= ruling.dc ? 'success' : 'failure';
   const success = outcome === 'critSuccess' || outcome === 'success';
   const crit = ruling.critSuccessEffects?.length ? ruling.critSuccessEffects : ruling.effects;
-  const toApply = outcome === 'critSuccess' ? crit : outcome === 'success' ? ruling.effects : outcome === 'critFailure' ? ruling.critFailureEffects ?? [] : [];
+  let toApply = outcome === 'critSuccess' ? crit : outcome === 'success' ? ruling.effects : outcome === 'critFailure' ? ruling.critFailureEffects ?? [] : [];
 
   let board = state.board;
   let terrain = state.terrain;
@@ -286,9 +336,12 @@ function attempt(state: GameState, roll: number): CommandResult {
   const effectEvents: GameEvent[] = [];
   let exits = new Map<string, Exit>();
   if (toApply.length) {
-    const applied = applyEffects(board, toApply, effectContext(state, nextSpawnId));
-    // Validated on proposal and nothing can change the board while pending, so this is an invariant.
-    if (!applied.ok) return { ok: false, reason: 'invalidRuling', detail: applied.detail };
+    const applied = applyEffects(board, toApply, { ...effectContext(state, nextSpawnId), clash: { mode: 'play', rolls: clashRolls } });
+    // Validated on proposal and nothing can change the board while pending, so this is an invariant
+    // (except for a clash, which needs its dice).
+    if (!applied.ok) return { ok: false, reason: applied.code ?? 'invalidRuling', detail: applied.detail };
+    // An attacker lost a clash: the rest of the action never happened.
+    if (applied.cut !== undefined) toApply = toApply.slice(0, applied.cut + 1);
     board = applied.board;
     terrain = applied.terrain;
     nextSpawnId = applied.nextSpawnId;
@@ -335,6 +388,10 @@ function attempt(state: GameState, roll: number): CommandResult {
     pending: null,
     precedents: [...state.precedents, precedent],
   }, events, exits);
+
+  // A king that charged into a clash and lost.
+  const kingFell = events.find((e) => e.type === 'kingCaptured');
+  if (kingFell) return { ok: true, state: { ...after, status: { kind: 'won', winner: kingFell.winner } }, events };
 
   // One-turn-kill guard: if the opponent's king is attacked after a special action, the
   // turn ends at once (remaining AP carries over), so the opponent always gets to respond.

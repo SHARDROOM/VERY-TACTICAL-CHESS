@@ -154,6 +154,26 @@ describe('hotseat session', () => {
     expect(s.view().state.pending).toBeNull();
   });
 
+  it('a capture of a shielded piece becomes a clash: dice are rolled only then, and everyone sees them', async () => {
+    const rolls = [20, 3, 15]; // the shield roll; then the clash: 3 against 15
+    let n = 0;
+    const s = hotseat(new TestGm(), () => rolls[n++] ?? 10);
+    const rec = record(s);
+    s.request({ type: 'move', from: sq('e2'), to: sq('e4') });
+    s.request({ type: 'move', from: sq('d7'), to: sq('d5') });
+    s.request({ type: 'declare', action: 'e4 폰에 보호막' });
+    await settle();
+    s.request({ type: 'attempt' });
+    s.request({ type: 'endTurn' });
+    expect(n).toBe(1);
+    s.request({ type: 'move', from: sq('d5'), to: sq('e4') });
+    const clash = rec.events.flatMap((e) => (e.kind === 'events' ? e.events : [])).find((e) => e.type === 'clash');
+    expect(clash).toMatchObject({ type: 'clash', winner: 'defender', shield: true, rounds: [{ attack: 3, defense: 15 }] });
+    // The attacking pawn lost: it is gone, the shielded pawn stays.
+    expect(s.view().state.board[sq('d5')]).toBeNull();
+    expect(s.view().state.board[sq('e4')]).toMatchObject({ color: 'white', type: 'pawn' });
+  });
+
   it('does not call the GM for a declaration the engine would reject anyway', async () => {
     const gm = new TestGm();
     const s = hotseat(gm);

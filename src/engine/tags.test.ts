@@ -182,13 +182,14 @@ describe('shield (보호막)', () => {
     return act(s, { type: 'tag', at: sq('d7'), tag: '보호막', turns: 0 }).state;
   };
 
-  it('absorbs the first normal capture: the shield breaks, the target stays, the attacker stays, the turn ends', () => {
+  it('absorbs the first normal capture: the attacker wins the clash, the shield breaks, the target stays, the attacker stays, the turn ends', () => {
     const s = endTurn(shielded());
-    const r = okMove(s, 'd4', 'd7');
+    const r = okMove(s, 'd4', 'd7', { clashRolls: [20, 1] });
     expect(r.state.board[sq('d7')]).toMatchObject({ type: 'knight', color: 'black', tags: [] });
     expect(r.state.board[sq('d4')]).toMatchObject({ type: 'rook', color: 'white' });
     expect(r.state.turn).toBe('black');
-    expect(r.events[0]).toMatchObject({ type: 'shieldBroken', at: sq('d7') });
+    expect(r.events[0]).toMatchObject({ type: 'clash', winner: 'attacker', shield: true });
+    expect(r.events[1]).toMatchObject({ type: 'shieldBroken', at: sq('d7') });
     // second capture works
     const again = okMove(endTurn(r.state), 'd4', 'd7');
     expect(again.state.board[sq('d7')]).toMatchObject({ type: 'rook', color: 'white' });
@@ -211,7 +212,7 @@ describe('shield (보호막)', () => {
     );
     let t = act(s, { type: 'tag', at: sq('e8'), tag: '보호막', turns: 0 }).state;
     t = endTurn(t);
-    const r = okMove(t, 'e4', 'e8');
+    const r = okMove(t, 'e4', 'e8', { clashRolls: [20, 1] });
     expect(r.state.status).toEqual({ kind: 'playing' });
     expect(r.state.board[sq('e8')]).toMatchObject({ type: 'king', tags: [] });
   });

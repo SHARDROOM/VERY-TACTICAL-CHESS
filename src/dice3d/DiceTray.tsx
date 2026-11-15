@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { BufferGeometry, CanvasTexture, Float32BufferAttribute, Quaternion, SRGBColorSpace, Vector3, type Group } from 'three';
-import type { Outcome } from '../engine';
+import type { Color, Outcome } from '../engine';
 import { D20_FACES, d20Vertices, faceWithNumber } from './d20';
 import { DIE_RADIUS, TRAY, type DiceRun } from './simulate';
 import { TABLE_TOP_Y } from '../scene/WoodTable';
@@ -20,10 +20,21 @@ export interface ActiveRoll {
   run: DiceRun | null;
   /** Rotation of the numbered skin that puts the engine's number on top (see d20.ts). */
   skin: Quaternion;
-  outcome: Outcome;
+  /** A special action's roll lights up by its outcome; a clash's dice have none. */
+  outcome: Outcome | null;
   /** Jump straight to the resting pose. */
   skipped: boolean;
+  /** A clash (합): the defender's die, thrown with the first (same length of run). */
+  second?: { run: DiceRun | null; skin: Quaternion };
+  /** A clash: each die in its side's colour (attacker, defender). */
+  tints?: [Color, Color];
 }
+
+/** Dice in a side's colours, for a clash. */
+const TINT: Record<Color, { body: string; ink: string }> = {
+  white: { body: '#efe5cf', ink: '#1d1b22' },
+  black: { body: '#2e2b31', ink: '#f0e6d2' },
+};
 
 const LOOK: Record<Outcome, { body: string; emissive: string; glow: number; text: string }> = {
   critSuccess: { body: '#e8c35a', emissive: '#ffcc33', glow: 0.55, text: '#f5d76e' },
@@ -138,6 +149,8 @@ interface Props {
 export function DiceTray({ side, roll, onLanded }: Props) {
   const die = useRef<Group>(null);
   const skinGroup = useRef<Group>(null);
+  const die2 = useRef<Group>(null);
+  const skinGroup2 = useRef<Group>(null);
   const geometry = useDieGeometry();
   const rest = useRef(initialPose());
   const restSkin = useRef(new Quaternion());
@@ -176,6 +189,15 @@ export function DiceTray({ side, roll, onLanded }: Props) {
     g.position.set(run.frames[o], run.frames[o + 1], run.frames[o + 2]);
     g.quaternion.set(run.frames[o + 3], run.frames[o + 4], run.frames[o + 5], run.frames[o + 6]);
     sk.quaternion.copy(roll.skin);
+    // The clash's second die, on the same clock.
+    const run2 = roll.second?.run;
+    const g2 = die2.current;
+    if (run2 && g2 && skinGroup2.current) {
+      const o2 = Math.min(run2.steps - 1, step) * 7;
+      g2.position.set(run2.frames[o2], run2.frames[o2 + 1], run2.frames[o2 + 2]);
+      g2.quaternion.set(run2.frames[o2 + 3], run2.frames[o2 + 4], run2.frames[o2 + 5], run2.frames[o2 + 6]);
+      skinGroup2.current.quaternion.copy(roll.second!.skin);
+    }
     if (step === last && landedFor.current !== run) {
       landedFor.current = run;
       rest.current = { position: g.position.clone(), quaternion: g.quaternion.clone() };
@@ -188,14 +210,27 @@ export function DiceTray({ side, roll, onLanded }: Props) {
   });
 
   const look = lit ? LOOK[lit] : null;
+  // A clash's dice wear the sides' colours (while they roll and until the next roll).
+  const tint = roll?.tints ? TINT[roll.tints[0]] : null;
+  const tint2 = roll?.tints ? TINT[roll.tints[1]] : null;
   return (
     <group position={[trayCenterX(side), TABLE_TOP_Y, 0]} scale={TRAY_SCALE}>
       <Tray />
+      {roll?.second?.run && tint2 && (
+        <group ref={die2}>
+          <group ref={skinGroup2}>
+            <mesh geometry={geometry} castShadow>
+              <meshStandardMaterial color={tint2.body} roughness={0.35} metalness={0.05} flatShading />
+            </mesh>
+            <Numbers ink={tint2.ink} />
+          </group>
+        </group>
+      )}
       <group ref={die}>
         <group ref={skinGroup}>
           <mesh geometry={geometry} castShadow>
             <meshStandardMaterial
-              color={look ? look.body : '#d9d2c2'}
+              color={tint ? tint.body : look ? look.body : '#d9d2c2'}
               emissive={look ? look.emissive : '#000000'}
               emissiveIntensity={look ? look.glow : 0}
               roughness={0.35}
@@ -203,7 +238,7 @@ export function DiceTray({ side, roll, onLanded }: Props) {
               flatShading
             />
           </mesh>
-          <Numbers ink={lit === 'critFailure' ? '#ffe0dc' : '#1d1b22'} />
+          <Numbers ink={tint ? tint.ink : lit === 'critFailure' ? '#ffe0dc' : '#1d1b22'} />
         </group>
         {look && look.glow > 0 && <pointLight color={look.emissive} intensity={5} distance={4} position={[0, 1.2, 0]} />}
       </group>
