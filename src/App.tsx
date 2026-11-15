@@ -7,7 +7,7 @@ import { LocalSession } from './session/localSession';
 import { HostSession } from './session/hostSession';
 import { GuestSession } from './session/guestSession';
 import { inviteLink, joinRoom, normalizeRoomCode, openRoom } from './session/peerTransport';
-import { browserId, clearSavedGame, gmForSave, gmFromSave, loadSavedGame, saveGame, savedName, type SavedGame } from './session/storage';
+import { browserId, clearSavedGame, gmForSave, gmFromSave, loadSavedGame, rememberGm, rememberedGm, saveGame, savedName, type SavedGame } from './session/storage';
 import type { Session, SessionView } from './session/types';
 import { WaitingRoom } from './ui/WaitingRoom';
 import { rollD20 } from './dice';
@@ -28,8 +28,8 @@ type SaveTarget = { kind: 'hotseat' } | { kind: 'host'; code: string } | null;
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
-  // The API key lives only here, in memory: never persisted, never sent to the other player.
-  const [gmConfig, setGmConfig] = useState<GmConfig>({ provider: 'fake' });
+  // The GM and its API key are remembered on this browser only, never sent to the other player.
+  const [gmConfig, setGmConfig] = useState<GmConfig>(() => rememberedGm().current);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState(0);
@@ -72,14 +72,14 @@ export default function App() {
   }, [session]);
 
   const resumeGm = (game: SavedGame | null): GmConfig => {
-    const config = game ? gmFromSave(game.gm) : gmConfig;
+    const config = game ? gmFromSave(game.gm, rememberedGm().keys) : gmConfig;
     setGmConfig(config);
     setAskForKey(config.provider !== 'fake' && !config.apiKey);
     return config;
   };
 
   const keyNotice = (config: GmConfig) =>
-    config.provider !== 'fake' && !config.apiKey ? ' API 키는 저장되지 않으므로 ⚙ GM 설정에서 다시 입력해 주세요.' : '';
+    config.provider !== 'fake' && !config.apiKey ? ' ⚙ GM 설정에서 API 키를 입력해 주세요.' : '';
 
   const hotseat = (resume: SavedGame | null = null) => {
     const config = resumeGm(resume);
@@ -196,6 +196,7 @@ export default function App() {
   };
 
   const changeGm = (config: GmConfig) => {
+    rememberGm(config);
     setGmConfig(config);
     setAskForKey(false);
     session?.setGm(createGm(config));

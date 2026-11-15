@@ -156,7 +156,7 @@ describe('saved games', () => {
   it('a reloaded game without its key gets a GM that asks for the key', async () => {
     const gm = createGm(gmFromSave({ provider: 'claude', model: 'claude-opus-5-5', effort: 'low' }));
     expect(gm.name).toContain('API 키 필요');
-    await expect(gm.rule({ action: 'x', state: createInitialState() })).rejects.toThrow(/다시 입력/);
+    await expect(gm.rule({ action: 'x', state: createInitialState() })).rejects.toThrow(/API 키가 없습니다/);
   });
 
   it('hotseat and host sessions resume from a saved state', () => {
@@ -280,5 +280,22 @@ describe('reconnecting', () => {
     await settle(20);
     expect(attempts).toBe(seen);
     expect(guest.view().connection).toMatchObject({ kind: 'disconnected' });
+  });
+});
+
+describe('remembered GM', () => {
+  it('keeps the chosen GM and every key on this browser, and fills a resumed game\'s key', async () => {
+    const { rememberGm, rememberKeys, rememberedGm } = await import('./storage');
+    const storage = new MemoryStorage();
+    expect(rememberedGm(storage)).toEqual({ current: { provider: 'fake' }, keys: {} });
+    rememberKeys({ gemini: ' AIza-1 ', openai: 'sk-2', claude: '' }, storage);
+    rememberGm({ provider: 'gemini', apiKey: 'AIza-1', model: 'gemini-x' }, storage);
+    expect(rememberedGm(storage)).toEqual({ current: { provider: 'gemini', apiKey: 'AIza-1', model: 'gemini-x' }, keys: { gemini: 'AIza-1', openai: 'sk-2' } });
+    expect(gmFromSave({ provider: 'openai', model: 'gpt' }, rememberedGm(storage).keys)).toEqual({ provider: 'openai', apiKey: 'sk-2', model: 'gpt' });
+    // An emptied field is forgotten; the game save itself never holds a key.
+    rememberKeys({ gemini: '', openai: 'sk-2' }, storage);
+    rememberGm({ provider: 'fake' }, storage);
+    expect(rememberedGm(storage)).toEqual({ current: { provider: 'fake' }, keys: { openai: 'sk-2' } });
+    expect(JSON.stringify(gmForSave({ provider: 'openai', apiKey: 'sk-2', model: 'gpt' }))).not.toContain('sk-2');
   });
 });

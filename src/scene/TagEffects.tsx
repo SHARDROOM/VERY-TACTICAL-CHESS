@@ -1,5 +1,5 @@
-import { useMemo, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useMemo, useRef, useState } from 'react';
+import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { CanvasTexture, SRGBColorSpace, type Group, type Mesh } from 'three';
 
 /** Little stars circling above a stunned piece. */
@@ -59,12 +59,13 @@ const TONE: Record<ChipTone, { bg: string; dot: string | null; fg: string }> = {
 };
 
 /**
- * A row of small labels floating above a piece (or a wall), drawn into a texture (no DOM
- * overlay) and always drawn on top so a turn count is never hidden behind another piece.
+ * A row (or, unfolded, a column) of small labels floating above a piece or a wall, drawn into
+ * a texture (no DOM overlay) and always drawn on top so a turn count is never hidden behind
+ * another piece. A column grows upward from `y`.
  */
-export function TurnBadges({ chips, y }: { chips: Chip[]; y: number }) {
-  const key = chips.map((c) => `${c.tone}:${c.text}`).join('|');
-  const { texture, aspect } = useMemo(() => {
+export function TurnBadges({ chips, y, column = false, onClick }: { chips: Chip[]; y: number; column?: boolean; onClick?: (e: ThreeEvent<MouseEvent>) => void }) {
+  const key = `${column ? 'col' : 'row'}/` + chips.map((c) => `${c.tone}:${c.text}`).join('|');
+  const { texture, aspect, rows, rowShare } = useMemo(() => {
     const scale = 4;
     const font = `600 ${14 * scale}px system-ui, sans-serif`;
     const measure = document.createElement('canvas').getContext('2d')!;
@@ -73,24 +74,29 @@ export function TurnBadges({ chips, y }: { chips: Chip[]; y: number }) {
     const dotW = 12 * scale;
     const gap = 6 * scale;
     const widths = chips.map((c) => Math.ceil(measure.measureText(c.text).width) + pad * 2 + (TONE[c.tone].dot ? dotW : 0));
-    const width = Math.max(1, widths.reduce((a, b) => a + b, 0) + gap * (chips.length - 1));
-    const height = 26 * scale;
+    const rowH = 26 * scale;
+    const width = Math.max(1, column ? Math.max(...widths) : widths.reduce((a, b) => a + b, 0) + gap * (chips.length - 1));
+    const height = column ? rowH * chips.length + gap * (chips.length - 1) : rowH;
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
     let x = 0;
+    // A column lists the first label at the bottom, nearest the piece.
+    let top = height - rowH;
     chips.forEach((c, i) => {
       const tone = TONE[c.tone];
+      const left = column ? (width - widths[i]) / 2 : x;
       ctx.fillStyle = tone.bg;
       ctx.beginPath();
-      ctx.roundRect(x, 0, widths[i], height, 10 * scale);
+      ctx.roundRect(left, column ? top : 0, widths[i], rowH, 10 * scale);
       ctx.fill();
-      let tx = x + pad;
+      const mid = (column ? top : 0) + rowH / 2;
+      let tx = left + pad;
       if (tone.dot) {
         ctx.fillStyle = tone.dot;
         ctx.beginPath();
-        ctx.arc(tx + 4 * scale, height / 2, 4 * scale, 0, Math.PI * 2);
+        ctx.arc(tx + 4 * scale, mid, 4 * scale, 0, Math.PI * 2);
         ctx.fill();
         tx += dotW;
       }
@@ -98,19 +104,51 @@ export function TurnBadges({ chips, y }: { chips: Chip[]; y: number }) {
       ctx.font = font;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(c.text, tx, height / 2 + scale);
+      ctx.fillText(c.text, tx, mid + scale);
       x += widths[i] + gap;
+      top -= rowH + gap;
     });
     const t = new CanvasTexture(canvas);
     t.colorSpace = SRGBColorSpace;
-    return { texture: t, aspect: width / height };
+    return { texture: t, aspect: width / height, rows: column ? chips.length : 1, rowShare: rowH / height };
   }, [key]);
   if (!chips.length) return null;
   // The same size on screen however far the camera is, so a count stays readable on a phone.
-  const h = 0.03;
+  const h = 0.03 * (rows === 1 ? 1 : 1 / rowShare);
   return (
-    <sprite position={[0, y, 0]} scale={[h * aspect, h, 1]} renderOrder={20}>
+    <sprite
+      position={[0, y, 0]}
+      scale={[h * aspect, h, 1]}
+      // The bottom label sits where a single row would.
+      center={[0.5, rowShare / 2]}
+      renderOrder={20}
+      onClick={onClick}
+    >
       <spriteMaterial map={texture} transparent depthWrite={false} depthTest={false} sizeAttenuation={false} />
     </sprite>
+  );
+}
+
+/** Which folded label colour wins: the most pressing one (a burning piece's last turn first). */
+const URGENCY: ChipTone[] = ['burnLast', 'burn', 'stun', 'shield', 'free', 'terrain'];
+
+/**
+ * A piece's labels: one shows as it is; two or more fold into "⋯" (in the colours of the most
+ * pressing one) that unfolds into a column when tapped, and folds again on a second tap.
+ */
+export function FoldingBadges({ chips, y }: { chips: Chip[]; y: number }) {
+  const [open, setOpen] = useState(false);
+  if (chips.length < 2) return <TurnBadges chips={chips} y={y} />;
+  const tone = URGENCY.find((t) => chips.some((c) => c.tone === t)) ?? 'free';
+  return (
+    <TurnBadges
+      chips={open ? chips : [{ text: '⋯', tone }]}
+      y={y}
+      column={open}
+      onClick={(e) => {
+        e.stopPropagation();
+        setOpen((o) => !o);
+      }}
+    />
   );
 }

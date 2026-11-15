@@ -1,7 +1,7 @@
 import { withDefaultRules, type GameState } from '../engine';
 import type { GmConfig } from '../ui/GmSettings';
 
-/** What we remember about a GM between visits: never the API key. */
+/** What a saved game remembers about its GM: never the API key (that is kept apart, see savedGm). */
 export type SavedGm =
   | { provider: 'fake' }
   | { provider: 'claude'; model: string; effort: 'low' | 'medium' | 'high' }
@@ -41,9 +41,72 @@ export function gmForSave(config: GmConfig): SavedGm {
   }
 }
 
-/** A GM config from a save: same provider and model, but the key must be typed in again. */
-export function gmFromSave(gm: SavedGm): GmConfig {
-  return gm.provider === 'fake' ? gm : { ...gm, apiKey: '' };
+/** A GM config from a save: same provider and model, with the key this browser remembers for it (if any). */
+export function gmFromSave(gm: SavedGm, keys: ApiKeys = {}): GmConfig {
+  return gm.provider === 'fake' ? gm : { ...gm, apiKey: keys[gm.provider] ?? '' };
+}
+
+/** API keys typed in on this browser, one per provider. */
+export type ApiKeys = Partial<Record<'claude' | 'openai' | 'gemini', string>>;
+
+/** The GM last chosen on this browser and every key typed in: kept only here, never sent to anyone. */
+export interface RememberedGm {
+  current: GmConfig;
+  keys: ApiKeys;
+}
+
+const GM_KEY = 'vtc.gm.v1';
+const PROVIDERS = ['claude', 'openai', 'gemini'] as const;
+
+export function rememberedGm(storage?: Storage): RememberedGm {
+  const none: RememberedGm = { current: { provider: 'fake' }, keys: {} };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(store(storage)?.getItem(GM_KEY) ?? 'null');
+  } catch {
+    return none;
+  }
+  if (!isObj(raw) || !isObj(raw.current) || !isObj(raw.keys)) return none;
+  const keys: ApiKeys = {};
+  for (const p of PROVIDERS) if (typeof raw.keys[p] === 'string' && raw.keys[p]) keys[p] = raw.keys[p] as string;
+  const c = raw.current;
+  if (c.provider === 'claude' && typeof c.model === 'string' && (c.effort === 'low' || c.effort === 'medium' || c.effort === 'high')) {
+    return { current: { provider: 'claude', model: c.model, effort: c.effort, apiKey: keys.claude ?? '' }, keys };
+  }
+  if ((c.provider === 'openai' || c.provider === 'gemini') && typeof c.model === 'string') {
+    return { current: { provider: c.provider, model: c.model, apiKey: keys[c.provider] ?? '' }, keys };
+  }
+  return { current: { provider: 'fake' }, keys };
+}
+
+/** Remembers the keys as typed in the GM settings (an emptied one is forgotten). */
+export function rememberKeys(keys: ApiKeys, storage?: Storage): void {
+  const s = store(storage);
+  if (!s) return;
+  const { current } = rememberedGm(storage);
+  const kept: ApiKeys = {};
+  for (const p of PROVIDERS) if (keys[p]?.trim()) kept[p] = keys[p]!.trim();
+  try {
+    s.setItem(GM_KEY, JSON.stringify({ current: gmForSave(current), keys: kept }));
+  } catch {
+    // blocked storage
+  }
+}
+
+/** Remembers the chosen GM and its key. */
+export function rememberGm(config: GmConfig, storage?: Storage): void {
+  const s = store(storage);
+  if (!s) return;
+  const { keys } = rememberedGm(storage);
+  if (config.provider !== 'fake') {
+    if (config.apiKey) keys[config.provider] = config.apiKey;
+    else delete keys[config.provider];
+  }
+  try {
+    s.setItem(GM_KEY, JSON.stringify({ current: gmForSave(config), keys }));
+  } catch {
+    // blocked storage: the key just has to be typed in again next time
+  }
 }
 
 export function saveGame(game: Omit<SavedGame, 'version' | 'savedAt'>, storage?: Storage, now = Date.now()): void {

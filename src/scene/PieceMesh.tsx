@@ -3,7 +3,7 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { Euler, Quaternion, Vector3, type Group, type Mesh, type MeshPhysicalMaterial } from 'three';
 import { BURN, CORE_TAGS, RIDE, SHIELD, STUN, hasTag, type Color, type Entrance, type Exit, type MotionStyle, type Piece, type PieceType } from '../engine';
 import { PIECE_HEIGHT, pieceParts } from './pieceGeometry';
-import { ShieldBubble, StunStars, TurnBadges, type Chip } from './TagEffects';
+import { FoldingBadges, ShieldBubble, StunStars, type Chip } from './TagEffects';
 import { playSfx } from '../audio/sfx';
 import { ballistic, simulatePiece, tumble, type Obstacle, type PieceRun } from './piecePhysics';
 import { TABLE_TOP_Y } from './WoodTable';
@@ -97,7 +97,7 @@ function TagDecorations({ piece, top }: { piece: Piece; top: number }) {
     <>
       {hasTag(piece, SHIELD) && <ShieldBubble height={top} />}
       {stunned && <StunStars y={top + 0.12} />}
-      {chips.length > 0 && <TurnBadges chips={chips} y={top + (stunned ? 0.36 : 0.2)} />}
+      {chips.length > 0 && <FoldingBadges chips={chips} y={top + (stunned ? 0.36 : 0.2)} />}
       {(piece.tags ?? []).map((t) => t.prop && <PropOnPiece key={t.name} prop={t.prop} color={piece.color} height={top} />)}
     </>
   );

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { rememberKeys, rememberedGm } from '../session/storage';
 import { CLAUDE_MODELS, type GmEffort } from '../gm/claudeGm';
 import { OPENAI_MODEL_SUGGESTIONS } from '../gm/openaiGm';
 import { GEMINI_MODEL_SUGGESTIONS } from '../gm/geminiGm';
@@ -48,12 +49,14 @@ const KEY_HINT: Record<LlmProvider, { label: string; placeholder: string; where:
 export function GmSettings({ current, onSave, onClose }: Props) {
   const [provider, setProvider] = useState<GmConfig['provider']>(current.provider);
   // Keys and models are kept per provider while the dialog is open, so switching tabs loses nothing.
-  const [keys, setKeys] = useState<Record<LlmProvider, string>>({
+  // Every key typed in on this browser is filled in again.
+  const [keys, setKeys] = useState<Record<LlmProvider, string>>(() => ({
     claude: '',
     openai: '',
     gemini: '',
-    ...(current.provider !== 'fake' && { [current.provider]: current.apiKey }),
-  });
+    ...rememberedGm().keys,
+    ...(current.provider !== 'fake' && current.apiKey && { [current.provider]: current.apiKey }),
+  }));
   const [models, setModels] = useState<Record<LlmProvider, string>>({
     ...DEFAULT_MODEL,
     ...(current.provider !== 'fake' && { [current.provider]: current.model }),
@@ -65,6 +68,7 @@ export function GmSettings({ current, onSave, onClose }: Props) {
 
   const save = () => {
     if (!canSave) return;
+    rememberKeys(keys);
     if (!llm) return onSave({ provider: 'fake' });
     const base = { apiKey: keys[llm].trim(), model: models[llm].trim() };
     onSave(llm === 'claude' ? { provider: llm, ...base, effort } : { provider: llm, ...base });
@@ -141,7 +145,7 @@ export function GmSettings({ current, onSave, onClose }: Props) {
               </label>
             )}
             <ul className="notes">
-              <li>키는 이 브라우저 탭의 메모리에만 있고 어디에도 저장되지 않습니다. 상대 플레이어에게도 전송되지 않습니다. 새로고침하면 다시 입력해야 합니다.</li>
+              <li>키는 이 브라우저에만 기억되어 새로고침해도 다시 넣지 않아도 됩니다. 상대 플레이어에게는 전송되지 않습니다. 지우려면 칸을 비우고 다른 GM(예: 가짜 GM)으로 저장하세요. 같이 쓰는 컴퓨터라면 다 쓴 뒤 지워 주세요.</li>
               <li>판정을 요청할 때마다 이 키로 API 요금이 청구됩니다.</li>
               <li>{KEY_HINT[llm].where}</li>
             </ul>
