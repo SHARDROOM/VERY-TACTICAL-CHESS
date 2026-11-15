@@ -31,8 +31,8 @@ export class OpenAiGameMaster implements GameMaster {
     this.name = `OpenAI GM (${options.model})`;
   }
 
-  rule({ action, state }: GmRequest): Promise<unknown> {
-    return this.ask(buildSystemPrompt(state.rules), buildUserMessage(action, state), 'gm_ruling', GM_RULING_JSON_SCHEMA, GmRulingReplySchema);
+  rule({ action, state, problem }: GmRequest): Promise<unknown> {
+    return this.ask(buildSystemPrompt(state.rules), buildUserMessage(action, state, problem), 'gm_ruling', GM_RULING_JSON_SCHEMA, GmRulingReplySchema);
   }
 
   chaos({ state, inspiration, problem }: ChaosRequest): Promise<unknown> {

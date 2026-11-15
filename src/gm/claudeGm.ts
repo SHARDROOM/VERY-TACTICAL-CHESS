@@ -46,8 +46,8 @@ export class ClaudeGameMaster implements GameMaster {
     });
   }
 
-  rule({ action, state }: GmRequest): Promise<unknown> {
-    return this.ask(buildSystemPrompt(state.rules), buildUserMessage(action, state), GmRulingSchema, GmRulingReplySchema);
+  rule({ action, state, problem }: GmRequest): Promise<unknown> {
+    return this.ask(buildSystemPrompt(state.rules), buildUserMessage(action, state, problem), GmRulingSchema, GmRulingReplySchema);
   }
 
   chaos({ state, inspiration, problem }: ChaosRequest): Promise<unknown> {

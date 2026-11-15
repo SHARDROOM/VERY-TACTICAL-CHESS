@@ -180,15 +180,29 @@ export class Authority {
     const generation = this.generation;
     this.setBusy(true);
     try {
-      const raw = await this.gm.rule({ action: trimmed, state: s });
-      if (generation !== this.generation) return;
-      const parsed = parseGmRuling(raw);
-      if (!parsed.ok) {
-        notice(`GM 응답 형식이 올바르지 않습니다 (${parsed.error}). AP는 쓰지 않았습니다. 다시 시도해 주세요.`);
+      // A ruling the rules turn down (nobody acting, a touch out of reach...) goes back to the
+      // GM once, with the reason; the second answer stands or falls.
+      let problem: string | undefined;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const raw = await this.gm.rule({ action: trimmed, state: s, problem });
+        if (generation !== this.generation) return;
+        const parsed = parseGmRuling(raw);
+        if (!parsed.ok) {
+          problem = `응답 형식 오류: ${parsed.error}`;
+          if (attempt === 0) continue;
+          notice(`GM 응답 형식이 올바르지 않습니다 (${parsed.error}). AP는 쓰지 않았습니다. 다시 시도해 주세요.`);
+          return;
+        }
+        const command = { type: 'proposeSpecial' as const, action: trimmed, ruling: parsed.ruling };
+        const dry = applyCommand(this.state, command);
+        if (!dry.ok && dry.reason === 'invalidRuling' && attempt === 0) {
+          problem = dry.detail ?? REJECT_MESSAGE.invalidRuling;
+          continue;
+        }
+        this.busy = false;
+        this.apply(command, actor);
         return;
       }
-      this.busy = false;
-      this.apply({ type: 'proposeSpecial', action: trimmed, ruling: parsed.ruling }, actor);
     } catch (err) {
       if (generation !== this.generation) return;
       const reason = err instanceof GmError ? err.message : `GM 호출 실패: ${err instanceof Error ? err.message : String(err)}`;

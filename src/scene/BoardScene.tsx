@@ -59,6 +59,8 @@ interface Props {
   lightFx?: boolean;
   /** Walls and pits on the board. */
   terrain?: readonly TerrainCell[];
+  /** While a ruling waits: the square of the piece that acts and the squares it acts on. */
+  marks?: { actor: Square; targets: Square[] } | null;
 }
 
 /** Shakes everything on the table (not the camera, which the player controls) for a moment. */
@@ -186,6 +188,7 @@ export function BoardScene({
   shake = null,
   lightFx = false,
   terrain = NO_TERRAIN,
+  marks = null,
 }: Props) {
   const resting = useRef(new Map<string, Obstacle>());
   const objects = useRef(new Map<string, Group>());
@@ -238,6 +241,8 @@ export function BoardScene({
         let color = dark ? DARK : LIGHT;
         if (sq === selected) color = '#c9a227';
         else if (sq === checkedKing) color = '#b23b3b';
+        else if (sq === marks?.actor) color = '#d9b24c';
+        else if (marks?.targets.includes(sq)) color = dark ? '#a8573a' : '#c98058';
         return (
           <group key={sq}>
             <mesh position={[x, -0.025, z]} receiveShadow onClick={click(sq)}>

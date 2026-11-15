@@ -86,10 +86,26 @@ export type Effect =
   /** Takes away the wall or pit on `at` (nothing there: no-op). */
   | { type: 'clearTerrain'; at: Square };
 
+/**
+ * How the acting piece does it, which sets how far it reaches: touch (1 square: setting fire,
+ * pushing, grabbing), ranged (arrows, throws, shots: any distance, harder further away), magic
+ * (spells: any distance, depends on the piece), move (the piece itself travels).
+ */
+export type Means = 'touch' | 'ranged' | 'magic' | 'move';
+export const MEANS: readonly Means[] = ['touch', 'ranged', 'magic', 'move'];
+export const MEANS_NAME: Record<Means, string> = { touch: '근접', ranged: '원거리', magic: '마법', move: '이동' };
+
 /** The GM's ruling on a declared special action, already converted to engine squares. */
 export interface Ruling {
   /** How the GM understood the declaration. */
   interpretation: string;
+  /**
+   * The declarer's piece that does it. Every GM ruling names one (null: the declaration had
+   * none, so a feasible ruling is refused); missing only in rulings made before the rule.
+   */
+  actor?: Square | null;
+  /** How it does it; touch means everything it acts on is within 1 square. */
+  means?: Means;
   /** False when the action cannot be attempted at all. */
   feasible: boolean;
   /** Difficulty: the d20 roll must be at least this. */

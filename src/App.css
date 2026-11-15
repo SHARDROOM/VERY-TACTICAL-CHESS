@@ -189,6 +189,13 @@ select option { background: var(--walnut); }
 .odds-face.fumble { background: var(--wax); color: #f7e3d3; font-weight: 800; }
 .odds-caption { margin-top: 6px; font-size: 0.875rem; color: #4a3b2d; }
 .ruling-facts { display: flex; gap: 24px; margin: 12px 0 0; flex-wrap: wrap; }
+/* Who acts, by what means, on what: the actor in gold as on the board, the targets in ember. */
+.ruling-reach { margin: 10px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 0.875rem; color: #4a3b2d; }
+.reach-actor, .reach-targets { font-family: var(--font-voice); font-weight: 700; padding: 1px 8px; border-radius: 4px; }
+.reach-actor { background: rgba(217, 178, 76, 0.32); }
+.reach-targets { background: rgba(168, 87, 58, 0.2); }
+.reach-means { color: #6b5843; }
+.reach-arrow { color: #a08c72; }
 .ruling-facts dt { font-size: 0.8125rem; color: #6b5843; }
 .ruling-facts dd { margin: 2px 0 0; font-family: var(--font-voice); font-weight: 700; font-size: 1.125rem; display: flex; align-items: center; gap: 6px; }
 .coin { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffe7a6, #c8963e 60%, #8a611d); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3); }

@@ -1,4 +1,4 @@
-import { ELEMENTS } from '../engine';
+import { ELEMENTS, MEANS } from '../engine';
 import { GM_RULING_STAGING_JSON_SCHEMA, GM_STAGING_JSON_SCHEMA } from './staging';
 
 /**
@@ -74,6 +74,12 @@ export const GM_RULING_JSON_SCHEMA = {
   type: 'object',
   properties: {
     interpretation: { type: 'string', description: '플레이어의 선언을 GM이 어떻게 이해했는지 한 문장으로' },
+    actor: { type: 'string', description: '행동하는 선언자 쪽 기물(주체)의 칸, 예: "e6". 주체가 없거나 불가능 판정이면 ""' },
+    means: {
+      type: 'string',
+      enum: [...MEANS],
+      description: '주체가 하는 방법: touch(근접, 1칸 이내만), ranged(쏘기·던지기), magic(주문), move(주체가 직접 이동)',
+    },
     feasible: { type: 'boolean', description: '시도 자체가 가능한 행동인가. 행동이 아니거나 규칙을 바꾸려는 요청이면 false' },
     dc: { type: 'integer', description: '난이도. d20 결과가 이 값 이상이면 성공. 불가능하면 0' },
     cost: { type: 'integer', description: '시도할 때 드는 AP. 불가능하면 0' },
@@ -105,6 +111,6 @@ export const GM_RULING_JSON_SCHEMA = {
     },
     staging: { ...GM_RULING_STAGING_JSON_SCHEMA, description: '결과 넷 각각이 화면에서 어떻게 보일지 (보기용 연출, 규칙에는 영향 없음)' },
   },
-  required: ['interpretation', 'feasible', 'dc', 'cost', 'effects', 'critSuccessEffects', 'critFailureEffects', 'narration', 'staging'],
+  required: ['interpretation', 'actor', 'means', 'feasible', 'dc', 'cost', 'effects', 'critSuccessEffects', 'critFailureEffects', 'narration', 'staging'],
   additionalProperties: false,
 } as const;

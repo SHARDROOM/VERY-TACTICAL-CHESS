@@ -21,6 +21,7 @@ import { extinguish, isShielded, isStunned, withTag, withoutTag } from './tags';
 import { SHIELD } from './types';
 import { MAX_TERRAIN } from './terrain';
 import { capturedAfter } from './captured';
+import { checkActor } from './actor';
 
 const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑' };
 const PIECE_NAME: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
@@ -343,5 +344,6 @@ export function validateRuling(board: Board, ruling: Ruling, rules: RuleConfig, 
     const dry = applyEffects(board, list, ctx);
     if (!dry.ok) return label + dry.detail;
   }
-  return null;
+  // Someone of the declarer's must do it, and a touch only reaches the next square.
+  return checkActor(board, ruling, ctx.color ?? 'white', ctx);
 }

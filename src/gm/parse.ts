@@ -1,4 +1,4 @@
-import { parseSquare, type ChaosEvent, type Effect, type Ruling, type Square } from '../engine';
+import { parseSquare, type ChaosEvent, type Effect, type Means, type Ruling, type Square } from '../engine';
 import { GmChaosReplySchema, GmRulingReplySchema } from './schema';
 import { cleanAura, cleanRulingStaging, cleanStaging } from './staging';
 import type { GmEffectReplyJson } from './types';
@@ -15,7 +15,10 @@ export function parseGmRuling(raw: unknown): ParseResult {
     const issue = checked.error.issues[0];
     return { ok: false, error: `${issue.path.join('.') || '판정'}: ${issue.message}` };
   }
-  const { effects, critSuccessEffects, critFailureEffects, staging, ...rest } = checked.data;
+  const { effects, critSuccessEffects, critFailureEffects, staging, actor: actorName, means, ...rest } = checked.data;
+  const actorText = (actorName ?? '').trim();
+  const actor = actorText ? parseSquare(actorText) : null;
+  if (actorText && actor === null) return { ok: false, error: `주체 칸 이름 "${actorText}"이(가) 올바르지 않음` };
 
   const lists: Record<string, Effect[]> = {};
   for (const [key, label, list] of [
@@ -38,6 +41,8 @@ export function parseGmRuling(raw: unknown): ParseResult {
     ok: true,
     ruling: {
       ...rest,
+      actor,
+      ...(means !== undefined && { means: means as Means }),
       effects: lists.effects,
       critSuccessEffects: lists.critSuccessEffects,
       critFailureEffects: lists.critFailureEffects,

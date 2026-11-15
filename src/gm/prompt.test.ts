@@ -59,3 +59,22 @@ describe('the new effects and terrain in the GM prompts', () => {
     }
   });
 });
+
+describe('who does it and how far (주체와 거리)', () => {
+  it('the ruling prompt asks for an actor and a means, with touch reaching 1 square', () => {
+    const p = buildSystemPrompt(rules);
+    for (const word of ['## 주체와 거리', 'actor', 'means', 'touch', 'ranged', 'magic', 'move', '1칸 이내', '킹이 가는 걸음 수', '역효과는 주체가 받습니다']) expect(p).toContain(word);
+  });
+
+  it('the declaration comes with what stands on its squares and how far apart they are', () => {
+    const msg = buildUserMessage('e2 폰이 불화살을 쏘아 e7 폰을 맞힌다', createStateFrom({ e2: { color: 'white', type: 'pawn' }, e7: { color: 'black', type: 'pawn' } }));
+    expect(msg).toContain('- 칸: e2(백 폰), e7(흑 폰)');
+    expect(msg).toContain('- 거리: e2–e7 5칸');
+  });
+
+  it('a second try says why the first was turned down', () => {
+    const s = createStateFrom({ e1: { color: 'white', type: 'king' } });
+    expect(buildUserMessage('x', s)).not.toContain('거부된 이유');
+    expect(buildUserMessage('x', s, '주체가 없음')).toContain('## 방금 낸 판정이 거부된 이유\n주체가 없음');
+  });
+});

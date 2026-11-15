@@ -16,6 +16,8 @@ export interface GmRequest {
   /** The player's declaration, as typed. */
   action: string;
   state: GameState;
+  /** Why the GM's previous ruling on this declaration was turned down, for its second try. */
+  problem?: string;
 }
 
 /** Anything that can rule on special actions. */

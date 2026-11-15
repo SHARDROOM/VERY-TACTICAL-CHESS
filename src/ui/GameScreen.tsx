@@ -8,6 +8,7 @@ import {
   opponent,
   parseMoveText,
   rankOf,
+  squareName,
   type Color,
   type GameEvent,
   type GameState,
@@ -36,6 +37,7 @@ import { clockText, rulesSummary } from './rules';
 import { Icon } from './Icon';
 import { PieceSilhouette } from './PieceSilhouette';
 import { buildShow, directionsFor, exitFx, type Show } from './show';
+import { reachOf } from './reach';
 import { prefersReducedMotion, useStagingLook } from './stagingLook';
 import type { FxShow } from '../scene/FxLayer';
 
@@ -368,6 +370,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const inCheck = playing && isInCheck(game.board, sideToMove, game.terrain);
   const checkedKing = inCheck ? findKing(game.board, sideToMove) : null;
   const pending = game.pending;
+  // Who acts on what, on the sheet and on the board, while the ruling waits.
+  const reach = useMemo(() => (pending ? reachOf(pending.ruling, game.board) : null), [pending, game.board]);
+  const marks = useMemo(() => (reach && !stage ? { actor: reach.actor, targets: reach.targets.map((t) => t.at) } : null), [reach, stage]);
   const connected = view.connection.kind === 'local' || view.connection.kind === 'hosting' || view.connection.kind === 'connected';
   const locked = !playing || view.gmBusy || !!pending || !myTurn || !connected || !!dice || !!stage;
   // A turn has to be used for something: a normal move ends it by itself, so passing is only
@@ -459,6 +464,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         ap={game.ap}
         captured={game.captured ?? []}
         terrain={game.terrain}
+        marks={marks}
         directions={directions}
         fx={fxShow}
         shake={shake}
@@ -649,6 +655,25 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             <div className="ruling-body">
               <h2 id="ruling-title">GM 판정</h2>
               <p className="ruling-text">{pending.ruling.interpretation}</p>
+              {reach && (
+                <p className="ruling-reach">
+                  <span className="reach-actor">
+                    {squareName(reach.actor)} {reach.piece ? PIECE_NAME[reach.piece.type] : ''}
+                  </span>
+                  {reach.means && <span className="reach-means">{reach.means}</span>}
+                  {reach.targets.length > 0 && (
+                    <span className="reach-arrow" aria-hidden>
+                      →
+                    </span>
+                  )}
+                  {reach.targets.length > 0 && (
+                    <span className="reach-targets">
+                      {reach.targets.slice(0, 3).map((t) => `${squareName(t.at)} ${t.d}칸`).join(', ')}
+                      {reach.targets.length > 3 ? ' …' : ''}
+                    </span>
+                  )}
+                </p>
+              )}
               {pending.ruling.feasible && (
                 <div className="seal" role="img" aria-label={`난이도 DC ${pending.ruling.dc}`}>
                   <span className="seal-label">DC</span>

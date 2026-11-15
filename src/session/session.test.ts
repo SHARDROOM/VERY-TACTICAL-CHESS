@@ -119,6 +119,41 @@ describe('hotseat session', () => {
     expect(s.view().gmBusy).toBe(false);
   });
 
+  it('a ruling the rules turn down goes back to the GM once, with the reason', async () => {
+    // First a touch from too far away, then (told why) an arrow.
+    class FarGm extends TestGm {
+      async rule(req: GmRequest) {
+        this.calls.push(req);
+        const r = fakeRuling('g2 폰이 불화살을 쏘아 g7 폰에 불을 붙인다', req.state.turn);
+        return this.calls.length === 1 ? { ...r, means: 'touch' } : r;
+      }
+    }
+    const gm = new FarGm();
+    const s = hotseat(gm);
+    s.request({ type: 'declare', action: 'g2 폰이 g7 폰을 불태운다' });
+    await settle();
+    expect(gm.calls).toHaveLength(2);
+    expect(gm.calls[1].problem).toContain('5칸');
+    expect(s.view().state.pending?.ruling).toMatchObject({ actor: sq('g2'), means: 'ranged' });
+  });
+
+  it('the second answer stands or falls: no third call', async () => {
+    class NobodyGm extends TestGm {
+      async rule(req: GmRequest) {
+        this.calls.push(req);
+        return { ...fakeRuling('d1 퀸이 d7 폰을 저격한다', req.state.turn), actor: '' };
+      }
+    }
+    const gm = new NobodyGm();
+    const s = hotseat(gm);
+    const rec = record(s);
+    s.request({ type: 'declare', action: 'd7 폰을 저격한다' });
+    await settle();
+    expect(gm.calls).toHaveLength(2);
+    expect(rec.notices().join()).toContain('주체');
+    expect(s.view().state.pending).toBeNull();
+  });
+
   it('does not call the GM for a declaration the engine would reject anyway', async () => {
     const gm = new TestGm();
     const s = hotseat(gm);

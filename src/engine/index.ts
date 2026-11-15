@@ -7,6 +7,7 @@ export { movesFrom, legalTargets, isAttacked, isInCheck, findKing, type Target }
 export { parseMoveText } from './notation';
 export { squareName, parseSquare, fileOf, rankOf, squareAt, opponent } from './squares';
 export { applyEffects, validateRuling, type EffectContext } from './effects';
+export { checkActor, distance, targetsOf } from './actor';
 export { hasTag, isStunned, isShielded, isBurning, CORE_TAGS } from './tags';
 export { DEFAULT_RULES, withDefaultRules, type RuleConfig } from './config';
 export * from './staging';

@@ -56,8 +56,8 @@ describe('fake GM', () => {
     expect(r).toMatchObject({ feasible: true, effects: [{ type: 'move', from: 'b1', to: 'e5' }] });
   });
 
-  it('understands removal of a square', () => {
-    expect(fakeRuling('d7 폰을 저격한다')).toMatchObject({ feasible: true, effects: [{ type: 'remove', at: 'd7' }] });
+  it('understands removal of a square, by the piece named first', () => {
+    expect(fakeRuling('d1 퀸이 d7 폰을 저격한다')).toMatchObject({ feasible: true, actor: 'd1', means: 'ranged', effects: [{ type: 'remove', at: 'd7' }] });
   });
 
   it('rules anything else infeasible', () => {
@@ -74,9 +74,9 @@ describe('fake GM', () => {
   });
 
   it('its king-removal rulings are rejected by the engine', () => {
-    const parsed = parseGmRuling(fakeRuling('e8 킹을 암살한다'));
+    const parsed = parseGmRuling(fakeRuling('d1 퀸이 e8 킹을 암살한다'));
     if (!parsed.ok) throw new Error(parsed.error);
-    const r = applyCommand(createInitialState(), { type: 'proposeSpecial', action: 'e8 킹 암살', ruling: parsed.ruling });
+    const r = applyCommand(createInitialState(), { type: 'proposeSpecial', action: 'd1 퀸이 e8 킹 암살', ruling: parsed.ruling });
     expect(r).toMatchObject({ ok: false, reason: 'invalidRuling' });
   });
 });
@@ -103,6 +103,8 @@ describe('full effect vocabulary through the GM boundary', () => {
   it('parses every effect type and converts its squares', () => {
     const raw = {
       interpretation: 'x',
+      actor: 'b1',
+      means: 'magic',
       feasible: true,
       dc: 10,
       cost: 1,
@@ -147,16 +149,16 @@ describe('full effect vocabulary through the GM boundary', () => {
   });
 
   it('fake GM understands summoning and transforming', () => {
-    expect(fakeRuling('e4에 나이트를 생성한다', 'black').effects).toEqual([{ type: 'spawn', at: 'e4', color: 'black', piece: 'knight' }]);
-    expect(fakeRuling('a2 폰을 퀸으로 바꾼다').effects).toEqual([{ type: 'transform', at: 'a2', into: 'queen' }]);
+    expect(fakeRuling('d8 퀸이 e4에 나이트를 생성한다', 'black').effects).toEqual([{ type: 'spawn', at: 'e4', color: 'black', piece: 'knight' }]);
+    expect(fakeRuling('a2 폰을 퀸으로 바꾼다')).toMatchObject({ actor: 'a2', effects: [{ type: 'transform', at: 'a2', into: 'queen' }] });
     // A removal still wins over these when no piece-making word is used.
-    expect(fakeRuling('d7 폰을 저격한다').effects).toEqual([{ type: 'remove', at: 'd7' }]);
+    expect(fakeRuling('d1 퀸이 d7 폰을 저격한다').effects).toEqual([{ type: 'remove', at: 'd7' }]);
   });
 
   it('fake GM understands stun, shield and riding', () => {
-    expect(fakeRuling('g8 나이트를 기절시킨다').effects).toEqual([{ type: 'tag', at: 'g8', tag: '기절', turns: 1, aura: 'none', auraStrength: 0 }]);
-    expect(fakeRuling('e1 킹에 보호막').effects).toEqual([{ type: 'tag', at: 'e1', tag: '보호막', turns: 0, aura: 'none', auraStrength: 0 }]);
-    expect(fakeRuling('a2 폰을 b1 나이트에 태운다').effects).toEqual([{ type: 'board', rider: 'a2', carrier: 'b1' }]);
+    expect(fakeRuling('f1 비숍이 g8 나이트를 기절시킨다').effects).toEqual([{ type: 'tag', at: 'g8', tag: '기절', turns: 1, aura: 'none', auraStrength: 0 }]);
+    expect(fakeRuling('e1 킹에 보호막')).toMatchObject({ actor: 'e1', means: 'touch', effects: [{ type: 'tag', at: 'e1', tag: '보호막', turns: 0, aura: 'none', auraStrength: 0 }] });
+    expect(fakeRuling('a2 폰을 b1 나이트에 태운다')).toMatchObject({ actor: 'a2', means: 'touch', effects: [{ type: 'board', rider: 'a2', carrier: 'b1' }] });
   });
 });
 
@@ -174,6 +176,8 @@ describe('swap, revive, burn and terrain through the GM boundary', () => {
   it('parses the new effects and converts their squares', () => {
     const r = parseGmRuling({
       ...base,
+      actor: 'b1',
+      means: 'magic',
       effects: [
         { type: 'swap', a: 'b1', b: 'g8' },
         { type: 'revive', at: 'c3', color: 'white', piece: 'knight' },
@@ -193,22 +197,34 @@ describe('swap, revive, burn and terrain through the GM boundary', () => {
 
   it('fake GM understands swapping, burning, walls, pits and reviving, and the engine takes its rulings', () => {
     expect(fakeRuling('b1 나이트와 g8 나이트의 자리를 바꾼다').effects).toEqual([{ type: 'swap', a: 'b1', b: 'g8' }]);
-    expect(fakeRuling('g8 나이트에 불을 붙인다').effects).toEqual([{ type: 'tag', at: 'g8', tag: '화상', turns: 3, aura: 'fire', auraStrength: 2 }]);
-    expect(fakeRuling('d4와 e4에 벽을 세운다').effects).toEqual([
+    expect(fakeRuling('e6 폰이 e7 폰에 불을 붙인다').effects).toEqual([{ type: 'tag', at: 'e7', tag: '화상', turns: 3, aura: 'fire', auraStrength: 2 }]);
+    expect(fakeRuling('e2 폰이 d4와 e4에 벽을 세운다').effects).toEqual([
       { type: 'terrain', at: 'd4', kind: 'wall', turns: 2 },
       { type: 'terrain', at: 'e4', kind: 'wall', turns: 2 },
     ]);
-    expect(fakeRuling('e5에 구덩이를 판다').effects).toEqual([{ type: 'terrain', at: 'e5', kind: 'pit', turns: 2 }]);
-    expect(fakeRuling('d4 벽을 부순다').effects).toEqual([{ type: 'clearTerrain', at: 'd4' }]);
-    expect(fakeRuling('c3에 나이트를 되살린다').effects).toEqual([{ type: 'revive', at: 'c3', color: 'white', piece: 'knight' }]);
+    expect(fakeRuling('e2 폰이 e5에 구덩이를 판다').effects).toEqual([{ type: 'terrain', at: 'e5', kind: 'pit', turns: 2 }]);
+    expect(fakeRuling('e3 폰이 d4 벽을 부순다').effects).toEqual([{ type: 'clearTerrain', at: 'd4' }]);
+    expect(fakeRuling('d1 퀸이 c3에 나이트를 되살린다').effects).toEqual([{ type: 'revive', at: 'c3', color: 'white', piece: 'knight' }]);
     const state = { ...createInitialState(), ap: { white: 5, black: 0 } };
-    for (const action of ['b1 나이트와 g8 나이트의 자리를 바꾼다', 'g8 나이트에 불을 붙인다', 'd4와 e4에 벽을 세운다', 'g8에 구덩이를 판다']) {
-      const parsed = parseGmRuling(fakeRuling(action));
+    for (const action of ['b1 나이트와 g8 나이트의 자리를 바꾼다', 'g1 나이트가 불화살을 쏘아 g8 나이트를 맞힌다', 'e2 폰이 d4와 e4에 벽을 세운다', 'f2 폰이 g8에 구덩이를 판다']) {
+      const parsed = parseGmRuling(fakeRuling(action, 'white', state.board));
       if (!parsed.ok) throw new Error(parsed.error);
       const r = applyCommand(state, { type: 'proposeSpecial', action, ruling: parsed.ruling });
       expect(r.ok, action).toBe(true);
     }
   });
+
+  it('fake GM wants someone to do it, and a hand only reaches the next square', () => {
+    const board = createInitialState().board;
+    expect(fakeRuling('g8 나이트에 불을 붙인다', 'white', board)).toMatchObject({ feasible: false, actor: '' });
+    expect(fakeRuling('g7 폰이 g8 나이트에 불을 붙인다', 'white', board).interpretation).toContain('내 기물이 없습니다');
+    expect(fakeRuling('g2 폰이 g7 폰에 불을 붙인다', 'white', board)).toMatchObject({ feasible: false });
+    expect(fakeRuling('g2 폰이 g7 폰에 불을 붙인다', 'white', board).interpretation).toContain('5칸');
+    expect(fakeRuling('g2 폰이 불화살을 쏘아 g7 폰에 불을 붙인다', 'white', board)).toMatchObject({ feasible: true, actor: 'g2', means: 'ranged' });
+    // The backfire falls on whoever did it.
+    expect(fakeRuling('g2 폰이 불화살을 쏘아 g7 폰에 불을 붙인다', 'white', board).critFailureEffects).toEqual([{ type: 'tag', at: 'g2', tag: '기절', turns: 1, aura: 'none', auraStrength: 0 }]);
+  });
+
 });
 
 describe('fake GM crits', () => {

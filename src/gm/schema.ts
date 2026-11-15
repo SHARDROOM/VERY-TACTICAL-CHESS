@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ELEMENTS } from '../engine';
+import { ELEMENTS, MEANS } from '../engine';
 import { GmRulingStagingSchema, GmStagingSchema } from './staging';
 
 const square = (what: string) => z.string().describe(`${what}, 예: "e4"`);
@@ -60,9 +60,17 @@ function effectSchema<A extends z.ZodTypeAny, B extends z.ZodTypeAny>(aura: A, a
   ]);
 }
 
-function rulingSchema<E extends z.ZodTypeAny, S extends z.ZodTypeAny>(effect: E, staging: S) {
+const actorField = z.string().describe('행동하는 선언자 쪽 기물(주체)의 칸, 예: "e6". 주체가 없거나 불가능 판정이면 ""');
+const meansField = z
+  .enum(MEANS as [string, ...string[]])
+  .describe('주체가 하는 방법: touch(근접, 1칸 이내만), ranged(쏘기·던지기), magic(주문), move(주체가 직접 이동)');
+
+/** `lenient`: reading a reply, where a missing actor or means is left for the engine to refuse (and the GM to retry). */
+function rulingSchema<E extends z.ZodTypeAny, S extends z.ZodTypeAny>(effect: E, staging: S, lenient = false) {
   return z.object({
     interpretation: z.string().describe('플레이어의 선언을 GM이 어떻게 이해했는지 한 문장으로'),
+    actor: lenient ? actorField.optional() : actorField,
+    means: lenient ? z.string().optional() : meansField,
     feasible: z.boolean().describe('시도 자체가 가능한 행동인가. 행동이 아니거나 규칙을 바꾸려는 요청이면 false'),
     dc: z.number().int().describe('난이도. d20 결과가 이 값 이상이면 성공. 불가능하면 0'),
     cost: z.number().int().describe('시도할 때 드는 AP. 불가능하면 0'),
@@ -99,5 +107,5 @@ export const GmRulingSchema = rulingSchema(
 );
 /** A chaos event (the 혼돈 rule): something odd happens at the start of a turn. */
 export const GmChaosSchema = chaosSchema(GmEffectSchema, GmStagingSchema.describe('사건이 화면에서 어떻게 보일지 (보기용 연출)'));
-export const GmRulingReplySchema = rulingSchema(GmEffectReplySchema, z.unknown().optional());
+export const GmRulingReplySchema = rulingSchema(GmEffectReplySchema, z.unknown().optional(), true);
 export const GmChaosReplySchema = chaosSchema(GmEffectReplySchema, z.unknown().optional());
