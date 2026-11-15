@@ -1,5 +1,5 @@
 export * from './types';
-export { applyCommand, hasAnyMove } from './game';
+export { applyCommand, exitsOf, hasAnyMove, takenPieces } from './game';
 export { createInitialState, createStateFrom } from './setup';
 export { movesFrom, legalTargets, isAttacked, isInCheck, findKing, type Target } from './moves';
 export { parseMoveText } from './notation';
@@ -8,4 +8,4 @@ export { applyEffects, validateRuling, type EffectContext } from './effects';
 export { hasTag, isStunned, isShielded, CORE_TAGS } from './tags';
 export { DEFAULT_RULES, withDefaultRules, type RuleConfig } from './config';
 export * from './staging';
-export { buildTimeline, effectDuration, moveDuration, ACT_DURATION, type Timeline } from './timeline';
+export { buildTimeline, effectDuration, moveDuration, ACT_DURATION, EXIT_DURATION, type Timeline } from './timeline';

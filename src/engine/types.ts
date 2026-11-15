@@ -1,5 +1,5 @@
 import type { RuleConfig } from './config';
-import type { Aura, Staging } from './staging';
+import type { Aura, Exit, Staging } from './staging';
 
 export type Color = 'white' | 'black';
 export type PieceType = 'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn';
@@ -19,6 +19,11 @@ export interface Tag {
   appliedOnTurn: number;
   /** A lasting look while the tag lasts (GM staging; no rule meaning). */
   aura?: Aura;
+}
+
+/** A piece beside the board, and how it left (as the GM staged it; missing = knocked off). */
+export interface CapturedPiece extends Piece {
+  exit?: Exit;
 }
 
 export interface Piece {
@@ -131,7 +136,7 @@ export interface GameState {
   /** Every attempted special action this game, oldest first. */
   precedents: Precedent[];
   /** Pieces taken off the board (captured or removed), oldest first, as plain pieces. */
-  captured: Piece[];
+  captured: CapturedPiece[];
   /** Chaos events so far, oldest first (missing in saves from before the rule existed). */
   chaosLog?: ChaosRecord[];
 }

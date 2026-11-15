@@ -162,3 +162,31 @@ export const PIECE_HEIGHT: Record<PieceType, number> = {
   queen: 1.35,
   king: 1.58,
 };
+
+/** Where each piece's telling part begins (unstretched height): what survives in a pile of ash or shards. */
+const FEATURE_CUT: Record<PieceType, number> = { pawn: 0.4, rook: 0.5, bishop: 0.58, queen: 0.74, king: 0.88, knight: 0.2 };
+const featureCache = new Map<PieceType, PiecePart[]>();
+
+/**
+ * The part of a piece you would recognise it by (king's cross, queen's crown, knight's head,
+ * bishop's mitre, rook's battlements, pawn's ball), with its bottom at y = 0.
+ */
+export function featureParts(type: PieceType): PiecePart[] {
+  const cached = featureCache.get(type);
+  if (cached) return cached;
+  const base = stretch(FEATURE_CUT[type]);
+  const parts: PiecePart[] = [];
+  if (type === 'knight') {
+    parts.push({ geometry: knightHead().scale(1.15, 1.5, 1.15), position: [-0.02, 0, 0] });
+  } else {
+    if (type !== 'pawn') {
+      const top = BODY[type].filter(([, h]) => h >= FEATURE_CUT[type]);
+      if (top.length >= 2) parts.push({ geometry: lathe([[top[0][0] * 0.95, FEATURE_CUT[type]], ...top]).translate(0, -base, 0) });
+    }
+    for (const p of pieceParts(type).slice(1)) {
+      if (p.position && p.position[1] >= base - 0.06) parts.push({ ...p, position: [p.position[0], p.position[1] - base, p.position[2]] });
+    }
+  }
+  featureCache.set(type, parts);
+  return parts;
+}

@@ -7,9 +7,12 @@ import {
   FX_SHAPES,
   moveDuration,
   parseSquare,
+  takenPieces,
   type ActKind,
   type Board,
+  type CapturedPiece,
   type Effect,
+  type Exit,
   type Element,
   type Entrance,
   type Fx,
@@ -24,10 +27,11 @@ import type { FxShow } from '../scene/FxLayer';
 /**
  * Dev-only page (?fxlab) for looking at GM effects without playing a game.
  * `?fxlab&fx=fire:burst:e4::3:1:2,light:beam:a1:h8` — element:shape:at:to:strength:radius:duration.
- * `&top` looks from above; `&shake=2` jolts the table.
- * Pieces: `&trip=hop:b1-c3,spin:g1-f5` `&enter=rise:e4:queen` `&act=fall:e2` `&morph=c1:knight` `&swirl=a7`.
+ * `&top` looks from above, `&side-table` at the dice; `&cam=x,y,z,tx,ty,tz` from anywhere; `&shake=2` jolts the table.
+ * Pieces: `&trip=hop:b1-c3,spin:g1-f5` `&enter=rise:e4:queen` `&act=fall:e2` `&morph=c1:knight` `&swirl=a7`
+ * `&exit=ash:d7,shatter:e7` (removed, leaving that way).
  */
-function staged(params: URLSearchParams, start: Board): { board: Board; directions: Map<string, PieceDirection> } {
+function staged(params: URLSearchParams, start: Board): { board: Board; captured: CapturedPiece[]; directions: Map<string, PieceDirection> } {
   const list = (name: string) => (params.get(name) ?? '').split(',').filter(Boolean).map((x) => x.split(':'));
   const effects: Effect[] = [];
   const trips: { from: number; style: MotionStyle; d: number }[] = [];
@@ -40,6 +44,11 @@ function staged(params: URLSearchParams, start: Board): { board: Board; directio
   for (const e of enters) effects.push({ type: 'spawn', at: e.at, color: 'white', piece: e.type });
   for (const [sq, into] of list('morph')) effects.push({ type: 'transform', at: parseSquare(sq)!, into: into as PieceType });
   for (const [sq] of list('swirl')) effects.push({ type: 'convert', at: parseSquare(sq)!, color: 'white' });
+  const exits = new Map<string, Exit>();
+  for (const [exit, sq] of list('exit')) {
+    effects.push({ type: 'remove', at: parseSquare(sq)! });
+    exits.set(start[parseSquare(sq)!]!.id, exit as Exit);
+  }
   const applied = applyEffects(start, effects, { turnNumber: 1, nextSpawnId: 1 });
   if (!applied.ok) throw new Error(applied.detail);
   const directions = new Map<string, PieceDirection>();
@@ -50,7 +59,7 @@ function staged(params: URLSearchParams, start: Board): { board: Board; directio
   for (const [sq] of list('swirl')) get(applied.board[parseSquare(sq)!]!.id).swirl = true;
   const now = performance.now();
   for (const [kind, sq] of list('act')) get(applied.board[parseSquare(sq)!]!.id).acts.push({ kind: kind as ActKind, start: now, duration: ACT_DURATION[kind as ActKind] });
-  return { board: applied.board, directions };
+  return { board: applied.board, captured: takenPieces(applied.events, exits), directions };
 }
 function parseFx(spec: string): Fx[] {
   return spec
@@ -77,7 +86,7 @@ export default function FxLab() {
   const [spec, setSpec] = useState(params.get('fx') ?? 'fire:burst:e4');
   const [nonce, setNonce] = useState(0);
   const start = useMemo(() => createInitialState().board, []);
-  const [scene, setScene] = useState<{ board: Board; directions?: Map<string, PieceDirection> }>({ board: start });
+  const [scene, setScene] = useState<{ board: Board; captured: CapturedPiece[]; directions?: Map<string, PieceDirection> }>({ board: start, captured: [] });
   const fx = useMemo<FxShow>(() => {
     const list = parseFx(spec);
     return { fx: list, starts: list.map(() => 0), ends: list.map((f) => f.duration), startedAt: performance.now(), followers: list.map(() => null) };
@@ -93,14 +102,19 @@ export default function FxLab() {
         selected={null}
         targets={[]}
         checkedKing={null}
-        camera={{ mode: params.has('top') ? 'top' : 'side', side: 'white', nonce: 0 }}
+        camera={{
+          mode: params.has('top') ? 'top' : params.has('side-table') ? 'dice' : 'side',
+          side: 'white',
+          nonce: 0,
+          ...(params.get('cam') && { custom: params.get('cam')!.split(',').map(Number) as [number, number, number, number, number, number] }),
+        }}
         onSquareClick={() => {}}
         onHoverSquare={() => {}}
         diceSide={-1}
         diceRoll={null}
         onDiceLanded={() => {}}
         ap={{ white: 0, black: 0 }}
-        captured={[]}
+        captured={scene.captured}
         fx={fx}
         shake={shake}
       />

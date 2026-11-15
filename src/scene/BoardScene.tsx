@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { CanvasTexture, SRGBColorSpace, Vector3, type Group } from 'three';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { CameraControls, Environment, Lightformer } from '@react-three/drei';
-import { fileOf, rankOf, type Board, type Color, type Piece, type Square } from '../engine';
+import { fileOf, rankOf, type Board, type CapturedPiece, type Color, type Square } from '../engine';
 import { squareToWorld } from './coords';
 import { PieceMesh, PiecePhysicsContext, type PiecePhysics } from './PieceMesh';
 import type { Obstacle } from './piecePhysics';
@@ -23,6 +23,8 @@ export interface CameraRequest {
   side: Color;
   /** Bump to re-apply the same view (e.g. "reset view"). */
   nonce: number;
+  /** Dev only: an exact camera position and target instead of the mode. */
+  custom?: [number, number, number, number, number, number];
 }
 
 interface Props {
@@ -40,7 +42,7 @@ interface Props {
   /** Each player's AP, shown as gold coins on the table (opposite side from the dice). */
   ap: Record<Color, number>;
   /** Pieces taken off the board, shown small beside it (on the dice side, near whoever took them). */
-  captured: Piece[];
+  captured: CapturedPiece[];
   /** Title screen: a camera tour of the table instead of the player's view. */
   tour?: { inset: TourInset; onPhase: (phase: TourPhase) => void };
   /** What each piece does in the show being played, by piece id. */
@@ -75,7 +77,7 @@ function ShakeGroup({ shake, children }: { shake: Props['shake']; children: Reac
  * Where captured pieces stand: on the dice side of the table, in front of and behind the
  * dice tray. Black pieces (taken by white) wait near white's edge, white pieces near black's.
  */
-export function graveyardLayout(captured: Piece[], side: 1 | -1): { piece: Piece; position: [number, number, number] }[] {
+export function graveyardLayout(captured: CapturedPiece[], side: 1 | -1): { piece: CapturedPiece; position: [number, number, number] }[] {
   const counts = { white: 0, black: 0 };
   return captured.map((piece) => {
     const i = counts[piece.color]++;
@@ -101,7 +103,8 @@ function CameraRig({ camera, diceSide, locked }: { camera: CameraRequest; diceSi
     const c = ref.current;
     if (!c) return;
     const s = camera.side === 'white' ? 1 : -1;
-    if (camera.mode === 'side') c.setLookAt(0, 7.2 * zoom, 8.8 * s * zoom, 0, 0, 0.6 * s, true);
+    if (camera.custom) c.setLookAt(...camera.custom, true);
+    else if (camera.mode === 'side') c.setLookAt(0, 7.2 * zoom, 8.8 * s * zoom, 0, 0, 0.6 * s, true);
     else if (camera.mode === 'top') c.setLookAt(0, 13 * zoom, 0.001 * s, 0, 0, 0, true);
     else {
       const x = trayCenterX(diceSide);
@@ -242,24 +245,26 @@ export function BoardScene({
       })}
 
       <PiecePhysicsContext.Provider value={physics}>
-      {/* Board pieces and captured pieces share keys, so a captured piece flies from its square to the side. */}
-      {board.map((piece, sq) =>
-        piece ? (
-          <PieceMesh
-            key={piece.id}
-            piece={piece}
-            position={squareToWorld(sq)}
-            selected={sq === selected}
-            popIn={!startingIds.has(piece.id)}
-            direction={directions?.get(piece.id)}
-            onClick={click(sq)}
-            onHover={(on) => onHoverSquare(on ? sq : null)}
-          />
-        ) : null,
-      )}
-      {graveyard.map(({ piece, position }) => (
-        <PieceMesh key={piece.id} piece={piece} position={position} selected={false} captured />
-      ))}
+      {/* One list for the board and the side, so a taken piece stays the same object and travels from its square. */}
+      {[
+        ...board.flatMap((piece, sq) =>
+          piece ? [
+            <PieceMesh
+              key={piece.id}
+              piece={piece}
+              position={squareToWorld(sq)}
+              selected={sq === selected}
+              popIn={!startingIds.has(piece.id)}
+              direction={directions?.get(piece.id)}
+              onClick={click(sq)}
+              onHover={(on) => onHoverSquare(on ? sq : null)}
+            />,
+          ] : [],
+        ),
+        ...graveyard.map(({ piece, position }) => (
+          <PieceMesh key={piece.id} piece={piece} position={position} selected={false} captured exit={piece.exit} direction={directions?.get(piece.id)} />
+        )),
+      ]}
       </PiecePhysicsContext.Provider>
       <FxLayer show={fx} pieceAt={pieceAt} />
       </ShakeGroup>

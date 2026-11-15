@@ -76,6 +76,21 @@ describe('saved games', () => {
     expect(loaded!.state.precedents).toHaveLength(3);
   });
 
+  it('keeps how captured pieces left and the auras on tags', () => {
+    const storage = new MemoryStorage();
+    const board = [...createInitialState().board];
+    board[sq('e2')] = { ...board[sq('e2')]!, tags: [{ name: '불타는 중', turnsLeft: 2, appliedOnTurn: 1, aura: { element: 'fire', strength: 3 } }] };
+    const state: GameState = {
+      ...createInitialState(),
+      board,
+      captured: [{ id: 'b-p-d', color: 'black', type: 'pawn', exit: 'ash' }, { id: 'b-n-b', color: 'black', type: 'knight' }],
+    };
+    saveGame({ kind: 'hotseat', state, gm: { provider: 'fake' } }, storage);
+    const back = loadSavedGame(storage)!.state;
+    expect(back.captured).toEqual(state.captured);
+    expect(back.board[sq('e2')]?.tags?.[0].aura).toEqual({ element: 'fire', strength: 3 });
+  });
+
   it('a restored state keeps playing exactly like the original', () => {
     const storage = new MemoryStorage();
     const state = busyState();

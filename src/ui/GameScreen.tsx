@@ -35,7 +35,7 @@ import { DOODLE_COLORS, type DoodleOp } from '../session/doodle';
 import { clockText, rulesSummary } from './rules';
 import { Icon } from './Icon';
 import { PieceSilhouette } from './PieceSilhouette';
-import { buildShow, directionsFor, type Show } from './show';
+import { buildShow, directionsFor, exitFx, type Show } from './show';
 import type { FxShow } from '../scene/FxLayer';
 
 interface LogLine extends LogEntry {
@@ -339,12 +339,13 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     if (!stage) return null;
     const { show, startedAt } = stage;
     const fx = show.staging?.fx ?? [];
+    const exits = exitFx(show);
     return {
-      fx,
-      starts: show.timeline.fxStarts,
-      ends: show.timeline.fxEnds,
+      fx: [...fx, ...exits.map((x) => x.fx)],
+      starts: [...show.timeline.fxStarts, ...exits.map((x) => x.start)],
+      ends: [...show.timeline.fxEnds, ...exits.map((x) => x.end)],
       startedAt,
-      followers: fx.map((f) => (f.shape === 'trail' && f.withEffect !== null ? (show.movers[f.withEffect] ?? null) : null)),
+      followers: [...fx.map((f) => (f.shape === 'trail' && f.withEffect !== null ? (show.movers[f.withEffect] ?? null) : null)), ...exits.map((x) => x.follower)],
     };
   }, [stage]);
   // What each piece does in the show (how it travels, appears, acts); hand moves have nothing.

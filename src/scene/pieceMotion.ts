@@ -22,6 +22,8 @@ export interface PieceDirection {
   boardFrom?: Square;
   /** Jumps off the carrier standing on this square. */
   appearFrom?: Square;
+  /** Taken by a piece's trip: seconds to wait (for the attacker to arrive) before it leaves. */
+  exitDelay?: number;
 }
 
 export interface Pose {

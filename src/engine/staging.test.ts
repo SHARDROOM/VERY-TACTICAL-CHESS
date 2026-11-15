@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCommand, buildTimeline, createInitialState, type Effect, type Ruling, type Staging } from './index';
+import { applyCommand, buildTimeline, createInitialState, type Effect, type GameState, type Piece, type Ruling, type Staging } from './index';
 import { cleanStaging } from '../gm/staging';
 import { parseGmRuling } from '../gm/parse';
 import { fakeRuling } from '../gm/fakeGm';
@@ -131,5 +131,52 @@ describe('show timeline', () => {
     const t = buildTimeline(undefined, [move]);
     expect(t).toMatchObject({ fxStarts: [], actStarts: [], shakeAt: null, scale: 1 });
     expect(t.length).toBeGreaterThan(0);
+  });
+});
+
+describe('exits are stored with the captured pieces', () => {
+  const beat = (effect: number, exit: Staging['beats'][number]['exit']) => ({ effect, wait: 0, motion: 'default' as const, speed: 'normal' as const, entrance: 'default' as const, exit });
+  const attempt = (effects: Effect[], staging: Staging | undefined, prep?: (board: (Piece | null)[]) => void) => {
+    const board = [...createInitialState().board];
+    prep?.(board);
+    let s: GameState = { ...createInitialState(), board, ap: { white: 3, black: 0 } };
+    const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 10, cost: 1, effects, narration: { success: 's', failure: 'f' }, ...(staging && { staging: { success: staging } }) };
+    s = ok(applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling })).state;
+    return ok(applyCommand(s, { type: 'attemptSpecial', roll: 15 })).state;
+  };
+
+  it('each piece gets the exit of the effect that took it; a rider goes the way of its carrier', () => {
+    const after = attempt(
+      [
+        { type: 'remove', at: sq('d7') },
+        { type: 'move', from: sq('b1'), to: sq('e7') },
+        { type: 'remove', at: sq('c7') },
+      ],
+      { fx: [], shake: 0, acts: [], beats: [beat(0, 'ash'), beat(1, 'shatter'), beat(2, 'knock')] },
+      (board) => {
+        // The e7 pawn carries a rider.
+        board[sq('e7')] = { ...board[sq('e7')]!, rider: { id: 'b-rider', color: 'black', type: 'pawn' } };
+      },
+    );
+    expect(after.captured).toEqual([
+      { id: expect.any(String), color: 'black', type: 'pawn', exit: 'ash' },
+      { id: expect.any(String), color: 'black', type: 'pawn', exit: 'shatter' },
+      { id: 'b-rider', color: 'black', type: 'pawn', exit: 'shatter' },
+      // Knocked off is the plain way: nothing recorded.
+      { id: expect.any(String), color: 'black', type: 'pawn' },
+    ]);
+  });
+
+  it('nothing is recorded without staging, or for a normal capture', () => {
+    expect(attempt([{ type: 'remove', at: sq('d7') }], undefined).captured[0]).not.toHaveProperty('exit');
+    let s = createInitialState();
+    for (const [from, to] of [['e2', 'e4'], ['d7', 'd5'], ['e4', 'd5']]) s = ok(applyCommand(s, { type: 'move', from: sq(from), to: sq(to) })).state;
+    expect(s.captured).toEqual([{ id: expect.any(String), color: 'black', type: 'pawn' }]);
+  });
+
+  it('chaos records exits too', () => {
+    const s = createInitialState();
+    const r = ok(applyCommand(s, { type: 'chaos', chaos: { title: 't', narration: 'n', effects: [{ type: 'remove', at: sq('h7') }], staging: { fx: [], shake: 0, acts: [], beats: [beat(0, 'vanish')] } } }));
+    expect(r.state.captured).toEqual([{ id: expect.any(String), color: 'black', type: 'pawn', exit: 'vanish' }]);
   });
 });

@@ -1,5 +1,5 @@
 import type { Board, Effect } from './types';
-import { STAGING_LIMITS, type ActKind, type Beat, type MotionStyle, type Speed, type Staging } from './staging';
+import { STAGING_LIMITS, type ActKind, type Beat, type Exit, type MotionStyle, type Speed, type Staging } from './staging';
 import { fileOf, rankOf } from './squares';
 
 /**
@@ -45,6 +45,9 @@ export function moveDuration(style: MotionStyle, d: number, speed: Speed = 'norm
 
 export const ACT_DURATION: Record<ActKind, number> = { hop: 0.7, stagger: 1, fall: 1.6, shiver: 0.8, spin: 0.9 };
 
+/** Seconds a removal takes on screen, by how the piece leaves. */
+export const EXIT_DURATION: Record<Exit, number> = { default: 1, knock: 1, burn: 1.2, ash: 1.3, shatter: 1.4, vanish: 1, sink: 1.1 };
+
 function distance(a: number, b: number): number {
   return Math.hypot(fileOf(a) - fileOf(b), rankOf(a) - rankOf(b));
 }
@@ -62,7 +65,7 @@ export function effectDuration(effect: Effect, beat: Beat | undefined, _board?: 
       return entrance === 'rise' ? 0.9 : entrance === 'materialize' ? 0.8 : 1.2;
     }
     case 'remove':
-      return 1;
+      return EXIT_DURATION[beat?.exit ?? 'default'];
     case 'board':
       return 0.6;
     case 'transform':

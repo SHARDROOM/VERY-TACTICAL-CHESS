@@ -1,7 +1,7 @@
-import { createContext, useContext, useEffect, useRef } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { Euler, Quaternion, Vector3, type Group, type Mesh, type MeshPhysicalMaterial } from 'three';
-import { CORE_TAGS, RIDE, SHIELD, STUN, hasTag, type Color, type Entrance, type MotionStyle, type Piece, type PieceType } from '../engine';
+import { CORE_TAGS, RIDE, SHIELD, STUN, hasTag, type Color, type Entrance, type Exit, type MotionStyle, type Piece, type PieceType } from '../engine';
 import { PIECE_HEIGHT, pieceParts } from './pieceGeometry';
 import { ShieldBubble, StunStars, TagLabel } from './TagEffects';
 import { playSfx } from '../audio/sfx';
@@ -9,6 +9,8 @@ import { ballistic, simulatePiece, tumble, type Obstacle, type PieceRun } from '
 import { TABLE_TOP_Y } from './WoodTable';
 import { actPose, easeInOut, entrancePose, stylePose, type PieceDirection, type Pose } from './pieceMotion';
 import { squareToWorld } from './coords';
+import { finishMaterial, type Finish } from './pieceFinish';
+import { AshPile, SHATTER_SECONDS, ShardPile, SmokeWisp } from './Remains';
 
 /** What the pieces share for physics: which side the dice are on, and where taken pieces lie. */
 export interface PiecePhysics {
@@ -26,19 +28,39 @@ const LOOK = {
   black: { body: '#2e2b31', accent: '#b89a5e', sheen: 0.75 },
 } as const;
 
-/** Just the shape and material of a piece. */
-function PieceModel({ type, color, facing }: { type: PieceType; color: Color; facing: number }) {
+/** Just the shape and material of a piece; `finish` marks how it left the board, if it did. */
+function PieceModel({ type, color, facing, finish = 'normal' }: { type: PieceType; color: Color; facing: number; finish?: Finish }) {
   const look = LOOK[color];
   return (
     <group rotation={[0, facing, 0]}>
-      {pieceParts(type).map((part, i) => (
-        <mesh key={i} geometry={part.geometry} position={part.position} rotation={part.rotation} castShadow receiveShadow>
-          <meshPhysicalMaterial color={part.accent ? look.accent : look.body} roughness={0.32} clearcoat={look.sheen} clearcoatRoughness={0.25} />
-        </mesh>
-      ))}
+      {pieceParts(type).map((part, i) =>
+        finish === 'normal' ? (
+          <mesh key={i} geometry={part.geometry} position={part.position} rotation={part.rotation} castShadow receiveShadow>
+            <meshPhysicalMaterial color={part.accent ? look.accent : look.body} roughness={0.32} clearcoat={look.sheen} clearcoatRoughness={0.25} />
+          </mesh>
+        ) : (
+          <mesh
+            key={`${finish}-${i}`}
+            geometry={part.geometry}
+            position={part.position}
+            rotation={part.rotation}
+            castShadow={finish !== 'ghost'}
+            receiveShadow
+            material={finishMaterial(finish, part.accent ? look.accent : look.body, part.position?.[1] ?? 0, PIECE_HEIGHT[type], look.sheen)}
+          />
+        ),
+      )}
     </group>
   );
 }
+
+/** Exits played on the piece's own square before it goes to the side (the others are thrown there). */
+const IN_PLACE_EXITS: readonly Exit[] = ['ash', 'shatter', 'vanish', 'sink'];
+/** Seconds an exit on the square takes, including the moment it appears beside the board. */
+export const EXIT_SECONDS: Partial<Record<Exit, number>> = { ash: 1.3, shatter: SHATTER_SECONDS, vanish: 1.0, sink: 1.1 };
+/** Share of an in-place exit spent on the square (the rest: appearing beside the board). */
+const ON_SQUARE = 0.72;
+const easeOutBack = (t: number) => 1 + 2.7 * (t - 1) ** 3 + 1.7 * (t - 1) ** 2;
 
 /** Knights look toward the opponent, turned toward the board centre so players see their profile. */
 function knightFacing(color: Color, x: number): number {
@@ -78,6 +100,8 @@ interface Props {
   popIn?: boolean;
   /** What it does in the show being played (special actions and chaos); hand moves have none. */
   direction?: PieceDirection;
+  /** Beside the board: how it left (as the GM staged it). */
+  exit?: Exit;
   onClick?: (e: ThreeEvent<MouseEvent>) => void;
   onHover?: (hovering: boolean) => void;
 }
@@ -112,9 +136,9 @@ interface Motion {
   duration: number;
   arc: number;
   startedAt: number | null;
-  kind: 'move' | 'captured' | 'pop' | 'styled' | 'entrance';
-  /** For 'styled' trips and 'entrance's. */
-  style?: MotionStyle | Entrance;
+  kind: 'move' | 'captured' | 'pop' | 'styled' | 'entrance' | 'exit';
+  /** For 'styled' trips, 'entrance's and 'exit's. */
+  style?: MotionStyle | Entrance | Exit;
 }
 
 /** A glow over the piece's surface (morphs, side changes, materializing). */
@@ -123,6 +147,9 @@ interface Glow {
   peak: number;
   start: number;
   duration: number;
+  /** Stays at its peak for most of the time instead of swelling and fading. */
+  hold?: boolean;
+  flicker?: boolean;
 }
 
 /** A short flourish on top of everything else (morph squash, side-change swirl). */
@@ -172,7 +199,7 @@ function planMove(piece: Piece, from: Vector3, to: Vector3, captured: boolean): 
  * visuals live here and in pieceGeometry, so they can later be swapped for
  * model files without touching the rest of the scene.
  */
-export function PieceMesh({ piece, position, selected, captured = false, popIn = false, direction, onClick, onHover }: Props) {
+export function PieceMesh({ piece, position, selected, captured = false, popIn = false, direction, exit, onClick, onHover }: Props) {
   const group = useRef<Group>(null);
   const riderRef = useRef<Group>(null);
   /** Which of this show's trips comes next. */
@@ -184,6 +211,11 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const shownSquash = useRef(1);
   const travel = useRef({ x: 0, z: 0 });
   const prev = useRef({ type: piece.type, color: piece.color, rider: piece.rider?.id ?? null });
+  /** An exit being played (the remains show once it is over). */
+  const [exiting, setExiting] = useState<{ kind: Exit; start: number; offset: [number, number, number] } | null>(null);
+  const exitingRef = useRef(exiting);
+  exitingRef.current = exiting;
+  const bobPhase = useRef(Math.random() * 6);
   const physics = useContext(PiecePhysicsContext);
   const phys = useRef<PhysicsMotion | null>(null);
   const shownQ = useRef(new Quaternion());
@@ -238,15 +270,15 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       });
   };
 
-  // Effects (trails) find the piece by id.
+  // Effects (trails) find the piece by id, on the board or on its way off it.
   useEffect(() => {
     const g = group.current;
-    if (!physics || !g || captured) return;
+    if (!physics || !g) return;
     physics.objects.set(piece.id, g);
     return () => {
       if (physics.objects.get(piece.id) === g) physics.objects.delete(piece.id);
     };
-  }, [captured]);
+  }, []);
 
   // A piece already lying beside the board when the scene opens is solid for later throws.
   useEffect(() => {
@@ -352,7 +384,25 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       motion.current = scripted;
       return;
     }
+    if (captured && exit && IN_PLACE_EXITS.includes(exit)) {
+      // Burnt to ash, shattered, vanished or sunk on its square; then it shows up beside the board.
+      const delay = direction?.exitDelay ?? 0;
+      phys.current = null;
+      motion.current = { from, to, fromScale: shownScale.current, toScale: CAPTURED_SCALE, delay, duration: EXIT_SECONDS[exit]!, arc: 0, startedAt: null, kind: 'exit', style: exit };
+      setExiting({ kind: exit, start: performance.now() + delay * 1000, offset: [to.x - from.x, to.y - from.y, to.z - from.z] });
+      const onSquare = EXIT_SECONDS[exit]! * ON_SQUARE * 1000;
+      if (exit === 'ash') glow.current = { color: '#ff6a1f', peak: 1.6, start: performance.now() + delay * 1000, duration: onSquare, hold: true, flicker: true };
+      if (exit === 'vanish') glow.current = { color: '#bfe3ff', peak: 1.4, start: performance.now() + delay * 1000, duration: onSquare };
+      physics?.resting.set(piece.id, { type: piece.type, scale: CAPTURED_SCALE, pose: { position: to.clone(), quaternion: new Quaternion() } });
+      return;
+    }
     if (captured) {
+      const delay = direction?.exitDelay ?? 0.3;
+      if (exit === 'burn') {
+        // Thrown off in flames; it keeps burning a while beside the board, then is left scorched.
+        glow.current = { color: '#ff5a14', peak: 1.4, start: performance.now() + delay * 1000, duration: 4200, hold: true, flicker: true };
+        setExiting({ kind: 'burn', start: performance.now() + delay * 1000, offset: [0, 0, 0] });
+      }
       // Knocked off its square when the attacker lands, tumbling across the table to the side.
       const start = from.clone().setY(Math.max(from.y, 0) + 0.02);
       const velocity = ballistic(start, { x: to.x + (Math.random() - 0.5) * 0.6, z: to.z + (Math.random() - 0.5) * 0.6 }, TABLE_TOP_Y, 4.2 + Math.random() * 1.6);
@@ -370,7 +420,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
           maxSeconds: 4,
         },
         null,
-        0.3,
+        delay,
       );
       return;
     }
@@ -416,7 +466,31 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         if (m.kind === 'captured') playSfx('knock', { strength: 0.8, delay: m.delay });
       }
       const p = Math.min(1, Math.max(0, (clock.elapsedTime - m.startedAt) / m.duration));
-      if (m.kind === 'styled' || m.kind === 'entrance') {
+      if (m.kind === 'exit') {
+        const style = m.style as Exit;
+        const onSquare = style === 'shatter' ? 1 : ON_SQUARE;
+        if (p < onSquare) {
+          // On its square: burning down, fading upward, or sinking into the board.
+          const q = p / onSquare;
+          shownAt.current.copy(m.from);
+          shownScale.current = m.fromScale;
+          if (style === 'ash') squash = Math.max(0.04, 1 - 0.96 * q * q);
+          else if (style === 'vanish') {
+            shownAt.current.y += 0.35 * (1 - (1 - q) ** 3);
+            shownScale.current = m.fromScale * Math.max(0.0001, 1 - q * q * q);
+          } else if (style === 'sink') {
+            shownAt.current.y -= (height + 0.1) * q * q;
+            shownQ.current.setFromAxisAngle(TMP_AXIS.set(1, 0, 0.4).normalize(), 0.12 * Math.sin(q * 14) * (1 - q));
+          }
+        } else {
+          // Then it turns up beside the board.
+          const q = (p - onSquare) / (1 - onSquare);
+          shownAt.current.copy(m.to);
+          shownQ.current.identity();
+          shownScale.current = m.toScale * Math.max(0.0001, easeOutBack(q));
+        }
+        if (p >= 1 && exitingRef.current) setExiting(null);
+      } else if (m.kind === 'styled' || m.kind === 'entrance') {
         const len = Math.hypot(travel.current.x, travel.current.z) || 1;
         const ps =
           m.kind === 'styled'
@@ -436,13 +510,15 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         motion.current = null;
         shownAt.current.copy(m.to);
         shownScale.current = m.toScale;
-        if (m.kind === 'styled' || m.kind === 'entrance') shownQ.current.identity();
+        if (m.kind === 'styled' || m.kind === 'entrance' || m.kind === 'exit') shownQ.current.identity();
         if (m.kind === 'move' || m.kind === 'styled') playSfx('move', { strength: Math.min(1, 0.55 + 0.1 * m.from.distanceTo(m.to)) });
         else if (m.kind === 'captured') playSfx('land', { strength: 0.6 });
       }
     }
     g.position.copy(shownAt.current);
     g.quaternion.copy(shownQ.current);
+    // A ghost beside the board floats, slowly rising and falling.
+    if (captured && exit === 'vanish' && !exiting && !m && !pm) g.position.y += 0.2 + 0.05 * Math.sin(now / 650 + bobPhase.current);
 
     // Acting in place, on top of wherever the piece stands.
     for (const act of direction?.acts ?? []) {
@@ -481,12 +557,19 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
 
     // A glow over the surface while it changes.
     const gl = glow.current;
-    const level = gl ? gl.peak * Math.sin(Math.PI * Math.min(1, (now - gl.start) / gl.duration)) : 0;
-    if (gl && now - gl.start >= gl.duration) glow.current = null;
+    const gq = gl ? (now - gl.start) / gl.duration : 0;
+    let level = !gl || gq < 0 ? 0 : gl.hold ? gl.peak * Math.min(1, gq * 8) * (gq < 0.6 ? 1 : Math.max(0, 1 - (gq - 0.6) / 0.4)) : gl.peak * Math.sin(Math.PI * Math.min(1, gq));
+    if (gl?.flicker) level *= 0.7 + 0.3 * Math.sin(now * 0.031 + Math.sin(now * 0.017) * 3);
+    if (gl && gq >= 1) {
+      glow.current = null;
+      // A burnt piece has burnt out: now it is left scorched.
+      if (exitingRef.current?.kind === 'burn') setExiting(null);
+    }
     if (level > 0.01 || glowOn.current) {
       g.traverse((o) => {
         const mat = (o as Mesh).material as MeshPhysicalMaterial | undefined;
-        if (mat && 'emissive' in mat && mat.emissive) {
+        // Shared finish materials (ghosts, soot, mud) never glow: they belong to many pieces.
+        if (mat && 'emissive' in mat && mat.emissive && !mat.userData.vtcFinish) {
           if (gl) mat.emissive.set(gl.color);
           mat.emissiveIntensity = level > 0.01 ? level : 0;
         }
@@ -560,7 +643,27 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const rider = piece.rider;
   const riderBase = height - 0.06;
 
+  // What stands beside the board after a staged exit; while the exit plays, the piece itself.
+  const remains = captured && exit && !exiting ? exit : null;
+  const body =
+    exiting?.kind === 'shatter' ? (
+      <ShardPile type={piece.type} color={piece.color} id={piece.id} flight={{ offset: exiting.offset, start: exiting.start, scale: CAPTURED_SCALE }} />
+    ) : remains === 'ash' ? (
+      <AshPile type={piece.type} color={piece.color} id={piece.id} />
+    ) : remains === 'shatter' ? (
+      <ShardPile type={piece.type} color={piece.color} id={piece.id} />
+    ) : (
+      <PieceModel
+        type={piece.type}
+        color={piece.color}
+        facing={facing(piece)}
+        finish={remains === 'burn' ? 'scorched' : remains === 'sink' ? 'mud' : remains === 'vanish' ? 'ghost' : 'normal'}
+      />
+    );
+
   return (
+    <>
+    {remains === 'burn' && <SmokeWisp follow={group} height={height} />}
     <group
       ref={group}
       position={position}
@@ -577,7 +680,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         onHover?.(false);
       }}
     >
-      <PieceModel type={piece.type} color={piece.color} facing={facing(piece)} />
+      {body}
       {!captured && <TagDecorations piece={piece} top={height} />}
       {rider && (
         <group ref={riderRef} position={[0, riderBase, 0]} scale={RIDER_SCALE}>
@@ -586,5 +689,6 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         </group>
       )}
     </group>
+    </>
   );
 }

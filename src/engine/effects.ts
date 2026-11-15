@@ -12,7 +12,8 @@ export interface EffectContext {
 }
 
 export type EffectResult =
-  | { ok: true; board: Board; events: GameEvent[]; touched: Square[]; nextSpawnId: number }
+  /** `sources[i]`: which effect (0-based) produced `events[i]`; -1 for the promotions at the end. */
+  | { ok: true; board: Board; events: GameEvent[]; sources: number[]; touched: Square[]; nextSpawnId: number }
   | { ok: false; detail: string };
 
 const PIECE_TYPES: readonly PieceType[] = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'];
@@ -43,7 +44,10 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
   const touched: Square[] = [];
   let nextSpawnId = ctx.nextSpawnId;
 
+  const sources: number[] = [];
   for (const [i, e] of effects.entries()) {
+    // Everything this effect adds to `events` came from it.
+    while (sources.length < events.length) sources.push(i - 1);
     const where = `효과 ${i + 1}`;
     const fail = (why: string): EffectResult => ({ ok: false, detail: `${where}: ${why}` });
     const pieceAt = (sq: unknown): Piece | null => (onBoard(sq) ? board[sq] : null);
@@ -178,6 +182,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         return fail('알 수 없는 효과 종류');
     }
   }
+  while (sources.length < events.length) sources.push(effects.length - 1);
   // A pawn carried to its last rank by an effect promotes, like after a normal move (always to a queen).
   for (let sq = 0; sq < 64; sq++) {
     const piece = board[sq];
@@ -185,8 +190,9 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
     board[sq] = { ...piece, type: 'queen' };
     if (!touched.includes(sq)) touched.push(sq);
     events.push({ type: 'transformed', pieceId: piece.id, at: sq, from: 'pawn', to: 'queen' });
+    sources.push(-1);
   }
-  return { ok: true, board, events, touched, nextSpawnId };
+  return { ok: true, board, events, sources, touched, nextSpawnId };
 }
 
 /** Checks a ruling against the rules and dry-runs its effects. Returns a problem description, or null if valid. */

@@ -1,6 +1,7 @@
 import {
   PROMOTION_TYPES,
   type Board,
+  type CapturedPiece,
   type Color,
   type Command,
   type ChaosEvent,
@@ -13,6 +14,7 @@ import {
   type Precedent,
   type Square,
 } from './types';
+import type { Exit, Staging } from './staging';
 import { isInCheck, legalTargets } from './moves';
 import { fileOf, opponent, rankOf, squareAt } from './squares';
 import { revokeCastling } from './castling';
@@ -86,6 +88,7 @@ function chaos(state: GameState, event: ChaosEvent): CommandResult {
       chaosLog: [...(state.chaosLog ?? []), { turnNumber: state.turnNumber, title, narration }],
     },
     events,
+    exitsOf(applied.events, applied.sources, event.staging),
   );
   return { ok: true, state: after, events };
 }
@@ -95,13 +98,35 @@ export function hasAnyMove(state: GameState): boolean {
   return state.board.some((p, sq) => p?.color === state.turn && legalTargets(state, sq).length > 0);
 }
 
-/** Records the pieces that left the board in these events (plain: no tags, no rider). */
-function withCaptured(state: GameState, events: GameEvent[]): GameState {
-  const gone: Piece[] = [];
+/**
+ * How each piece taken by these effect events left, as staged: the exit of the effect that
+ * took it (a rider goes the way its carrier went). Knocked off (the plain way) is not recorded.
+ */
+export function exitsOf(events: GameEvent[], sources: number[], staging: Staging | undefined): Map<string, Exit> {
+  const exits = new Map<string, Exit>();
+  if (!staging) return exits;
+  events.forEach((e, i) => {
+    const piece = e.type === 'moved' ? e.captured : e.type === 'removed' ? e.piece : null;
+    const exit = staging.beats.find((b) => b.effect === sources[i])?.exit;
+    if (piece && exit && exit !== 'default' && exit !== 'knock') exits.set(piece.id, exit);
+  });
+  return exits;
+}
+
+/** The pieces that left the board in these events (plain: no tags, no rider), with how they left. */
+export function takenPieces(events: GameEvent[], exits?: Map<string, Exit>): CapturedPiece[] {
+  const gone: CapturedPiece[] = [];
   for (const e of events) {
     const piece = e.type === 'moved' ? e.captured : e.type === 'removed' ? e.piece : null;
-    if (piece) gone.push({ id: piece.id, color: piece.color, type: piece.type });
+    const exit = piece && exits?.get(piece.id);
+    if (piece) gone.push({ id: piece.id, color: piece.color, type: piece.type, ...(exit && { exit }) });
   }
+  return gone;
+}
+
+/** Records the pieces that left the board in these events, with how they left. */
+function withCaptured(state: GameState, events: GameEvent[], exits?: Map<string, Exit>): GameState {
+  const gone = takenPieces(events, exits);
   return gone.length ? { ...state, captured: [...(state.captured ?? []), ...gone] } : state;
 }
 
@@ -251,6 +276,7 @@ function attempt(state: GameState, roll: number): CommandResult {
   let castling = state.castling;
   let nextSpawnId = state.nextSpawnId;
   const effectEvents: GameEvent[] = [];
+  let exits = new Map<string, Exit>();
   if (toApply.length) {
     const applied = applyEffects(board, toApply, { turnNumber: state.turnNumber, nextSpawnId });
     // Validated on proposal and nothing can change the board while pending, so this is an invariant.
@@ -258,6 +284,7 @@ function attempt(state: GameState, roll: number): CommandResult {
     board = applied.board;
     nextSpawnId = applied.nextSpawnId;
     castling = revokeCastling(castling, applied.touched);
+    exits = exitsOf(applied.events, applied.sources, ruling.staging?.[outcome]);
     effectEvents.push(...applied.events, ...checkEvents(board, color));
   } else if (isInCheck(board, opponent(color))) {
     // Nothing changed, but the opponent's king was already attacked (e.g. since the turn began).
@@ -297,7 +324,7 @@ function attempt(state: GameState, roll: number): CommandResult {
     usedApThisTurn: true,
     pending: null,
     precedents: [...state.precedents, precedent],
-  }, events);
+  }, events, exits);
 
   // One-turn-kill guard: if the opponent's king is attacked after a special action, the
   // turn ends at once (remaining AP carries over), so the opponent always gets to respond.
