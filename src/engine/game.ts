@@ -23,6 +23,7 @@ import { extinguish, isShielded, tickTags, withoutTag } from './tags';
 import { SHIELD } from './types';
 import { dropFromBridges, tickTerrain } from './terrain';
 import { capturedAfter } from './captured';
+import { playFalls, startFalls } from './levitation';
 import { canResist, clashMultiplier, resolveClash } from './clash';
 
 /** What effects applied now start from: the turn, whose it is, the walls and pits, the side of the board. */
@@ -33,6 +34,9 @@ function effectContext(state: GameState, nextSpawnId = state.nextSpawnId): Effec
 /** The single entry point for changing game state. Pure: no I/O, no randomness. */
 export function applyCommand(state: GameState, cmd: Command): CommandResult {
   if (state.status.kind !== 'playing') return { ok: false, reason: 'gameOver' };
+  // A piece in mid-fall comes down before anything else happens.
+  if (state.falling?.length && cmd.type !== 'land') return { ok: false, reason: 'landingPending' };
+  if (cmd.type === 'land') return land(state, cmd);
   // Running out of time cancels whatever was pending, so it may come at any moment.
   if (cmd.type === 'timeout') return timeOut(state);
   const actionCommand = cmd.type === 'attemptSpecial' || cmd.type === 'cancelSpecial';
@@ -59,6 +63,23 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
       return chaos(state, cmd.chaos);
   }
 }
+
+/** The falling pieces come down (see levitation.ts); a piece that lands may open or close a check. */
+function land(state: GameState, cmd: Extract<Command, { type: 'land' }>): CommandResult {
+  const falling = state.falling ?? [];
+  if (!falling.length) return { ok: false, reason: 'nothingFalling' };
+  const seed = Number.isInteger(cmd.seed) ? cmd.seed : 0;
+  const played = playFalls(state.board, state.terrain, falling, Array.isArray(cmd.landings) ? cmd.landings : [], seed, state.turnNumber);
+  const events = [...played.events];
+  for (const c of ['white', 'black'] as const) if (isInCheck(played.board, c, state.terrain)) events.push({ type: 'check', color: c });
+  const { falling: _done, ...rest } = state;
+  void _done;
+  return { ok: true, state: withCaptured({ ...rest, board: played.board }, events), events };
+}
+
+/** Pieces that started to fall join any already falling. */
+const withFalls = (state: GameState, falls: GameState['falling']): Pick<GameState, 'falling'> =>
+  state.falling?.length || falls?.length ? { falling: [...(state.falling ?? []), ...(falls ?? [])] } : {};
 
 function timeOut(state: GameState): CommandResult {
   const color = state.turn;
@@ -95,6 +116,7 @@ function chaos(state: GameState, event: ChaosEvent): CommandResult {
       nextSpawnId: applied.nextSpawnId,
       castling: revokeCastling(state.castling, applied.touched),
       chaosLog: [...(state.chaosLog ?? []), { turnNumber: state.turnNumber, title, narration }],
+      ...withFalls(state, applied.falling),
     },
     events,
     exitsOf(applied.events, applied.sources, event.staging),
@@ -150,8 +172,11 @@ function passTurn(
   const land = tickTerrain(state.terrain, state.turn, state.turnNumber);
   // A bridge that ran out drops whoever stands on it.
   const dropped = dropFromBridges(tagged.board, land.fallen, land.terrain);
+  // A levitation that ran out: the piece falls (played by the `land` command that follows).
+  const fallEvents: GameEvent[] = [];
+  const falls = startFalls(dropped.board, fallEvents);
   const ticked = { board: dropped.board, events: [...tagged.events, ...dropped.events] };
-  events = [...events, ...tagged.events, ...land.events, ...dropped.events];
+  events = [...events, ...tagged.events, ...land.events, ...dropped.events, ...fallEvents];
   // A piece burnt up or a wall gone may open a line onto a king.
   if (ticked.events.some((e) => e.type === 'removed' || e.type === 'pushed') || land.events.length) {
     for (const c of ['white', 'black'] as const) if (isInCheck(ticked.board, c, land.terrain)) events.push({ type: 'check', color: c });
@@ -167,6 +192,7 @@ function passTurn(
       ap: { ...state.ap, [next]: apNext },
       usedApThisTurn: false,
       pending: null,
+      ...withFalls(state, falls),
     },
     events: [...events, { type: 'turnPassed', turn: next, turnNumber, apGained: apNext - state.ap[next] }],
   };
@@ -341,6 +367,7 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
   let nextSpawnId = state.nextSpawnId;
   const effectEvents: GameEvent[] = [];
   let exits = new Map<string, Exit>();
+  let falls: GameState['falling'] = [];
   if (toApply.length) {
     const applied = applyEffects(board, toApply, { ...effectContext(state, nextSpawnId), clash: { mode: 'play', rolls: clashRolls } });
     // Validated on proposal and nothing can change the board while pending, so this is an invariant
@@ -351,6 +378,7 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
     board = applied.board;
     terrain = applied.terrain;
     nextSpawnId = applied.nextSpawnId;
+    falls = applied.falling;
     castling = revokeCastling(castling, applied.touched);
     exits = exitsOf(applied.events, applied.sources, ruling.staging?.[outcome]);
     effectEvents.push(...applied.events, ...checkEvents(board, color, terrain));
@@ -397,6 +425,7 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
     ap: { ...state.ap, [color]: apLeft },
     usedApThisTurn: true,
     pending: again ? { color, action, ruling, retry: { roll, narration, rerolls: reroll } } : null,
+    ...withFalls(state, falls),
     // A second try replaces the precedent of the failure it follows (one action, one precedent).
     precedents: [...(retry ? state.precedents.slice(0, -1) : state.precedents), precedent],
   }, events, exits);

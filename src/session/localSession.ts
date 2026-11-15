@@ -1,7 +1,7 @@
 import { rollD20 } from '../dice';
 import type { GameState, RuleConfig } from '../engine';
 import type { GameMaster } from '../gm/types';
-import { Authority, type AuthorityEvent } from './authority';
+import { Authority, type AuthorityEvent, type FallSimulator } from './authority';
 import { Emitter } from './emitter';
 import { DoodleStore, type DoodleOp } from './doodle';
 import { cleanChat, cleanRules, pushChat, type ChatMessage, type Member, type Phase, type Request, type Role, type Session, type SessionView, type TurnTimer } from './types';
@@ -14,6 +14,8 @@ export interface LocalOptions {
   /** A resumed game skips the waiting room. */
   phase?: Phase;
   chance?: () => number;
+  /** Plays falls with physics (see Authority). */
+  fall?: FallSimulator;
 }
 
 /** Hotseat: both players share this screen; the authority runs right here. */
@@ -30,6 +32,7 @@ export class LocalSession implements Session {
       initial: options.initialState,
       phase: options.phase ?? 'waiting',
       chance: options.chance,
+      fall: options.fall,
     });
     const t = this.authority.timer();
     this.timer = t && { ...t, at: Date.now() };

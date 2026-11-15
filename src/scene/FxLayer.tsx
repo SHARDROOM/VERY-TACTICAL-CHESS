@@ -241,10 +241,8 @@ interface Emitter {
   point: Vector3 | null;
 }
 
-const world = (sq: number) => {
-  const [x, , z] = squareToWorld(sq);
-  return new Vector3(x, 0, z);
-};
+/** A square's spot: on the board, or on the air layer above it. */
+const world = (sq: number) => new Vector3(...squareToWorld(sq));
 
 /** The table area an `area` fx covers. */
 function areaRect(fx: Fx): { x0: number; x1: number; z0: number; z1: number } {

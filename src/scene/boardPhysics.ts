@@ -1,8 +1,8 @@
-import { Vector3 } from 'three';
-import type { Board, PieceType, Square, TerrainCell } from '../engine';
+import { Quaternion, Vector3 } from 'three';
+import { isAir, type Board, type FallingPiece, type Landing, type PieceType, type Square, type TerrainCell } from '../engine';
 import { loadPhysics } from '../dice3d/simulate';
 import { ballistic, hullPoints } from './piecePhysics';
-import { squareToWorld } from './coords';
+import { AIR_Y, squareToWorld, worldToBoard } from './coords';
 import { TABLE_TOP_Y } from './WoodTable';
 
 /*
@@ -93,7 +93,8 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
     const moving = new Set(o.movers.map((m) => m.id));
     const bodies: { id: string; body: InstanceType<typeof RAPIER.RigidBody> }[] = [];
     o.board.forEach((p, sq) => {
-      if (!p || moving.has(p.id) || o.exclude?.has(p.id)) return;
+      // The air layer floats above it all.
+      if (!p || isAir(sq) || moving.has(p.id) || o.exclude?.has(p.id)) return;
       const [x, , z] = squareToWorld(sq);
       const b = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(x, 0, z).setLinearDamping(0.3).setAngularDamping(0.8).setCcdEnabled(true));
       hull(p.type, b, 0.25);
@@ -189,6 +190,123 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
       if (moving.has(id) || moved > 0.01 || swayed > 0.01) tracks.set(id, Float32Array.from(f));
     }
     return { tracks, steps, dt: DT };
+  } finally {
+    world.free();
+  }
+}
+
+export interface FallOptions {
+  board: Board;
+  terrain?: readonly TerrainCell[];
+  falling: readonly FallingPiece[];
+  seed: number;
+}
+
+/** How tall a piece is (its hull), for where its middle is once it lies down. */
+function heightOf(type: PieceType): number {
+  const pts = hullPoints(type);
+  let top = 0;
+  for (let i = 1; i < pts.length; i += 3) top = Math.max(top, pts[i]);
+  return top;
+}
+
+/**
+ * Pieces whose levitation ended drop from the air layer, unsteady (a little drift and spin, from
+ * the seed), onto the board and whatever stands on it, and settle. Returns the recording and
+ * where each falling piece came to rest (the middle of the piece, in board coordinates), which
+ * the rules turn into a square (levitation.ts). The same seed gives the same fall on every screen.
+ */
+export async function simulateFalls(o: FallOptions): Promise<{ run: BoardRun; landings: Landing[] }> {
+  const RAPIER = await loadPhysics();
+  const random = seeded(o.seed);
+  const world = new RAPIER.World({ x: 0, y: -G, z: 0 });
+  world.timestep = DT;
+  try {
+    const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+    world.createCollider(RAPIER.ColliderDesc.cuboid(14, 0.3, 9).setTranslation(0, TABLE_TOP_Y - 0.3, 0).setFriction(0.7).setRestitution(0.15), fixed);
+    const boardH = -TABLE_TOP_Y / 2;
+    world.createCollider(RAPIER.ColliderDesc.cuboid(4.6, boardH, 4.6).setTranslation(0, TABLE_TOP_Y + boardH, 0).setFriction(0.55).setRestitution(0.2), fixed);
+    for (const c of o.terrain ?? []) {
+      if (c.kind !== 'wall') continue;
+      const [x, , z] = squareToWorld(c.at);
+      world.createCollider(RAPIER.ColliderDesc.cuboid(0.46, 0.34, 0.46).setTranslation(x, 0.34, z).setFriction(0.6).setRestitution(0.2), fixed);
+    }
+    const hull = (type: PieceType, b: InstanceType<typeof RAPIER.RigidBody>, restitution: number) => {
+      world.createCollider(RAPIER.ColliderDesc.convexHull(hullPoints(type))!.setDensity(1).setFriction(0.5).setRestitution(restitution), b);
+      world.createCollider(RAPIER.ColliderDesc.cylinder(0.04, 0.28).setTranslation(0, 0.05, 0).setDensity(5).setFriction(0.6).setRestitution(restitution), b);
+    };
+
+    const bodies: { id: string; body: InstanceType<typeof RAPIER.RigidBody> }[] = [];
+    o.board.forEach((p, sq) => {
+      if (!p || isAir(sq)) return;
+      const [x, , z] = squareToWorld(sq);
+      const b = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(x, 0, z).setLinearDamping(0.3).setAngularDamping(0.8).setCcdEnabled(true));
+      hull(p.type, b, 0.25);
+      bodies.push({ id: p.id, body: b });
+    });
+
+    const fallers: { id: string; type: PieceType; body: InstanceType<typeof RAPIER.RigidBody> }[] = [];
+    for (const { piece, from } of o.falling) {
+      const [x, , z] = squareToWorld(from);
+      // Unsteady to the last: a little tilt, drift and spin as it lets go.
+      const tilt = (random() - 0.5) * 0.5;
+      const turn = random() * Math.PI * 2;
+      const b = world.createRigidBody(
+        RAPIER.RigidBodyDesc.dynamic()
+          .setTranslation(x, AIR_Y, z)
+          .setRotation({ x: Math.sin(tilt / 2) * Math.cos(turn), y: 0, z: Math.sin(tilt / 2) * Math.sin(turn), w: Math.cos(tilt / 2) })
+          .setLinvel((random() - 0.5) * 1.6, 0, (random() - 0.5) * 1.6)
+          .setAngvel({ x: (random() - 0.5) * 4, y: (random() - 0.5) * 3, z: (random() - 0.5) * 4 })
+          .setLinearDamping(0.1)
+          .setAngularDamping(0.5)
+          .setCcdEnabled(true),
+      );
+      hull(piece.type, b, 0.3);
+      bodies.push({ id: piece.id, body: b });
+      fallers.push({ id: piece.id, type: piece.type, body: b });
+    }
+
+    const maxSteps = Math.round(3 / DT);
+    const frames = new Map<string, number[]>(bodies.map((b) => [b.id, []]));
+    let steps = 0;
+    let still = 0;
+    while (steps < maxSteps) {
+      world.step();
+      for (const { id, body } of bodies) {
+        const p = body.translation();
+        const q = body.rotation();
+        frames.get(id)!.push(p.x, p.y, p.z, q.x, q.y, q.z, q.w);
+      }
+      steps++;
+      const moving = bodies.some(({ body }) => {
+        if (body.isSleeping()) return false;
+        const v = body.linvel();
+        const w = body.angvel();
+        return Math.hypot(v.x, v.y, v.z) > 0.05 || Math.hypot(w.x, w.y, w.z) > 0.1;
+      });
+      still = !moving ? still + 1 : 0;
+      if (still > 12 && steps > 20) break;
+    }
+
+    // Where each falling piece rests: its middle (lying down, that is beside its base).
+    const landings: Landing[] = fallers.map(({ id, type, body }) => {
+      const p = body.translation();
+      const q = new Quaternion(body.rotation().x, body.rotation().y, body.rotation().z, body.rotation().w);
+      const mid = new Vector3(0, heightOf(type) / 2, 0).applyQuaternion(q);
+      return { id, ...worldToBoard(p.x + mid.x, p.z + mid.z) };
+    });
+
+    const falling = new Set(fallers.map((f) => f.id));
+    const tracks = new Map<string, Float32Array>();
+    for (const { id } of bodies) {
+      const f = frames.get(id)!;
+      const last = f.length - 7;
+      const moved = Math.hypot(f[last] - f[0], f[last + 1] - f[1], f[last + 2] - f[2]);
+      let swayed = 0;
+      for (let i = 0; i < f.length; i += 7) swayed = Math.max(swayed, Math.hypot(f[i] - f[0], f[i + 1] - f[1], f[i + 2] - f[2]), 1 - Math.abs(f[i + 6]));
+      if (falling.has(id) || moved > 0.01 || swayed > 0.01) tracks.set(id, Float32Array.from(f));
+    }
+    return { run: { tracks, steps, dt: DT }, landings };
   } finally {
     world.free();
   }

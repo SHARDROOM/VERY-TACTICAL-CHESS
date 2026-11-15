@@ -8,7 +8,7 @@ import { playSfx } from '../audio/sfx';
 import { ballistic, simulatePiece, tumble, type Obstacle, type PieceRun } from './piecePhysics';
 import { TABLE_TOP_Y } from './WoodTable';
 import { actPose, easeInOut, entrancePose, stylePose, swapPose, swerve, type PieceDirection, type Pose } from './pieceMotion';
-import { squareToWorld } from './coords';
+import { AIR_Y, squareToWorld } from './coords';
 import { finishMaterial, type Finish } from './pieceFinish';
 import { AshPile, SHATTER_SECONDS, ShardPile, SmokeWisp } from './Remains';
 import { PropOnPiece } from './PropMesh';
@@ -182,6 +182,7 @@ const UP = new Vector3(0, 1, 0);
 const TMP_AXIS = new Vector3();
 const TMP_Q = new Quaternion();
 const TMP_Q2 = new Quaternion();
+const TMP_E = new Euler();
 
 /** A pose's turn and lean as a rotation; `dirX/dirZ` is the direction of travel. */
 function poseRotation(pose: Pose, dirX: number, dirZ: number, out: Quaternion): Quaternion {
@@ -263,7 +264,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   );
   const shownAt = useRef(new Vector3(...position));
   const shownScale = useRef(popIn ? 0.01 : targetScale);
-  const lastTarget = useRef(`${position[0]},${position[2]},${targetScale}`);
+  const lastTarget = useRef(`${position[0]},${position[1]},${position[2]},${targetScale}`);
 
   /** Starts a physics flight; until it is computed the piece waits where it is. */
   const launch = (purpose: PhysicsMotion['purpose'], fallback: Motion, opts: Parameters<typeof simulatePiece>[0], settleTo: Vector3 | null, delay = 0) => {
@@ -415,10 +416,10 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     const pup = direction?.puppet;
     if (pup && puppetDone.current !== pup && performance.now() < pup.start + pup.steps * pup.dt * 1000) return;
     planRef.current();
-  }, [position[0], position[2], targetScale]);
+  }, [position[0], position[1], position[2], targetScale]);
 
   planRef.current = () => {
-    const key = `${position[0]},${position[2]},${targetScale}`;
+    const key = `${position[0]},${position[1]},${position[2]},${targetScale}`;
     if (key === lastTarget.current) return;
     lastTarget.current = key;
     const to = new Vector3(...position);
@@ -450,6 +451,13 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         return;
       }
       // Taken: it goes off from wherever it lies (below).
+    }
+    // Rising into the air (공중부양), or moving about up there: floated, not flung.
+    if (!captured && (to.y > 0.5 || from.y > 0.5) && !(trip && trip.style !== 'default' && trip.style !== 'fly')) {
+      phys.current = null;
+      const rise = Math.hypot(to.x - from.x, to.z - from.z) < 0.01;
+      motion.current = rise ? { ...scripted, delay: trip ? 0 : 0.1, duration: 1.1, arc: 0, kind: 'settle', fromQ: shownQ.current.clone() } : scripted;
+      return;
     }
     if (trip && trip.style !== 'default' && trip.style !== 'fly') {
       // A styled trip from the show, timed to its place in the show.
@@ -680,6 +688,13 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     }
     g.position.copy(shownAt.current);
     g.quaternion.copy(shownQ.current);
+    // Floating (공중부양): never quite steady, it bobs, sways and slowly turns (more the higher it is).
+    if (!captured && position[1] > 0.5) {
+      const k = Math.max(0, Math.min(1, shownAt.current.y / AIR_Y));
+      const w = now / 1000 + bobPhase.current;
+      g.position.y += k * 0.05 * Math.sin(w * 1.7);
+      g.quaternion.multiply(TMP_Q.setFromEuler(TMP_E.set(k * 0.1 * Math.sin(w * 1.3), k * w * 0.45, k * 0.1 * Math.sin(w * 1.05 + 1))));
+    }
     // A ghost beside the board floats, slowly rising and falling.
     if (captured && exit === 'vanish' && !exiting && !m && !pm) g.position.y += 0.2 + 0.05 * Math.sin(now / 650 + bobPhase.current);
 

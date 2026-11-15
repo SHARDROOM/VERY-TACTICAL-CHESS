@@ -1,4 +1,4 @@
-import { distance, parseSquare, type AttachPoint, type Board, type Color, type Means, type PieceType, type PropPreset, type Square } from '../engine';
+import { AIR, distance, parseSquare, type AttachPoint, type Board, type Color, type Means, type PieceType, type PropPreset, type Square } from '../engine';
 import type { GameMaster, GmRequest, GmRulingJson } from './types';
 import { josa } from '../ui/josa';
 
@@ -40,6 +40,8 @@ function lastPieceWord(text: string): Exclude<PieceType, 'king'> | null {
  * - "a2 폰을 퀸으로 바꾼다" (itself) or "d1 퀸이 a2 폰을 …으로 바꾼다" → transform
  * - "d1 퀸이 d7 폰을 저격한다" → remove the last square (a shot from the actor, or a blow next to it)
  * - "b1 나이트를 투석기로 e5까지" → the piece moves itself
+ * - "e2 폰이 떠오른다" / "d1 퀸이 e2 폰을 공중부양시킨다" → 공중부양 for 2 turns; "d1 퀸이 e4 나이트를 떨어뜨린다" → its levitation ends
+ * A square names the piece in the air above it when the ground there is empty.
  * Anything else, or nobody doing it, is ruled infeasible.
  *
  * It never makes up chaos events: those are always the real (API) GM's job.
@@ -150,7 +152,12 @@ function refuse(why: string): BaseRuling {
 const SHOOTING = /화살|쏘|쏜|쏴|던져|던진|던지|발사|투척|저격|석궁|활/;
 
 function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling {
-  const names = [...action.toLowerCase().matchAll(/[a-h][1-8]/g)].map((m) => m[0]);
+  // A square with nothing on the ground but something floating above it means the floating one.
+  const up = (n: string) => {
+    const s = parseSquare(n)!;
+    return board && !board[s] && board[s + AIR] ? `${n}^` : n;
+  };
+  const names = [...action.toLowerCase().matchAll(/[a-h][1-8]/g)].map((m) => up(m[0]));
   const squares = names.map(parseSquare).filter((s): s is Square => s !== null);
   const mine = (i: number) => (board ? board[squares[i]]?.color === color : true);
   // The acting piece: the first square named, if it is the player's.
@@ -339,6 +346,40 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       effects: [tag(last, '보호막', 0, { prop: look3d('shield', 'leftHand') })],
       look: look({ fx: [fx('light', 'burst', last, { strength: 3, radius: 1, withEffect: 1 })] }),
       narration: { success: `푸른 결계가 ${last}의 기물을 감쌌다!`, failure: '결계가 형태를 이루지 못하고 흩어졌다.' },
+    };
+  }
+
+  if (squares.length >= 1 && /떨어뜨|추락시|끌어내리|부양을 (풀|해제|깨)/.test(action)) {
+    if (!actor) return needsActor()!;
+    if (!last.endsWith('^')) return refuse(`${last}에는 떠 있는 기물이 없습니다.`);
+    return {
+      interpretation: `${who} ${last}의 떠 있는 기물을 땅으로 떨어뜨린다.`,
+      actor,
+      means: far <= 1 ? 'touch' : 'magic',
+      feasible: true,
+      dc: 14,
+      cost: 2,
+      effects: [{ type: 'untag', at: last, tag: '공중부양' }],
+      look: look({ fx: [fx('wind', 'burst', last, { strength: 3, radius: 0.8, withEffect: 1 })] }),
+      narration: { success: `${last}의 기물이 힘을 잃고 곤두박질친다!`, failure: '떠 있는 기물은 꿈쩍도 하지 않았다.' },
+    };
+  }
+
+  if (squares.length >= 1 && /공중부양|떠오르|떠올라|띄운|띄워|띄우|부양/.test(action)) {
+    // On itself, or by another of the player's pieces (an enemy's is a harder spell: it may not land well).
+    if (!actor) return needsActor()!;
+    const target = last.replace('^', '');
+    const enemy = board ? board[parseSquare(target)!]?.color !== color && !!board[parseSquare(target)!] : false;
+    return {
+      interpretation: `${who} ${target}의 기물을 두 턴 동안 공중에 띄운다. 공중에서는 공중의 기물만 상대하고, 끝나면 떨어진다.`,
+      actor,
+      means: far <= 1 ? 'touch' : 'magic',
+      feasible: true,
+      dc: enemy ? 15 : far > 1 ? 12 : 10,
+      cost: enemy ? 2 : 1,
+      effects: [tag(target, '공중부양', 2, { aura: 'wind', auraStrength: 1 })],
+      look: look({ fx: [fx('wind', 'burst', target, { strength: 2, radius: 0.8, withEffect: 1 })] }),
+      narration: { success: `${target}의 기물이 둥실 떠올랐다!`, failure: '기물이 잠깐 들썩이다 도로 내려앉았다.' },
     };
   }
 

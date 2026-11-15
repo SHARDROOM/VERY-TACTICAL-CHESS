@@ -355,7 +355,7 @@ describe('online: host and guest', () => {
     expect(parseGuestMessage({ t: 'req', req: { type: 'proposeSpecial', ruling: {} } })).toBeNull();
     expect(parseGuestMessage({ t: 'req', req: { type: 'timeout' } })).toBeNull();
     expect(parseGuestMessage({ t: 'req', req: { type: 'chaos' } })).toBeNull();
-    expect(parseGuestMessage({ t: 'req', req: { type: 'move', from: 99, to: 1 } })).toBeNull();
+    expect(parseGuestMessage({ t: 'req', req: { type: 'move', from: 200, to: 1 } })).toBeNull();
     expect(parseGuestMessage({ t: 'req', req: { type: 'move', from: 1, to: 2, promotion: 'king' } })).toBeNull();
     expect(parseGuestMessage('junk')).toBeNull();
   });

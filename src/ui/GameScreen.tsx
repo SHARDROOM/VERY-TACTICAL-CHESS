@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Quaternion } from 'three';
 import {
+  AIR,
   findKing,
   hasAnyMove,
+  isAir,
   isInCheck,
   legalTargets,
   opponent,
@@ -47,7 +49,7 @@ import { reachOf } from './reach';
 import { prefersReducedMotion, useStagingLook } from './stagingLook';
 import type { FxShow } from '../scene/FxLayer';
 import { duelLength, planDuel, simulateDuel, type DuelPlan, type DuelRun } from '../scene/duel';
-import { runLength, simulateRomp, type BoardRun, type Mover } from '../scene/boardPhysics';
+import { runLength, simulateFalls, simulateRomp, type BoardRun, type Mover } from '../scene/boardPhysics';
 import type { PieceDirection } from '../scene/pieceMotion';
 
 interface LogLine extends LogEntry {
@@ -301,7 +303,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     /** Logs a batch of game events and reacts to them (the moment the board shows them). */
     const applyBatch = (batch: Batch, staged = false) => {
       const { events, before, after } = batch;
-      const typeOf = (id: string) => findPiece(before.board, id)?.type ?? findPiece(after.board, id)?.type;
+      const typeOf = (id: string) =>
+        findPiece(before.board, id)?.type ??
+        findPiece(after.board, id)?.type ??
+        [...(before.falling ?? []), ...(after.falling ?? [])].find((f) => f.piece.id === id)?.piece.type ??
+        after.captured?.find((p) => p.id === id)?.type;
       addLog(describeEvents(events, typeOf));
       const passed = events.some((ev) => ev.type === 'turnPassed');
       if (passed) playSfx('turn', { delay: 0.25 });
@@ -419,12 +425,30 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         .catch(done);
     };
 
+    /**
+     * Pieces falling from the air: the same fall the authority simulated (same seed), played as
+     * a recording; just before it is over the landing goes on the board.
+     */
+    const startFall = (batch: Batch, seed: number, done: () => void) => {
+      const falling = batch.before.falling ?? [];
+      if (!falling.length) return void setTimeout(done, 0);
+      void simulateFalls({ board: batch.before.board, terrain: batch.before.terrain, falling, seed })
+        .then(({ run }) => {
+          const start = performance.now();
+          setRomp({ run, start });
+          setTimeout(done, Math.max(0, runLength(run) * 1000 - 60));
+          setTimeout(() => setRomp((r) => (r?.run === run ? null : r)), runLength(run) * 1000 + 450);
+        })
+        .catch(() => setTimeout(done, 0));
+    };
+
     /** The flights of a show (default and fly moves) as romps, simulated before it starts. */
     const prepareRomps = async (show: Show): Promise<Playing['romps']> => {
       if (prefersReducedMotion()) return [];
       const out: Playing['romps'] = [];
       for (const [i, e] of show.effects.entries()) {
-        if (e.type !== 'move' || show.clashes.some((c) => c.effect === i)) continue;
+        // A move in the air floats over the board: nothing on the ground to bowl over.
+        if (e.type !== 'move' || isAir(e.from) || show.clashes.some((c) => c.effect === i)) continue;
         const style = show.staging?.beats.find((b) => b.effect === i)?.motion ?? 'default';
         const before = show.steps[i];
         const piece = before.board[e.from];
@@ -509,6 +533,18 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
           });
           return;
         }
+        // Pieces falling from the air come down as the physics has it.
+        const fell = head.events.find((ev): ev is Extract<GameEvent, { type: 'fell' }> => ev.type === 'fell');
+        if (fell && !head.staged) {
+          head.staged = true;
+          setFrozen(head.before);
+          startFall(head, fell.seed, () => {
+            queue.shift();
+            applyBatch(head);
+            pump();
+          });
+          return;
+        }
         if (!head.staged) {
           head.staged = true;
           const show = buildShow(head.events, head.before, (o) => OUTCOME_LABEL[o]);
@@ -531,7 +567,12 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             return;
           }
           // A plain move: a romp across the board (unless the device asks for less motion).
-          const plain = !show && !resolved && head.events.some((ev) => ev.type === 'moved') && !head.events.some((ev) => ev.type === 'clash' || ev.type === 'chaos');
+          // (In the air there is nothing to bowl over: it just floats across.)
+          const plain =
+            !show &&
+            !resolved &&
+            head.events.some((ev) => ev.type === 'moved' && !isAir(ev.from)) &&
+            !head.events.some((ev) => ev.type === 'clash' || ev.type === 'chaos');
           if (plain && !prefersReducedMotion()) {
             setFrozen(head.before);
             startRomp(head, () => {
@@ -736,7 +777,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     e.preventDefault();
     const input = text.trim();
     if (!input || locked) return;
-    const parsed = parseMoveText(input);
+    let parsed = parseMoveText(input);
+    // "d4d5" for a piece floating above d4 (nothing of ours on the ground there) means the air.
+    if (parsed && !isAir(parsed.from) && game.board[parsed.from]?.color !== sideToMove && game.board[parsed.from + AIR]?.color === sideToMove) {
+      parsed = { ...parsed, from: parsed.from + AIR, to: isAir(parsed.to) ? parsed.to : parsed.to + AIR };
+    }
     if (parsed) {
       if (!parsed.promotion && promotes(parsed.from, parsed.to) && legalTargets(game, parsed.from).some((t) => t.to === parsed.to)) {
         setPromotionChoice({ from: parsed.from, to: parsed.to });
@@ -802,6 +847,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         captured={game.captured ?? []}
         terrain={game.terrain}
         marks={marks}
+        falling={game.falling}
         clashOdds={locked ? undefined : clashOdds}
         directions={directions}
         fx={fxShow}

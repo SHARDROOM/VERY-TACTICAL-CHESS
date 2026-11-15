@@ -1,5 +1,5 @@
 import { MEANS, MEANS_NAME, type Board, type Color, type Effect, type Means, type Ruling, type Square } from './types';
-import { fileOf, rankOf, squareName } from './squares';
+import { fileOf, isAir, rankOf, squareName } from './squares';
 import { isStunned } from './tags';
 import { applyEffects, type EffectContext } from './effects';
 
@@ -9,9 +9,9 @@ import { applyEffects, type EffectContext } from './effects';
  * Whether an arrow or a spell is plausible at a distance is the GM's call (it sets the DC).
  */
 
-/** Steps a king would need: e6 to e7 is 1, b1 to g8 is 7. */
+/** Steps a king would need: e6 to e7 is 1, b1 to g8 is 7; the air above a square is 1 from it. */
 export function distance(a: Square, b: Square): number {
-  return Math.max(Math.abs(fileOf(a) - fileOf(b)), Math.abs(rankOf(a) - rankOf(b)));
+  return Math.max(Math.abs(fileOf(a) - fileOf(b)), Math.abs(rankOf(a) - rankOf(b)), isAir(a) === isAir(b) ? 0 : 1);
 }
 
 /** The squares an effect acts on, other than the actor's own (where it does things to others). */

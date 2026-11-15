@@ -1,4 +1,4 @@
-import { CLASH_ROLLS, applyCommand, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type GameEvent, type GameState, type RuleConfig, type Staging } from '../engine';
+import { CLASH_ROLLS, applyCommand, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
@@ -16,6 +16,17 @@ export type AuthorityEvent =
   | { kind: 'phase'; phase: Phase }
   | { kind: 'timer'; timer: TimerSnapshot | null };
 
+/** What a fall simulation needs: the board as it is, the falling pieces, and the seed every screen replays it with. */
+export interface FallQuery {
+  board: GameState['board'];
+  terrain: readonly TerrainCell[];
+  falling: readonly FallingPiece[];
+  seed: number;
+}
+
+/** Where falling pieces come to rest (the physics); missing ones drop straight down. */
+export type FallSimulator = (query: FallQuery) => Promise<Landing[]>;
+
 export interface AuthorityOptions {
   initial?: GameState;
   /** A resumed game goes straight to 'playing'; a new room starts in the waiting room. */
@@ -23,7 +34,14 @@ export interface AuthorityOptions {
   /** Chaos dice (0..1). */
   chance?: () => number;
   now?: () => number;
+  /** Plays falls with physics; without it, falling pieces drop straight down. */
+  fall?: FallSimulator;
+  /** Seeds for fall simulations. */
+  seed?: () => number;
 }
+
+/** How long a fall plays on screen; the clock does not run during it. */
+export const FALL_SHOW_MS = 3200;
 
 /** Extra time after an attempt, for the dice to roll on screen. */
 export const DICE_GRACE_MS = 4000;
@@ -44,6 +62,10 @@ export class Authority {
   phase: Phase;
   private readonly chance: () => number;
   private readonly now: () => number;
+  private readonly fall?: FallSimulator;
+  private readonly seed: () => number;
+  /** A fall is being simulated: its `land` comes next. */
+  private landing = false;
   /** Bumped whenever the state is replaced, so late GM answers for an old game are dropped. */
   private generation = 0;
   private clock = { remaining: 0, startedAt: null as number | null, handle: null as ReturnType<typeof setTimeout> | null };
@@ -58,6 +80,10 @@ export class Authority {
     this.phase = options.phase ?? 'waiting';
     this.chance = options.chance ?? Math.random;
     this.now = options.now ?? Date.now;
+    this.fall = options.fall;
+    this.seed = options.seed ?? (() => Math.floor(Math.random() * 2 ** 31));
+    // A game saved mid-fall lands first.
+    if (this.state.falling?.length) setTimeout(() => void this.land(), 0);
     if (this.phase === 'playing') this.restartClock(false);
   }
 
@@ -149,7 +175,26 @@ export class Authority {
     this.state = result.state;
     this.emit({ kind: 'events', events: result.events, before, after: result.state });
     this.afterChange(result.events);
+    if (this.state.falling?.length) void this.land();
     return true;
+  }
+
+  /** Falling pieces come down: the physics (if any) says where they rest, then `land` plays it. */
+  private async land(): Promise<void> {
+    if (this.landing || !this.state.falling?.length) return;
+    this.landing = true;
+    const generation = this.generation;
+    const s = this.state;
+    const seed = this.seed();
+    let landings: Landing[] = [];
+    try {
+      if (this.fall) landings = await this.fall({ board: s.board, terrain: s.terrain ?? [], falling: s.falling!, seed });
+    } catch {
+      // no physics: straight down
+    }
+    this.landing = false;
+    if (generation !== this.generation || this.state !== s) return;
+    this.apply({ type: 'land', seed, landings }, 'all');
   }
 
   /** Keeps the clock in step with the game and sets off chaos when a turn begins. */
@@ -165,6 +210,8 @@ export class Authority {
       const resolved = events.find((e) => e.type === 'specialResolved');
       // The roll and the show that follows it do not eat the player's time.
       if (resolved) this.addTime(DICE_GRACE_MS + showMs(resolved.staging, resolved.effects) + clashTime);
+      // Nor does a fall.
+      if (events.some((e) => e.type === 'fell')) this.addTime(FALL_SHOW_MS);
     }
   }
 
@@ -257,6 +304,7 @@ export class Authority {
         this.emit({ kind: 'events', events: result.events, before, after: result.state });
         // The clock restarts when the GM is done (setBusy below); the show is extra.
         this.addTime(showMs(parsed.chaos.staging, parsed.chaos.effects));
+        if (this.state.falling?.length) void this.land();
         return;
       }
       skip(problem ?? '규칙에 맞지 않음');

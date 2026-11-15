@@ -1,5 +1,5 @@
 import type { Color, GameState, Piece, PieceType } from './types';
-import { squareAt } from './squares';
+import { SQUARES, squareAt } from './squares';
 import { FULL_CASTLING } from './castling';
 import { DEFAULT_RULES, type RuleConfig } from './config';
 
@@ -11,7 +11,7 @@ function initialAp(rules: RuleConfig): Record<Color, number> {
 }
 
 export function createInitialState(rules: RuleConfig = DEFAULT_RULES): GameState {
-  const board: (Piece | null)[] = Array(64).fill(null);
+  const board: (Piece | null)[] = Array(SQUARES).fill(null);
   const place = (color: Color, type: PieceType, file: number, rank: number) => {
     board[squareAt(file, rank)!] = { id: `${color}-${type}-${file}-${rank}`, color, type };
   };
@@ -47,7 +47,7 @@ export function createStateFrom(
   turn: Color = 'white',
   extra: Partial<GameState> = {},
 ): GameState {
-  const board: (Piece | null)[] = Array(64).fill(null);
+  const board: (Piece | null)[] = Array(SQUARES).fill(null);
   for (const [name, p] of Object.entries(placements)) {
     const file = 'abcdefgh'.indexOf(name[0]);
     const rank = Number(name[1]) - 1;
@@ -74,4 +74,9 @@ export function createStateFrom(
     captured: [],
     ...extra,
   };
+}
+
+/** A board from before the air layer (64 squares) gets an empty air layer. */
+export function withAir(board: ReadonlyArray<Piece | null>): (Piece | null)[] {
+  return board.length >= SQUARES ? [...board] : [...board, ...Array(SQUARES - board.length).fill(null)];
 }

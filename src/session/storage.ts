@@ -1,4 +1,4 @@
-import { withDefaultRules, type GameState } from '../engine';
+import { SQUARES, withAir, withDefaultRules, type GameState } from '../engine';
 import type { GmConfig } from '../ui/GmSettings';
 
 /** What a saved game remembers about its GM: never the API key (that is kept apart, see savedGm). */
@@ -147,7 +147,7 @@ export function loadSavedGame(storage?: Storage): SavedGame | null {
   if (
     !isObj(st) ||
     !Array.isArray(st.board) ||
-    st.board.length !== 64 ||
+    (st.board.length !== 64 && st.board.length !== SQUARES) ||
     (st.turn !== 'white' && st.turn !== 'black') ||
     !isObj(st.status) ||
     !isObj(st.ap) ||
@@ -159,8 +159,8 @@ export function loadSavedGame(storage?: Storage): SavedGame | null {
   if (raw.kind === 'host' && typeof raw.code !== 'string') return bad();
   const game = raw as unknown as SavedGame;
   const black = isObj(raw.black) && typeof raw.black.id === 'string' && typeof raw.black.name === 'string' ? { id: raw.black.id, name: raw.black.name } : undefined;
-  // Saves from before a rule existed get its default.
-  return { ...game, black, state: { ...game.state, rules: withDefaultRules(game.state.rules) } };
+  // Saves from before a rule existed get its default; from before the air, an empty air layer.
+  return { ...game, black, state: { ...game.state, rules: withDefaultRules(game.state.rules), board: withAir(game.state.board) } };
 
   function bad() {
     clearSavedGame(storage);

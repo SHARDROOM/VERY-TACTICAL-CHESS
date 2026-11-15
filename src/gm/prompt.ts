@@ -1,4 +1,4 @@
-import { COVER_NAME, MAX_TERRAIN, PROP_PRESET_NAME, RIDE, TERRAIN_NAME, distance, parseSquare, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig } from '../engine';
+import { AIR, COVER_NAME, MAX_TERRAIN, PROP_PRESET_NAME, RIDE, TERRAIN_NAME, airOf, distance, isAir, parseSquare, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig } from '../engine';
 
 const COLOR: Record<Color, string> = { white: '백', black: '흑' };
 const PIECE: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
@@ -62,13 +62,14 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - {"type": "clearTerrain", "at": "d4"}: 그 칸의 벽이나 구덩이를 없앤다.
 - {"type": "cover", "at": "d4", "kind": "bridge", "turns": 2}: 구덩이 위에 다리(bridge)를 놓거나 벽에 사다리(ladder)를 건다. prop으로 모양을 바꿀 수 있다.
 - {"type": "clearCover", "at": "d4"}: 다리를 끊거나 사다리를 치운다. 다리 위에 있던 기물은 구덩이에 빠진다(킹은 옆 칸으로 비켜남).
-효과는 목록 순서대로 적용되고, 각 효과는 앞 효과가 적용된 뒤의 보드를 기준으로 합니다. 칸 이름은 a1~h8 형식입니다.
+효과는 목록 순서대로 적용되고, 각 효과는 앞 효과가 적용된 뒤의 보드를 기준으로 합니다. 칸 이름은 a1~h8 형식이고, 공중의 칸은 뒤에 ^를 붙입니다(e4^ = e4 위 공중).
 
 ## 태그의 의미
 - "기절": 그 기물은 일반 수로도 효과로도 움직일 수 없고, 상대 킹을 체크하지도 못한다.
 - "보호막": 그 기물이 다음에 잡히거나 제거될 때 한 번 막아 주고 사라진다. 잡으려던 기물은 제자리에 남는다.
 - "탑승": board 효과로만 생긴다. 탄 기물은 태운 기물과 함께 움직이고, 혼자 움직이거나 공격하지 못한다. 태운 기물이 잡히면 함께 잡힌다.
 - "화상": 불이 붙은 기물. 지속 턴이 다할 때까지 그 기물이 칸을 옮기지 않으면(일반 수든 효과든) 불타서 없어진다. 옮기면 불이 꺼진다. 보호막이 있으면 보호막이 대신 깨진다. 1턴 이상이어야 하고(보통 2~3턴), 킹에는 붙일 수 없다. 불을 붙이는 행동에는 서사용 태그 대신 이것을 쓰세요.
+- "공중부양": 땅의 기물에 붙이면 그 기물이 바로 위 공중 칸(예: e4 → e4^)으로 떠오른다. 아래 "공중" 참고. 띄우는 행동에는 서사용 태그 대신 이것을 쓰세요.
 - 그 밖의 이름(예: "불타는 중", "용기백배"): 규칙에는 영향이 없는 서사용 태그. 이후 판정에서 당신이 참고한다. 짧게(20자 이내) 지으세요.
 - 태그의 남은 턴은 그 기물 주인의 턴이 끝날 때만 줄어듭니다(붙인 그 턴은 세지 않음). 남은 턴은 시스템이 세고, 다하면 시스템이 태그를 뗍니다(화상은 기물을 태웁니다).
 - 보드 상태에 각 기물의 태그와 남은 턴, 타고 있는 기물이 표시됩니다. 이를 판정에 반영하세요(예: 불타는 기물은 다른 기물에 불을 옮기기 쉽다).
@@ -81,6 +82,13 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - 다리(bridge)를 놓은 구덩이는 평범한 칸처럼 지나가고 설 수 있습니다(양편 모두). 다리가 끝나거나 끊기면 그 위의 기물이 빠집니다.
 - 사다리(ladder)를 건 벽은 지나갈 수만 있고 그 위에 멈출 수는 없습니다(양편 모두, 체크도 넘어감).
 - 다리와 사다리도 만든 쪽의 턴 기준으로 남은 턴을 세고, 1~3턴이 보통입니다. 지형 자체보다 쉽게(DC 8~12, AP 1) 정하세요.
+
+## 공중 (공중부양)
+- 보드 위에는 같은 모양의 공중 판이 하나 더 떠 있습니다. 공중부양 중인 기물만 공중 판(칸 이름 끝에 ^)에 있습니다.
+- 공중의 기물은 공중 판에서 평소처럼 움직이고, 공중의 적만 잡을 수 있습니다(합도 공중끼리만). 땅의 기물은 공중의 기물을 잡지 못하고, 공중의 기물은 땅의 길을 막지 않습니다. 벽과 구덩이는 공중에 영향이 없습니다. 체크도 같은 판끼리만 겁니다.
+- 공중부양의 남은 턴이 다하면(또는 untag로 떼면) 기물이 떨어집니다. 물리엔진이 떨어진 자리를 정하고, 기물은 가장 많이 겹친 빈 칸에 섭니다. 구덩이에 떨어지면 파묻혀 없어지고, 보드 밖으로 떨어지거나 둘러싸여 설 빈 칸이 없으면 산산조각 납니다(킹은 가장 가까운 빈 칸에 내려서고, 보호막이 있으면 대신 깨집니다).
+- 공중의 기물에도 move(공중 칸끼리), remove, tag, untag, transform, convert, swap(공중 칸끼리)을 쓸 수 있습니다. 땅과 공중을 move나 swap으로 오갈 수는 없습니다(띄우려면 공중부양 태그, 내리려면 그 태그를 뗍니다). spawn, revive, 지형, 다리·사다리는 땅에만 씁니다. 공중에서는 unboard할 수 없습니다.
+- 띄울 기물 바로 위 공중 칸이 비어 있어야 합니다. 주체와 대상의 거리에서 땅의 칸과 그 위 공중 칸은 1칸입니다.
 
 ## 합 (clash)
 - 태그에 합 배율(clash, 1.2~2.0)을 주면 그 기물은 싸움 실력이 생깁니다. 예: "검술" ×1.5, 대가의 검술 ×2.0.
@@ -113,6 +121,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - 기절과 보호막은 지속 턴이 길수록, 영구일수록 DC와 비용을 높이세요. 대부분은 1~2턴이면 충분합니다. 보호막은 합 덕분에 강하니 DC를 +2 더 높이세요.
 - 합 배율(clash) 태그는 강합니다. ×1.2~1.4는 DC 11~14·AP 2, ×1.5~2.0은 DC 15~20·AP 3이 기준이고, 영구(turns 0)면 DC를 +3 더 높이세요. 예: 영구 검술 ×1.5 → DC 18, AP 3. 3턴 창술 ×1.3 → DC 13, AP 2.
 - 화상은 짧을수록(상대가 피할 시간이 적을수록) 강합니다. 보통 2~3턴, 중요한 기물일수록 DC를 높이세요.
+- 공중부양: 내 기물을 1~2턴 띄우기는 DC 9~13·AP 1~2(공중에서 땅의 기물을 무시하고 움직이는 힘). 상대 기물을 띄우는 것은 떨어질 때 죽을 수 있으니 제거에 가깝게(DC 14~18, AP 2~3), 오래 또는 영구로 띄우면 더 어렵게.
 - 되살리기는 기물을 새로 만드는 것과 같은 무게로, 되살리는 기물이 강할수록 어렵게 하세요.
 - 벽과 구덩이는 1~3턴이 보통입니다. 오래가거나 영구인 지형, 여러 칸, 킹을 가두는 지형은 어렵게 하세요. 기물을 삼키는 구덩이는 제거와 같은 무게입니다.
 - 선언이 체스판의 상황과 맞아떨어질수록(예: 실제로 인접한 기물끼리의 협동) DC를 낮추고, 억지스러울수록 높이세요.
@@ -142,20 +151,25 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 }
 
 /** Text board, uppercase = white, rank 8 at the top. */
+/** The ground as a grid, and (if anything floats) the air layer above it. */
 function boardGrid(state: GameState): string {
-  const rows: string[] = [];
   const ground = new Map((state.terrain ?? []).map((c) => [c.at, c.cover ? (c.kind === 'wall' ? 'H' : '=') : c.kind === 'wall' ? '#' : 'O']));
-  for (let rank = 7; rank >= 0; rank--) {
-    const cells: string[] = [];
-    for (let file = 0; file < 8; file++) {
-      const p = state.board[rank * 8 + file];
-      const g = ground.get(rank * 8 + file);
-      cells.push(p ? (p.color === 'white' ? LETTER[p.type].toUpperCase() : LETTER[p.type]) : (g ?? '.'));
+  const grid = (layer: number, terrain: boolean) => {
+    const rows: string[] = [];
+    for (let rank = 7; rank >= 0; rank--) {
+      const cells: string[] = [];
+      for (let file = 0; file < 8; file++) {
+        const p = state.board[layer + rank * 8 + file];
+        const g = terrain ? ground.get(rank * 8 + file) : undefined;
+        cells.push(p ? (p.color === 'white' ? LETTER[p.type].toUpperCase() : LETTER[p.type]) : (g ?? '.'));
+      }
+      rows.push(`${rank + 1} ${cells.join(' ')}`);
     }
-    rows.push(`${rank + 1} ${cells.join(' ')}`);
-  }
-  rows.push('  a b c d e f g h');
-  return rows.join('\n');
+    rows.push('  a b c d e f g h');
+    return rows.join('\n');
+  };
+  const floating = state.board.some((p, sq) => p && isAir(sq));
+  return floating ? `(땅)\n${grid(0, true)}\n\n(공중, 칸 이름 끝에 ^)\n${grid(AIR, false)}` : grid(0, true);
 }
 
 function describeTags(p: Piece): string {
@@ -228,8 +242,10 @@ function declaredSquares(action: string, state: GameState): string {
   const at = (n: string) => parseSquare(n)!;
   const what = (n: string) => {
     const p = state.board[at(n)];
+    const up = state.board[airOf(at(n))];
     const ground = state.terrain?.find((c) => c.at === at(n));
-    return p ? `${COLOR[p.color]} ${PIECE[p.type]}${p.rider ? `(탑승: ${PIECE[p.rider.type]})` : ''}` : ground ? TERRAIN_NAME[ground.kind] : '빈 칸';
+    const here = p ? `${COLOR[p.color]} ${PIECE[p.type]}${p.rider ? `(탑승: ${PIECE[p.rider.type]})` : ''}` : ground ? TERRAIN_NAME[ground.kind] : '빈 칸';
+    return up ? `${here}, 그 위 공중 ${n}^: ${COLOR[up.color]} ${PIECE[up.type]}` : here;
   };
   const lines = [`- 칸: ${names.map((n) => `${n}(${what(n)})`).join(', ')}`];
   const pairs: string[] = [];
@@ -302,7 +318,7 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 ## 효과 (이것만 쓸 수 있습니다)
 - {"type": "move", "from": "b1", "to": "e5"}: 기물을 옮긴다. to에 상대 기물이 있으면 잡는다.
 - {"type": "remove", "at": "d7"}: 기물을 없앤다.
-- {"type": "tag", "at": "g8", "tag": "기절", "turns": 1}: 태그를 붙인다 (turns 0 = 영구, 그 기물 주인의 턴 기준). "기절"은 못 움직임, "보호막"은 한 번의 잡힘을 막음, "화상"은 지속 턴 안에 칸을 옮기지 않으면 타서 없어짐(1턴 이상, 킹 불가), 그 밖의 이름은 서사용.
+- {"type": "tag", "at": "g8", "tag": "기절", "turns": 1}: 태그를 붙인다 (turns 0 = 영구, 그 기물 주인의 턴 기준). "기절"은 못 움직임, "보호막"은 한 번의 잡힘을 막음, "화상"은 지속 턴 안에 칸을 옮기지 않으면 타서 없어짐(1턴 이상, 킹 불가), "공중부양"은 그 기물을 바로 위 공중 칸(^)으로 띄움(끝나면 떨어짐), 그 밖의 이름은 서사용.
 - {"type": "untag", "at": "g8", "tag": "기절"}: 태그를 뗀다.
 - {"type": "transform", "at": "a2", "into": "knight"}: 기물 종류를 바꾼다 (queen, rook, bishop, knight, pawn).
 - {"type": "spawn", "at": "e4", "color": "white", "piece": "pawn"}: 빈 칸에 기물을 만든다.
@@ -314,7 +330,7 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 - {"type": "clearTerrain", "at": "d4"}: 벽이나 구덩이를 없앤다.
 - {"type": "cover", "at": "d4", "kind": "bridge", "turns": 2}: 구덩이에 다리(bridge, 건너고 설 수 있음)나 벽에 사다리(ladder, 넘어가기만)를 놓는다. {"type": "clearCover", "at": "d4"}로 치운다(다리 위 기물은 빠짐).
 - tag에는 합 배율(clash 1.2~2.0, 싸움 실력)을, tag·terrain·cover에는 prop(모습: 미리 만든 모양 sword, spear, shield, ladder, bridge, flag, crown, barricade 또는 직접 조합)을 줄 수 있다. 필요 없으면 clash 0, prop의 preset "none".
-칸 이름은 a1~h8 형식이고, 효과는 순서대로 앞 효과가 적용된 보드를 기준으로 합니다.
+칸 이름은 a1~h8 형식(공중의 칸은 e4^처럼 ^를 붙임)이고, 효과는 순서대로 앞 효과가 적용된 보드를 기준으로 합니다.
 
 ## 절대 규칙 (어기면 사건 전체가 취소됩니다)
 - 효과는 1~3개, 최대 ${rules.maxEffects}개.
@@ -327,6 +343,13 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 - 다리(bridge)를 놓은 구덩이는 평범한 칸처럼 지나가고 설 수 있습니다(양편 모두). 다리가 끝나거나 끊기면 그 위의 기물이 빠집니다.
 - 사다리(ladder)를 건 벽은 지나갈 수만 있고 그 위에 멈출 수는 없습니다(양편 모두, 체크도 넘어감).
 - 다리와 사다리도 만든 쪽의 턴 기준으로 남은 턴을 세고, 1~3턴이 보통입니다. 지형 자체보다 쉽게(DC 8~12, AP 1) 정하세요.
+
+## 공중 (공중부양)
+- 보드 위에는 같은 모양의 공중 판이 하나 더 떠 있습니다. 공중부양 중인 기물만 공중 판(칸 이름 끝에 ^)에 있습니다.
+- 공중의 기물은 공중 판에서 평소처럼 움직이고, 공중의 적만 잡을 수 있습니다(합도 공중끼리만). 땅의 기물은 공중의 기물을 잡지 못하고, 공중의 기물은 땅의 길을 막지 않습니다. 벽과 구덩이는 공중에 영향이 없습니다. 체크도 같은 판끼리만 겁니다.
+- 공중부양의 남은 턴이 다하면(또는 untag로 떼면) 기물이 떨어집니다. 물리엔진이 떨어진 자리를 정하고, 기물은 가장 많이 겹친 빈 칸에 섭니다. 구덩이에 떨어지면 파묻혀 없어지고, 보드 밖으로 떨어지거나 둘러싸여 설 빈 칸이 없으면 산산조각 납니다(킹은 가장 가까운 빈 칸에 내려서고, 보호막이 있으면 대신 깨집니다).
+- 공중의 기물에도 move(공중 칸끼리), remove, tag, untag, transform, convert, swap(공중 칸끼리)을 쓸 수 있습니다. 땅과 공중을 move나 swap으로 오갈 수는 없습니다(띄우려면 공중부양 태그, 내리려면 그 태그를 뗍니다). spawn, revive, 지형, 다리·사다리는 땅에만 씁니다. 공중에서는 unboard할 수 없습니다.
+- 띄울 기물 바로 위 공중 칸이 비어 있어야 합니다. 주체와 대상의 거리에서 땅의 칸과 그 위 공중 칸은 1칸입니다.
 
 ## 합 (clash)
 - 태그에 합 배율(clash, 1.2~2.0)을 주면 그 기물은 싸움 실력이 생깁니다. 예: "검술" ×1.5, 대가의 검술 ×2.0.

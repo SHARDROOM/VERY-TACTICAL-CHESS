@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Quaternion, Vector3 } from 'three';
-import { createInitialState, createStateFrom, parseSquare } from '../engine';
-import { runLength, simulateRomp } from './boardPhysics';
+import { AIR, LEVITATE, createInitialState, createStateFrom, parseSquare, restingPlace } from '../engine';
+import { runLength, simulateFalls, simulateRomp } from './boardPhysics';
 import { squareToWorld } from './coords';
 
 const sq = (n: string) => parseSquare(n)!;
@@ -46,5 +46,27 @@ describe('a move as a romp', () => {
     expect(Math.hypot(k.x - tx, k.z - tz)).toBeLessThan(3);
     const again = await simulateRomp(opts);
     expect(end(again.tracks.get(knight.id)!)).toEqual(k);
+  }, 30_000);
+});
+
+describe('a fall from the air', () => {
+  const drop = (seed: number) => {
+    const s = createStateFrom({ e1: { color: 'white', type: 'king' }, d3: { color: 'black', type: 'pawn' }, e4: { color: 'black', type: 'pawn' } });
+    const knight = { id: 'k', color: 'white' as const, type: 'knight' as const, tags: [{ name: LEVITATE, turnsLeft: 1, appliedOnTurn: 0 }] };
+    return simulateFalls({ board: s.board, falling: [{ piece: knight, from: sq('d4') + AIR }], seed }).then((r) => ({ ...r, s }));
+  };
+
+  it('drops onto the board near its square, the same way for the same seed', async () => {
+    const a = await drop(11);
+    const b = await drop(11);
+    expect(a.landings).toEqual(b.landings);
+    const [l] = a.landings;
+    expect(Math.abs(l.file - 3)).toBeLessThan(1.2);
+    expect(Math.abs(l.rank - 3)).toBeLessThan(1.2);
+    const track = a.run.tracks.get('k')!;
+    expect(track[1]).toBeGreaterThan(1.2); // it starts up in the air
+    expect(end(track).y).toBeLessThan(0.3); // and ends on the board
+    // The rules make a square of it.
+    expect(restingPlace(a.s.board, [], l.file, l.rank).result).not.toBeUndefined();
   }, 30_000);
 });

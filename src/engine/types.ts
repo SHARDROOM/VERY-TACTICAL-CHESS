@@ -13,6 +13,11 @@ export const RIDE = '탑승';
 export const SHIELD = '보호막';
 /** A burning piece: if it has not moved off its square when the turns run out, it burns to ash. */
 export const BURN = '화상';
+/**
+ * A floating piece: it stands on the air layer (the square + 64) for as long as the tag lasts,
+ * and falls when it ends (see levitation.ts).
+ */
+export const LEVITATE = '공중부양';
 
 export interface Tag {
   name: string;
@@ -79,7 +84,10 @@ export interface TerrainCell {
   cover?: TerrainCover;
 }
 
-/** 0..63, index = rank * 8 + file. a1 = 0, h1 = 7, a8 = 56. */
+/**
+ * 0..63 on the ground, index = rank * 8 + file (a1 = 0, h1 = 7, a8 = 56); 64..127 the air above
+ * the same squares (see squares.ts). Walls, pits, castling and en passant are ground only.
+ */
 export type Square = number;
 
 export type Board = ReadonlyArray<Piece | null>;
@@ -196,8 +204,26 @@ export interface PendingAction {
   retry?: { roll: number; narration: string; rerolls: number };
 }
 
+/** A piece whose levitation ended: it is off the board until the fall is played (the `land` command). */
+export interface FallingPiece {
+  piece: Piece;
+  /** The air square it falls from. */
+  from: Square;
+}
+
+/**
+ * Where a falling piece came to rest, as the physics put it: continuous board coordinates (a
+ * square's centre is its file and rank; off the board is below 0 or above 7).
+ */
+export interface Landing {
+  id: string;
+  file: number;
+  rank: number;
+}
+
 export interface GameState {
   rules: RuleConfig;
+  /** SQUARES entries: the ground, then the air (see Square). */
   board: Board;
   turn: Color;
   /** Starts at 1 and increases every time the turn passes. */
@@ -220,6 +246,8 @@ export interface GameState {
   chaosLog?: ChaosRecord[];
   /** Walls and pits on the board (missing = none). */
   terrain?: TerrainCell[];
+  /** Pieces falling from the air, waiting for the `land` command (missing = none). Nothing else happens meanwhile. */
+  falling?: FallingPiece[];
 }
 
 export type Command =
@@ -233,7 +261,12 @@ export type Command =
   /** The side to move ran out of time: it loses AP and the turn passes. */
   | { type: 'timeout' }
   /** A chaos event at the start of a turn (no AP, no dice). */
-  | { type: 'chaos'; chaos: ChaosEvent };
+  | { type: 'chaos'; chaos: ChaosEvent }
+  /**
+   * The falling pieces come down where the physics put them (simulated outside the engine with
+   * `seed`, which the screens replay). A piece without a landing drops straight down.
+   */
+  | { type: 'land'; seed: number; landings: Landing[] };
 
 export type MoveSpecial =
   | { kind: 'castle'; side: 'king' | 'queen' }
@@ -261,7 +294,22 @@ export type GameEvent =
       exchanges: number;
     }
   /** `cause`: burnt up by 화상, fell into a pit, or lost a clash it started. `exit`: how it goes, if the rules say. */
-  | { type: 'removed'; piece: Piece; at: Square; cause?: 'burn' | 'pit' | 'clash'; exit?: Exit }
+  | { type: 'removed'; piece: Piece; at: Square; cause?: 'burn' | 'pit' | 'clash' | 'fall'; exit?: Exit }
+  /** A piece given 공중부양 rises from its square to the air above it. */
+  | { type: 'lifted'; pieceId: string; from: Square; to: Square }
+  /** A floating piece's levitation ended (it ran out, or was taken away): it falls (see `fell`). */
+  | { type: 'fallStarted'; pieceId: string; at: Square }
+  /**
+   * The falls played out, in order, from the physics run with `seed`. `to`: the ground square it
+   * now stands on (a king that would have died there is put on the nearest free square instead,
+   * `pushed`), or null when it is gone: `buried` in a pit, `shattered` off the board or with no
+   * free square under it.
+   */
+  | {
+      type: 'fell';
+      seed: number;
+      falls: { pieceId: string; from: Square; to: Square | null; result: 'landed' | 'pushed' | 'buried' | 'shattered' }[];
+    }
   | { type: 'tagged'; pieceId: string; at: Square; tag: string; turns: number | null }
   | { type: 'untagged'; pieceId: string; at: Square; tag: string }
   | { type: 'tagExpired'; pieceId: string; tag: string }
@@ -330,7 +378,10 @@ export type RejectReason =
   | 'kingProtectedThisTurn'
   | 'nothingDoneThisTurn'
   | 'invalidChaos'
-  | 'clashRollsNeeded';
+  | 'clashRollsNeeded'
+  /** A piece is falling: only `land` may come next. */
+  | 'landingPending'
+  | 'nothingFalling';
 
 export type CommandResult =
   | { ok: true; state: GameState; events: GameEvent[] }

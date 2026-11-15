@@ -1,9 +1,10 @@
-import { PROMOTION_TYPES, type GameEvent, type GameState } from '../engine';
+import { PROMOTION_TYPES, SQUARES, type GameEvent, type GameState } from '../engine';
 import { cleanChat, cleanName, type ChatMessage, type Member, type NoticeTone, type Phase, type Request, type TimerSnapshot } from './types';
 import { parseDoodleChange, parseDoodleOp, type Doodle, type DoodleChange, type DoodleOp } from './doodle';
 
 
-export const PROTOCOL_VERSION = 2;
+/** 3: the air layer (128-square boards, falling pieces). */
+export const PROTOCOL_VERSION = 3;
 
 /**
  * `id` is a random per-browser id, so a guest coming back gets their seat again.
@@ -48,7 +49,7 @@ export type HostMessage =
   | { t: 'doodle'; change: DoodleChange };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const isSquare = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 64;
+const isSquare = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < SQUARES;
 
 /** The host must not trust anything a guest sends: this is the only door in. */
 export function parseGuestMessage(raw: unknown): GuestMessage | null {

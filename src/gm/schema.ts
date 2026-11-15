@@ -3,7 +3,7 @@ import { ELEMENTS, MEANS } from '../engine';
 import { GmRulingStagingSchema, GmStagingSchema } from './staging';
 import { GmPropSchema } from './props';
 
-const square = (what: string) => z.string().describe(`${what}, 예: "e4"`);
+const square = (what: string) => z.string().describe(`${what}, 예: "e4" (공중의 칸은 "e4^")`);
 const pieceType = z.enum(['queen', 'rook', 'bishop', 'knight', 'pawn']);
 
 /**

@@ -8,14 +8,16 @@ const PROMOTION_WORDS: Record<string, PromotionType> = {
 
 /**
  * Parses coordinate moves such as "e2e4", "e2-e4", "e2 e4", with an optional
- * promotion suffix: "e7e8q", "e7e8=Q", "e7e8 퀸".
+ * promotion suffix: "e7e8q", "e7e8=Q", "e7e8 퀸". In the air: "e4^e5^", or just "e4^e5"
+ * (a piece in the air stays there).
  */
 export function parseMoveText(text: string): { from: Square; to: Square; promotion?: PromotionType } | null {
-  const m = /^\s*([a-h][1-8])\s*[-\s]?\s*([a-h][1-8])\s*(?:=?\s*([qrbn]|퀸|룩|비숍|나이트))?\s*$/i.exec(text);
+  const m = /^\s*([a-h][1-8]\^?)\s*[-\s]?\s*([a-h][1-8])(\^?)\s*(?:=?\s*([qrbn]|퀸|룩|비숍|나이트))?\s*$/i.exec(text);
   if (!m) return null;
   const from = parseSquare(m[1]);
-  const to = parseSquare(m[2]);
+  const up = m[1].endsWith('^') || m[3] === '^';
+  const to = parseSquare(m[2] + (up ? '^' : ''));
   if (from === null || to === null) return null;
-  const promotion = m[3] ? PROMOTION_WORDS[m[3].toLowerCase()] : undefined;
+  const promotion = m[4] ? PROMOTION_WORDS[m[4].toLowerCase()] : undefined;
   return promotion ? { from, to, promotion } : { from, to };
 }

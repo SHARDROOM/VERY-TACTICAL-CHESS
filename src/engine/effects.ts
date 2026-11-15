@@ -1,6 +1,7 @@
 import type { Exit } from './staging';
 import {
   BURN,
+  LEVITATE,
   RIDE,
   TERRAIN_KINDS,
   TERRAIN_NAME,
@@ -8,6 +9,7 @@ import {
   type CapturedPiece,
   type Color,
   type Effect,
+  type FallingPiece,
   type GameEvent,
   type Piece,
   type PieceType,
@@ -17,7 +19,7 @@ import {
   type TerrainKind,
 } from './types';
 import type { RuleConfig } from './config';
-import { rankOf, squareName } from './squares';
+import { SQUARES, airOf, isAir, rankOf, sameLayer, squareName } from './squares';
 import { extinguish, isShielded, isStunned, withTag, withoutTag } from './tags';
 import { SHIELD } from './types';
 import { MAX_TERRAIN, dropFromBridges } from './terrain';
@@ -25,6 +27,7 @@ import { capturedAfter } from './captured';
 import { checkActor } from './actor';
 import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, resolveClash } from './clash';
 import { cleanProp } from './props';
+import { startFalls } from './levitation';
 
 const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑' };
 const PIECE_NAME: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
@@ -53,12 +56,26 @@ export type EffectResult =
    * `sources[i]`: which effect (0-based) produced `events[i]`; -1 for the promotions at the end.
    * `cut`: the effect where an attacker lost a clash; the ones after it never happened.
    */
-  | { ok: true; board: Board; terrain: TerrainCell[]; events: GameEvent[]; sources: number[]; touched: Square[]; nextSpawnId: number; cut?: number }
+  | {
+      ok: true;
+      board: Board;
+      terrain: TerrainCell[];
+      events: GameEvent[];
+      sources: number[];
+      touched: Square[];
+      nextSpawnId: number;
+      cut?: number;
+      /** Floating pieces whose levitation was taken away: they fall next (see levitation.ts). */
+      falling: FallingPiece[];
+    }
   | { ok: false; detail: string; code?: 'clashRollsNeeded' };
 
 const PIECE_TYPES: readonly PieceType[] = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'];
 const isInt = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n);
-const onBoard = (sq: unknown): sq is Square => isInt(sq) && sq >= 0 && sq < 64;
+const onBoard = (sq: unknown): sq is Square => isInt(sq) && sq >= 0 && sq < SQUARES;
+/** Things that only happen on the ground (walls, pits, bridges, new pieces). */
+const onGround = (sq: unknown): sq is Square => onBoard(sq) && !isAir(sq);
+const AIR_ONLY_LEVITATE = '공중 칸에는 공중부양 중인 기물만 있을 수 있음: 땅의 기물에 공중부양 태그를 붙여 띄우세요';
 const isColor = (c: unknown): c is Color => c === 'white' || c === 'black';
 const isPieceType = (t: unknown): t is PieceType => PIECE_TYPES.includes(t as PieceType);
 const isTerrainKind = (k: unknown): k is TerrainKind => TERRAIN_KINDS.includes(k as TerrainKind);
@@ -89,6 +106,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
   /** Clash dice used so far (they are used in order across the effects). */
   let rollAt = 0;
   let cut: number | undefined;
+  const falling: FallingPiece[] = [];
 
   const sources: number[] = [];
   for (const [i, e] of effects.entries()) {
@@ -112,6 +130,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (!piece) return fail(`${squareName(e.from)}에 기물이 없음`);
         if (isStunned(piece)) return fail(`${squareName(e.from)}의 기물은 기절해서 움직일 수 없음`);
         if (e.from === e.to) return fail('같은 칸으로 이동');
+        if (!sameLayer(e.from, e.to)) return fail('땅과 공중 사이는 move로 오갈 수 없음 (띄우려면 공중부양 태그, 내리려면 그 태그를 떼세요)');
         const ground = terrainOn(e.to);
         if (ground?.kind === 'wall') return fail(`${squareName(e.to)}에 벽이 있음`);
         if (ground?.kind === 'pit' && ground.cover?.kind !== 'bridge') {
@@ -215,7 +234,18 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           return fail(`합 배율은 ×${CLASH_MIN}~×${CLASH_MAX}`);
         }
         const prop = e.prop ? cleanProp(e.prop) : null;
-        board[e.at as Square] = withTag(piece, {
+        // 공중부양 lifts a piece on the ground into the air above it (already floating: it lasts longer).
+        let at = e.at as Square;
+        if (name === LEVITATE && !isAir(at)) {
+          const up = airOf(at);
+          if (board[up]) return fail(`${squareName(up)}(${squareName(at)} 위 공중)에 이미 기물이 있음`);
+          board[at] = null;
+          board[up] = piece;
+          touched.push(at);
+          events.push({ type: 'lifted', pieceId: piece.id, from: at, to: up });
+          at = up;
+        }
+        board[at] = withTag(piece, {
           name,
           turnsLeft,
           appliedOnTurn: ctx.turnNumber,
@@ -223,7 +253,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           ...(e.clash !== undefined && { clash: Math.round(e.clash * 10) / 10 }),
           ...(prop && { prop }),
         });
-        events.push({ type: 'tagged', pieceId: piece.id, at: e.at as Square, tag: name, turns: turnsLeft });
+        events.push({ type: 'tagged', pieceId: piece.id, at, tag: name, turns: turnsLeft });
         break;
       }
       case 'untag': {
@@ -235,6 +265,8 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (!piece.tags?.some((t) => t.name === name)) break;
         board[e.at as Square] = withoutTag(piece, name);
         events.push({ type: 'untagged', pieceId: piece.id, at: e.at as Square, tag: name });
+        // Its levitation taken away, a floating piece falls (where it lands is played out later).
+        if (name === LEVITATE) falling.push(...startFalls(board, events));
         break;
       }
       case 'board': {
@@ -244,6 +276,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (!rider) return fail(`${squareName(e.rider)}에 탈 기물이 없음`);
         if (!carrier) return fail(`${squareName(e.carrier)}에 태울 기물이 없음`);
         if (e.rider === e.carrier) return fail('기물이 자기 자신에게 탈 수 없음');
+        if (!sameLayer(e.rider, e.carrier)) return fail('땅과 공중의 기물끼리는 탈 수 없음');
         if (rider.color !== carrier.color) return fail('같은 편 기물에만 탈 수 있음');
         if (rider.type === 'king') return fail('킹은 다른 기물에 탈 수 없음');
         if (isStunned(rider)) return fail('기절한 기물은 움직일 수 없음');
@@ -260,6 +293,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (!onBoard(e.at) || !onBoard(e.to)) return fail('보드 밖의 칸');
         const carrier = board[e.at];
         if (!carrier?.rider) return fail(`${squareName(e.at)}의 기물에는 타고 있는 기물이 없음`);
+        if (isAir(e.at) || isAir(e.to)) return fail('공중에서는 내릴 수 없음 (태운 기물이 땅에 있을 때만)');
         if (board[e.to]) return fail(`내릴 칸 ${squareName(e.to)}이(가) 비어 있지 않음`);
         const wall = blockedLanding(e.to);
         if (wall) return fail(wall);
@@ -282,6 +316,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         break;
       }
       case 'spawn': {
+        if (onBoard(e.at) && isAir(e.at)) return fail(AIR_ONLY_LEVITATE);
         if (!onBoard(e.at)) return fail('보드 밖의 칸');
         if (board[e.at]) return fail(`${squareName(e.at)}이(가) 비어 있지 않음`);
         const blocked = blockedLanding(e.at);
@@ -313,6 +348,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (!a) return fail(`${squareName(e.a)}에 기물이 없음`);
         if (!b) return fail(`${squareName(e.b)}에 기물이 없음`);
         if (e.a === e.b) return fail('같은 칸끼리는 맞바꿀 수 없음');
+        if (!sameLayer(e.a, e.b)) return fail('땅과 공중의 기물끼리는 맞바꿀 수 없음');
         if (isStunned(a)) return fail(`${squareName(e.a)}의 기물은 기절해서 움직일 수 없음`);
         if (isStunned(b)) return fail(`${squareName(e.b)}의 기물은 기절해서 움직일 수 없음`);
         touched.push(e.a, e.b);
@@ -322,6 +358,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         break;
       }
       case 'revive': {
+        if (onBoard(e.at) && isAir(e.at)) return fail(AIR_ONLY_LEVITATE);
         if (!onBoard(e.at)) return fail('보드 밖의 칸');
         if (board[e.at]) return fail(`${squareName(e.at)}이(가) 비어 있지 않음`);
         const blocked = blockedLanding(e.at);
@@ -340,7 +377,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         break;
       }
       case 'terrain': {
-        if (!onBoard(e.at)) return fail('보드 밖의 칸');
+        if (!onGround(e.at)) return fail(onBoard(e.at) ? '지형은 땅에만 만들 수 있음' : '보드 밖의 칸');
         if (!isTerrainKind(e.kind)) return fail('지형은 wall(벽)이나 pit(구덩이)만 됨');
         if (!isInt(e.turns) || e.turns < 0) return fail('지속 턴은 0(영구) 이상의 정수여야 함');
         const piece = board[e.at];
@@ -369,7 +406,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         break;
       }
       case 'cover': {
-        if (!onBoard(e.at)) return fail('보드 밖의 칸');
+        if (!onGround(e.at)) return fail(onBoard(e.at) ? '다리와 사다리는 땅에만 놓을 수 있음' : '보드 밖의 칸');
         if (e.kind !== 'bridge' && e.kind !== 'ladder') return fail('덮개는 bridge(다리)나 ladder(사다리)만 됨');
         if (!isInt(e.turns) || e.turns < 0) return fail('지속 턴은 0(영구) 이상의 정수여야 함');
         const cell = terrainOn(e.at);
@@ -383,7 +420,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         break;
       }
       case 'clearCover': {
-        if (!onBoard(e.at)) return fail('보드 밖의 칸');
+        if (!onGround(e.at)) return fail(onBoard(e.at) ? '공중에는 다리나 사다리가 없음' : '보드 밖의 칸');
         const cell = terrainOn(e.at);
         // No bridge or ladder there: a harmless no-op.
         if (!cell?.cover) break;
@@ -400,7 +437,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         break;
       }
       case 'clearTerrain': {
-        if (!onBoard(e.at)) return fail('보드 밖의 칸');
+        if (!onGround(e.at)) return fail(onBoard(e.at) ? '공중에는 지형이 없음' : '보드 밖의 칸');
         const cell = terrainOn(e.at);
         // Clearing a square with nothing on it is a harmless no-op.
         if (!cell) break;
@@ -414,7 +451,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
   }
   while (sources.length < events.length) sources.push(cut ?? effects.length - 1);
   // A pawn carried to its last rank by an effect promotes, like after a normal move (always to a queen).
-  for (let sq = 0; sq < 64; sq++) {
+  for (let sq = 0; sq < SQUARES; sq++) {
     const piece = board[sq];
     if (piece?.type !== 'pawn' || !pawnStuckAt(sq, piece.color)) continue;
     board[sq] = { ...piece, type: 'queen' };
@@ -422,7 +459,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
     events.push({ type: 'transformed', pieceId: piece.id, at: sq, from: 'pawn', to: 'queen' });
     sources.push(-1);
   }
-  return { ok: true, board, terrain, events, sources, touched, nextSpawnId, ...(cut !== undefined && { cut }) };
+  return { ok: true, board, terrain, events, sources, touched, nextSpawnId, falling, ...(cut !== undefined && { cut }) };
 }
 
 /** Checks a ruling against the rules and dry-runs its effects. Returns a problem description, or null if valid. */

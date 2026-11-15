@@ -7,6 +7,8 @@ import { LocalSession } from './session/localSession';
 import { HostSession } from './session/hostSession';
 import { GuestSession } from './session/guestSession';
 import { inviteLink, joinRoom, normalizeRoomCode, openRoom } from './session/peerTransport';
+import { simulateFalls } from './scene/boardPhysics';
+import type { FallSimulator } from './session/authority';
 import { browserId, clearSavedGame, gmForSave, gmFromSave, loadSavedGame, rememberGm, rememberedGm, saveGame, savedName, type SavedGame } from './session/storage';
 import type { Session, SessionView } from './session/types';
 import { WaitingRoom } from './ui/WaitingRoom';
@@ -22,6 +24,9 @@ function roomFromHash(): string | null {
 function clearHash() {
   history.replaceState(null, '', `${location.pathname}${location.search}`);
 }
+
+/** Falls from the air (공중부양) are settled by the physics, on the side that runs the game. */
+const landFalls: FallSimulator = (q) => simulateFalls(q).then((r) => r.landings);
 
 /** How the current game is saved (only the side that runs the game saves it). */
 type SaveTarget = { kind: 'hotseat' } | { kind: 'host'; code: string } | null;
@@ -84,7 +89,7 @@ export default function App() {
   const hotseat = (resume: SavedGame | null = null) => {
     const config = resumeGm(resume);
     start(
-      new LocalSession(createGm(config), { roll: rollD20, initialState: resume?.state, phase: resume ? 'playing' : 'waiting' }),
+      new LocalSession(createGm(config), { roll: rollD20, initialState: resume?.state, phase: resume ? 'playing' : 'waiting', fall: landFalls }),
       { kind: 'hotseat' },
       resume ? `저장된 게임을 이어 갑니다.${keyNotice(config)}` : null,
     );
@@ -110,6 +115,7 @@ export default function App() {
       hostSession = new HostSession(createGm(config), {
         code: room.code,
         link: inviteLink(room.code),
+        fall: landFalls,
         initialState: resume?.state,
         black: resume?.black,
         hostName: savedName() || undefined,

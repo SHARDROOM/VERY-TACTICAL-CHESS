@@ -1,7 +1,7 @@
 import type { Color, GameState, RuleConfig } from '../engine';
 import { rollD20 } from '../dice';
 import type { GameMaster } from '../gm/types';
-import { Authority, type AuthorityEvent } from './authority';
+import { Authority, type AuthorityEvent, type FallSimulator } from './authority';
 import type { Channel } from './channel';
 import { Emitter } from './emitter';
 import { PROTOCOL_VERSION, parseGuestMessage, type HostMessage, type RoomSnapshot } from './protocol';
@@ -34,6 +34,8 @@ export interface HostOptions {
   hostName?: string;
   roll?: () => number;
   chance?: () => number;
+  /** Plays falls with physics (see Authority). */
+  fall?: FallSimulator;
   /** Liveness ping interval; 0 turns it off. Default 10 s. */
   heartbeatMs?: number;
   /** Silence after which a guest counts as gone. Default 3 minutes (see heartbeat.ts). */
@@ -73,6 +75,7 @@ export class HostSession implements Session {
       initial: options.initialState,
       phase: resumed ? 'playing' : 'waiting',
       chance: options.chance,
+      fall: options.fall,
     });
     const t = this.authority.timer();
     this.timer = t && { ...t, at: Date.now() };

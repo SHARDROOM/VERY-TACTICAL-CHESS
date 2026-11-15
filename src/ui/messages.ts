@@ -26,6 +26,8 @@ export const REJECT_MESSAGE: Record<RejectReason, string> = {
   nothingDoneThisTurn: '아무것도 하지 않고는 턴을 끝낼 수 없습니다. 수를 두거나 특수 행동을 시도해 주세요.',
   invalidChaos: '혼돈이 규칙에 맞지 않아 일어나지 않았습니다.',
   clashRollsNeeded: '합 주사위가 없어 처리할 수 없습니다.',
+  landingPending: '기물이 떨어지는 중입니다. 잠시 기다려 주세요.',
+  nothingFalling: '떨어지는 기물이 없습니다.',
 };
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
@@ -71,6 +73,7 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         if (e.cause === 'burn') add(`🔥 ${squareName(e.at)}의 ${COLOR_NAME[e.piece.color]} ${josa(PIECE_NAME[e.piece.type], '이/가')} 끝내 불타 재가 됨`, 'warn');
         else if (e.cause === 'pit') add(`🕳 ${COLOR_NAME[e.piece.color]} ${josa(PIECE_NAME[e.piece.type], '이/가')} ${squareName(e.at)}의 구덩이에 빠짐`);
         else if (e.cause === 'clash') break; // told with the clash
+        else if (e.cause === 'fall') add(`💥 ${COLOR_NAME[e.piece.color]} ${josa(PIECE_NAME[e.piece.type], '이/가')} 떨어져 산산조각 남`, 'warn');
         else add(`${COLOR_NAME[e.piece.color]} ${PIECE_NAME[e.piece.type]}(${squareName(e.at)}) 제거됨`);
         break;
       case 'tagged': {
@@ -130,6 +133,18 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         break;
       case 'coverGone':
         add(e.expired ? `⌛ ${squareName(e.at)}의 ${josa(COVER_NAME[e.kind], '이/가')} 사라짐` : `${squareName(e.at)}의 ${josa(COVER_NAME[e.kind], '이/가')} 없어짐`);
+        break;
+      case 'lifted':
+        add(`🪶 ${josa(name(e.pieceId), '이/가')} ${squareName(e.from)} 위 공중(${squareName(e.to)})으로 떠오름`);
+        break;
+      case 'fallStarted':
+        add(`⬇ ${squareName(e.at)}의 ${josa(name(e.pieceId), '이/가')} 떨어진다!`, 'warn');
+        break;
+      case 'fell':
+        for (const f of e.falls) {
+          if (f.result === 'landed') add(`${josa(name(f.pieceId), '이/가')} ${squareName(f.to!)}에 떨어짐`);
+          else if (f.result === 'pushed') add(`${josa(name(f.pieceId), '이/가')} 설 곳을 찾아 ${squareName(f.to!)}에 겨우 내려섬`, 'warn');
+        }
         break;
       case 'pushed':
         add(`${josa(name(e.pieceId), '이/가')} 무너지는 다리에서 ${josa(squareName(e.to), '으로/로')} 비켜남`, 'warn');
