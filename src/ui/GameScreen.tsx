@@ -35,7 +35,7 @@ import { DOODLE_COLORS, type DoodleOp } from '../session/doodle';
 import { clockText, rulesSummary } from './rules';
 import { Icon } from './Icon';
 import { PieceSilhouette } from './PieceSilhouette';
-import { buildShow, type Show } from './show';
+import { buildShow, directionsFor, type Show } from './show';
 import type { FxShow } from '../scene/FxLayer';
 
 interface LogLine extends LogEntry {
@@ -124,8 +124,6 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const [doodleTool, setDoodleTool] = useState<DoodleTool | null>(null);
   const lastTool = useRef<DoodleTool>({ kind: 'pen', color: DOODLE_COLORS[1], width: 0.06, noteText: '' });
   const onDoodle = useMemo(() => (op: DoodleOp) => session.doodle(op), [session]);
-  /** Pieces moved by the latest special action or chaos: they fly with physics instead of being carried. */
-  const [flung, setFlung] = useState<ReadonlySet<string>>(() => new Set());
   /** The show on screen (null between shows), and the caption that goes with it. */
   const [stage, setStage] = useState<Playing | null>(null);
   const [caption, setCaption] = useState<Caption | null>(null);
@@ -185,11 +183,6 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       const { events, before, after } = batch;
       const typeOf = (id: string) => findPiece(before.board, id)?.type ?? findPiece(after.board, id)?.type;
       addLog(describeEvents(events, typeOf));
-      const magic = events.some((ev) => ev.type === 'specialResolved' || ev.type === 'chaos');
-      const thrown = magic
-        ? events.flatMap((ev) => (ev.type === 'moved' ? [ev.pieceId] : ev.type === 'unboarded' ? [ev.riderId] : []))
-        : [];
-      setFlung(new Set(thrown));
       const passed = events.some((ev) => ev.type === 'turnPassed');
       if (passed) playSfx('turn', { delay: 0.25 });
       if (events.some((ev) => ev.type === 'check')) playSfx('check', { delay: 0.45 });
@@ -354,6 +347,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       followers: fx.map((f) => (f.shape === 'trail' && f.withEffect !== null ? (show.movers[f.withEffect] ?? null) : null)),
     };
   }, [stage]);
+  // What each piece does in the show (how it travels, appears, acts); hand moves have nothing.
+  const directions = useMemo(() => (stage ? directionsFor(stage.show, stage.startedAt) : undefined), [stage]);
   const shake = useMemo(() => {
     const strength = stage?.show.staging?.shake ?? 0;
     const at = stage?.show.timeline.shakeAt ?? null;
@@ -458,7 +453,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         onDiceLanded={onDiceLanded}
         ap={game.ap}
         captured={game.captured ?? []}
-        flung={flung}
+        directions={directions}
         fx={fxShow}
         shake={shake}
         doodle={

@@ -1,5 +1,23 @@
 import { useMemo, useState } from 'react';
-import { createInitialState, ELEMENTS, FX_SHAPES, parseSquare, type Element, type Fx, type FxShape } from '../engine';
+import {
+  ACT_DURATION,
+  applyEffects,
+  createInitialState,
+  ELEMENTS,
+  FX_SHAPES,
+  moveDuration,
+  parseSquare,
+  type ActKind,
+  type Board,
+  type Effect,
+  type Element,
+  type Entrance,
+  type Fx,
+  type FxShape,
+  type MotionStyle,
+  type PieceType,
+} from '../engine';
+import type { PieceDirection } from '../scene/pieceMotion';
 import { BoardScene } from '../scene/BoardScene';
 import type { FxShow } from '../scene/FxLayer';
 
@@ -7,7 +25,33 @@ import type { FxShow } from '../scene/FxLayer';
  * Dev-only page (?fxlab) for looking at GM effects without playing a game.
  * `?fxlab&fx=fire:burst:e4::3:1:2,light:beam:a1:h8` — element:shape:at:to:strength:radius:duration.
  * `&top` looks from above; `&shake=2` jolts the table.
+ * Pieces: `&trip=hop:b1-c3,spin:g1-f5` `&enter=rise:e4:queen` `&act=fall:e2` `&morph=c1:knight` `&swirl=a7`.
  */
+function staged(params: URLSearchParams, start: Board): { board: Board; directions: Map<string, PieceDirection> } {
+  const list = (name: string) => (params.get(name) ?? '').split(',').filter(Boolean).map((x) => x.split(':'));
+  const effects: Effect[] = [];
+  const trips: { from: number; style: MotionStyle; d: number }[] = [];
+  for (const [style, path] of list('trip')) {
+    const [a, b] = path.split('-').map((x) => parseSquare(x)!);
+    effects.push({ type: 'move', from: a, to: b });
+    trips.push({ from: a, style: style as MotionStyle, d: Math.hypot((a % 8) - (b % 8), Math.floor(a / 8) - Math.floor(b / 8)) });
+  }
+  const enters = list('enter').map(([style, sq, type]) => ({ style: style as Entrance, at: parseSquare(sq)! , type: (type ?? 'rook') as PieceType }));
+  for (const e of enters) effects.push({ type: 'spawn', at: e.at, color: 'white', piece: e.type });
+  for (const [sq, into] of list('morph')) effects.push({ type: 'transform', at: parseSquare(sq)!, into: into as PieceType });
+  for (const [sq] of list('swirl')) effects.push({ type: 'convert', at: parseSquare(sq)!, color: 'white' });
+  const applied = applyEffects(start, effects, { turnNumber: 1, nextSpawnId: 1 });
+  if (!applied.ok) throw new Error(applied.detail);
+  const directions = new Map<string, PieceDirection>();
+  const get = (id: string) => directions.get(id) ?? directions.set(id, { motions: [], acts: [] }).get(id)!;
+  for (const t of trips) get(start[t.from]!.id).motions.push({ style: t.style, duration: moveDuration(t.style, t.d) });
+  for (const e of enters) get(applied.board[e.at]!.id).entrance = { style: e.style, duration: e.style === 'rise' ? 0.9 : 0.8 };
+  for (const [sq] of list('morph')) get(applied.board[parseSquare(sq)!]!.id).morph = true;
+  for (const [sq] of list('swirl')) get(applied.board[parseSquare(sq)!]!.id).swirl = true;
+  const now = performance.now();
+  for (const [kind, sq] of list('act')) get(applied.board[parseSquare(sq)!]!.id).acts.push({ kind: kind as ActKind, start: now, duration: ACT_DURATION[kind as ActKind] });
+  return { board: applied.board, directions };
+}
 function parseFx(spec: string): Fx[] {
   return spec
     .split(',')
@@ -32,7 +76,8 @@ export default function FxLab() {
   const params = new URLSearchParams(location.search);
   const [spec, setSpec] = useState(params.get('fx') ?? 'fire:burst:e4');
   const [nonce, setNonce] = useState(0);
-  const board = useMemo(() => createInitialState().board, []);
+  const start = useMemo(() => createInitialState().board, []);
+  const [scene, setScene] = useState<{ board: Board; directions?: Map<string, PieceDirection> }>({ board: start });
   const fx = useMemo<FxShow>(() => {
     const list = parseFx(spec);
     return { fx: list, starts: list.map(() => 0), ends: list.map((f) => f.duration), startedAt: performance.now(), followers: list.map(() => null) };
@@ -43,7 +88,8 @@ export default function FxLab() {
   return (
     <div className="app">
       <BoardScene
-        board={board}
+        board={scene.board}
+        directions={scene.directions}
         selected={null}
         targets={[]}
         checkedKing={null}
@@ -64,6 +110,7 @@ export default function FxLab() {
         onSubmit={(e) => {
           e.preventDefault();
           setNonce((n) => n + 1);
+          setScene(staged(params, start));
         }}
       >
         <input value={spec} onChange={(e) => setSpec(e.target.value)} style={{ width: 420 }} />

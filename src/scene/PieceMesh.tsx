@@ -1,12 +1,14 @@
 import { createContext, useContext, useEffect, useRef } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
-import { Euler, Quaternion, Vector3, type Group } from 'three';
-import { CORE_TAGS, RIDE, SHIELD, STUN, hasTag, type Color, type Piece, type PieceType } from '../engine';
+import { Euler, Quaternion, Vector3, type Group, type Mesh, type MeshPhysicalMaterial } from 'three';
+import { CORE_TAGS, RIDE, SHIELD, STUN, hasTag, type Color, type Entrance, type MotionStyle, type Piece, type PieceType } from '../engine';
 import { PIECE_HEIGHT, pieceParts } from './pieceGeometry';
 import { ShieldBubble, StunStars, TagLabel } from './TagEffects';
 import { playSfx } from '../audio/sfx';
 import { ballistic, simulatePiece, tumble, type Obstacle, type PieceRun } from './piecePhysics';
 import { TABLE_TOP_Y } from './WoodTable';
+import { actPose, easeInOut, entrancePose, stylePose, type PieceDirection, type Pose } from './pieceMotion';
+import { squareToWorld } from './coords';
 
 /** What the pieces share for physics: which side the dice are on, and where taken pieces lie. */
 export interface PiecePhysics {
@@ -74,8 +76,8 @@ interface Props {
   captured?: boolean;
   /** Animate in (a piece created mid-game) instead of just being there. */
   popIn?: boolean;
-  /** Its next change of square was a special action or chaos, not a hand move: it flies. */
-  flung?: boolean;
+  /** What it does in the show being played (special actions and chaos); hand moves have none. */
+  direction?: PieceDirection;
   onClick?: (e: ThreeEvent<MouseEvent>) => void;
   onHover?: (hovering: boolean) => void;
 }
@@ -110,10 +112,47 @@ interface Motion {
   duration: number;
   arc: number;
   startedAt: number | null;
-  kind: 'move' | 'captured' | 'pop';
+  kind: 'move' | 'captured' | 'pop' | 'styled' | 'entrance';
+  /** For 'styled' trips and 'entrance's. */
+  style?: MotionStyle | Entrance;
 }
 
-const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+/** A glow over the piece's surface (morphs, side changes, materializing). */
+interface Glow {
+  color: string;
+  peak: number;
+  start: number;
+  duration: number;
+}
+
+/** A short flourish on top of everything else (morph squash, side-change swirl). */
+interface Flourish {
+  kind: 'morph' | 'swirl';
+  start: number;
+  duration: number;
+}
+
+const UP = new Vector3(0, 1, 0);
+const TMP_AXIS = new Vector3();
+const TMP_Q = new Quaternion();
+const TMP_Q2 = new Quaternion();
+
+/** A pose's turn and lean as a rotation; `dirX/dirZ` is the direction of travel. */
+function poseRotation(pose: Pose, dirX: number, dirZ: number, out: Quaternion): Quaternion {
+  out.setFromAxisAngle(UP, pose.yaw);
+  if (pose.lean) {
+    // Lean toward the direction of travel: turn about the horizontal axis across it.
+    TMP_AXIS.set(dirZ, 0, -dirX);
+    if (TMP_AXIS.lengthSq() > 1e-8) out.premultiply(TMP_Q2.setFromAxisAngle(TMP_AXIS.normalize(), pose.lean));
+  }
+  if (pose.roll) {
+    // Tip sideways: turn about the direction of travel itself.
+    TMP_AXIS.set(dirX, 0, dirZ);
+    if (TMP_AXIS.lengthSq() < 1e-8) TMP_AXIS.set(0, 0, 1);
+    out.premultiply(TMP_Q2.setFromAxisAngle(TMP_AXIS.normalize(), pose.roll));
+  }
+  return out;
+}
 
 /** How a piece travels between two points: knights jump, sliders glide with a small lift. */
 function planMove(piece: Piece, from: Vector3, to: Vector3, captured: boolean): Omit<Motion, 'from' | 'to' | 'fromScale' | 'toScale' | 'startedAt'> {
@@ -133,8 +172,18 @@ function planMove(piece: Piece, from: Vector3, to: Vector3, captured: boolean): 
  * visuals live here and in pieceGeometry, so they can later be swapped for
  * model files without touching the rest of the scene.
  */
-export function PieceMesh({ piece, position, selected, captured = false, popIn = false, flung = false, onClick, onHover }: Props) {
+export function PieceMesh({ piece, position, selected, captured = false, popIn = false, direction, onClick, onHover }: Props) {
   const group = useRef<Group>(null);
+  const riderRef = useRef<Group>(null);
+  /** Which of this show's trips comes next. */
+  const tripIndex = useRef(0);
+  const glow = useRef<Glow | null>(null);
+  const glowOn = useRef(false);
+  const flourish = useRef<Flourish | null>(null);
+  const riderHop = useRef<{ from: Vector3; start: number } | null>(null);
+  const shownSquash = useRef(1);
+  const travel = useRef({ x: 0, z: 0 });
+  const prev = useRef({ type: piece.type, color: piece.color, rider: piece.rider?.id ?? null });
   const physics = useContext(PiecePhysicsContext);
   const phys = useRef<PhysicsMotion | null>(null);
   const shownQ = useRef(new Quaternion());
@@ -209,9 +258,30 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     };
   }, []);
 
+  // A rider jumping off a carrier starts on top of it, small, then makes its trip down.
+  useEffect(() => {
+    if (direction?.appearFrom === undefined || captured) return;
+    const [x, , z] = squareToWorld(direction.appearFrom);
+    shownAt.current.set(x, 0.85, z);
+    shownScale.current = RIDER_SCALE;
+    motion.current = null;
+    lastTarget.current = '';
+  }, []);
+
+  // A piece created by a show appears the way the GM chose: risen from the board or out of light.
+  useEffect(() => {
+    const style = direction?.entrance?.style;
+    if (!popIn || !motion.current || (style !== 'rise' && style !== 'materialize')) return;
+    const at = new Vector3(...position);
+    motion.current = { from: at, to: at, fromScale: targetScale, toScale: targetScale, delay: 0, duration: direction!.entrance!.duration, arc: 0, startedAt: null, kind: 'entrance', style };
+    shownScale.current = style === 'materialize' ? 0.001 : targetScale;
+    if (style === 'materialize') glow.current = { color: '#fff1c9', peak: 1.4, start: performance.now(), duration: direction!.entrance!.duration * 1000 };
+    if (style === 'rise') shownAt.current.set(at.x, at.y - PIECE_HEIGHT[piece.type] - 0.05, at.z);
+  }, []);
+
   // A piece created mid-game drops onto its square.
   useEffect(() => {
-    if (!popIn || !physics || !motion.current) return;
+    if (!popIn || !physics || !motion.current || motion.current.kind === 'entrance') return;
     const to = new Vector3(...position);
     const start = to.clone().setY(2.4);
     const tilt = new Quaternion().setFromEuler(new Euler((Math.random() - 0.5) * 0.8, Math.random() * 6, (Math.random() - 0.5) * 0.8));
@@ -236,6 +306,31 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     );
   }, []);
 
+  // A new show: its trips start from the first.
+  useEffect(() => {
+    tripIndex.current = 0;
+  }, [direction]);
+
+  // Changes the show asked for: a new shape, a new side, a rider hopping on.
+  useEffect(() => {
+    const was = prev.current;
+    prev.current = { type: piece.type, color: piece.color, rider: piece.rider?.id ?? null };
+    if (!direction || captured) return;
+    const now = performance.now();
+    if (direction.morph && was.type !== piece.type) {
+      flourish.current = { kind: 'morph', start: now, duration: 600 };
+      glow.current = { color: '#ffe3a3', peak: 1.6, start: now, duration: 700 };
+    }
+    if (direction.swirl && was.color !== piece.color) {
+      flourish.current = { kind: 'swirl', start: now, duration: 750 };
+      glow.current = { color: '#b48bff', peak: 1.2, start: now, duration: 800 };
+    }
+    if (direction.boardFrom !== undefined && piece.rider && was.rider !== piece.rider.id) {
+      const [fx, , fz] = squareToWorld(direction.boardFrom);
+      riderHop.current = { from: new Vector3(fx - position[0], 0, fz - position[2]), start: now };
+    }
+  }, [piece.type, piece.color, piece.rider?.id]);
+
   // A new destination: plan the trip from wherever the piece is now.
   useEffect(() => {
     const key = `${position[0]},${position[2]},${targetScale}`;
@@ -243,7 +338,16 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     lastTarget.current = key;
     const to = new Vector3(...position);
     const from = shownAt.current.clone();
+    const trip = !captured ? direction?.motions[tripIndex.current] : undefined;
+    if (trip) tripIndex.current++;
+    travel.current = { x: to.x - from.x, z: to.z - from.z };
     const scripted: Motion = { from, to, fromScale: shownScale.current, toScale: targetScale, startedAt: null, ...planMove(piece, from, to, captured) };
+    if (trip && trip.style !== 'default' && trip.style !== 'fly') {
+      // A styled trip from the show, timed to its place in the show.
+      phys.current = null;
+      motion.current = { ...scripted, delay: 0, duration: Math.max(0.2, trip.duration), arc: 0, kind: 'styled', style: trip.style };
+      return;
+    }
     if (!physics) {
       motion.current = scripted;
       return;
@@ -270,7 +374,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       );
       return;
     }
-    if (flung) {
+    if (trip) {
       // Thrown by a special action: a real flight, a bounce, then it stands up on its square.
       const dist = Math.hypot(to.x - from.x, to.z - from.z);
       const start = from.clone().setY(Math.max(0, from.y) + 0.02);
@@ -300,40 +404,112 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   useFrame(({ clock }, dt) => {
     const g = group.current;
     if (!g) return;
+    const now = performance.now();
+    const height = PIECE_HEIGHT[piece.type];
+    let squash = 1;
     const pm = phys.current;
-    if (pm) {
-      playPhysics(pm, clock.elapsedTime);
-      g.position.copy(shownAt.current);
-      g.quaternion.copy(shownQ.current);
-      g.scale.setScalar(shownScale.current);
-      return;
-    }
-    const m = motion.current;
+    if (pm) playPhysics(pm, clock.elapsedTime);
+    const m = pm ? null : motion.current;
     if (m) {
       if (m.startedAt === null) {
         m.startedAt = clock.elapsedTime + m.delay;
         if (m.kind === 'captured') playSfx('knock', { strength: 0.8, delay: m.delay });
       }
       const p = Math.min(1, Math.max(0, (clock.elapsedTime - m.startedAt) / m.duration));
-      const e = m.kind === 'pop' ? 1 - (1 - p) ** 3 : easeInOut(p);
-      shownAt.current.lerpVectors(m.from, m.to, e);
-      shownAt.current.y += Math.sin(Math.PI * p) * m.arc;
-      shownScale.current = m.fromScale + (m.toScale - m.fromScale) * e;
+      if (m.kind === 'styled' || m.kind === 'entrance') {
+        const len = Math.hypot(travel.current.x, travel.current.z) || 1;
+        const ps =
+          m.kind === 'styled'
+            ? stylePose(m.style as MotionStyle, m.from, m.to, p, height)
+            : entrancePose(m.style as Entrance, m.to, p, height);
+        shownAt.current.set(ps.x, ps.y, ps.z);
+        poseRotation(ps, travel.current.x / len, travel.current.z / len, shownQ.current);
+        shownScale.current = (m.fromScale + (m.toScale - m.fromScale) * easeInOut(p)) * ps.scale;
+        squash = ps.squashY;
+      } else {
+        const e = m.kind === 'pop' ? 1 - (1 - p) ** 3 : easeInOut(p);
+        shownAt.current.lerpVectors(m.from, m.to, e);
+        shownAt.current.y += Math.sin(Math.PI * p) * m.arc;
+        shownScale.current = m.fromScale + (m.toScale - m.fromScale) * e;
+      }
       if (p >= 1) {
         motion.current = null;
         shownAt.current.copy(m.to);
         shownScale.current = m.toScale;
-        if (m.kind === 'move') playSfx('move', { strength: Math.min(1, 0.55 + 0.1 * m.from.distanceTo(m.to)) });
+        if (m.kind === 'styled' || m.kind === 'entrance') shownQ.current.identity();
+        if (m.kind === 'move' || m.kind === 'styled') playSfx('move', { strength: Math.min(1, 0.55 + 0.1 * m.from.distanceTo(m.to)) });
         else if (m.kind === 'captured') playSfx('land', { strength: 0.6 });
       }
     }
     g.position.copy(shownAt.current);
     g.quaternion.copy(shownQ.current);
-    // Selection lifts the piece gently (on top of any motion).
-    const k = 1 - Math.exp(-dt * 14);
-    g.userData.lift = (g.userData.lift ?? 0) + (lift - (g.userData.lift ?? 0)) * k;
-    g.position.y += g.userData.lift;
-    g.scale.setScalar(shownScale.current);
+
+    // Acting in place, on top of wherever the piece stands.
+    for (const act of direction?.acts ?? []) {
+      const q = (now - act.start) / (act.duration * 1000);
+      if (q < 0 || q > 1) continue;
+      const ps = actPose(act.kind, q, now / 1000);
+      g.position.x += ps.x;
+      g.position.y += ps.y;
+      g.position.z += ps.z;
+      g.quaternion.premultiply(poseRotation(ps, 0, 1, TMP_Q));
+      squash *= ps.squashY;
+    }
+    const f = flourish.current;
+    if (f) {
+      const q = Math.min(1, (now - f.start) / f.duration);
+      if (f.kind === 'morph') {
+        // Squashed down, then stretched up into the new shape.
+        squash *= 1 - 0.55 * Math.sin(Math.PI * Math.min(1, q * 1.6)) + 0.12 * Math.sin(Math.PI * Math.max(0, q * 1.6 - 0.6));
+        g.position.y += 0.12 * Math.sin(Math.PI * q);
+      } else {
+        // Swirling round as the colours change.
+        g.quaternion.premultiply(TMP_Q.setFromAxisAngle(UP, easeInOut(q) * Math.PI * 4));
+        g.position.y += 0.18 * Math.sin(Math.PI * q);
+      }
+      if (q >= 1) flourish.current = null;
+    }
+
+    if (!pm) {
+      // Selection lifts the piece gently (on top of any motion).
+      const k = 1 - Math.exp(-dt * 14);
+      g.userData.lift = (g.userData.lift ?? 0) + (lift - (g.userData.lift ?? 0)) * k;
+      g.position.y += g.userData.lift;
+    }
+    shownSquash.current = squash;
+    g.scale.set(shownScale.current, shownScale.current * squash, shownScale.current);
+
+    // A glow over the surface while it changes.
+    const gl = glow.current;
+    const level = gl ? gl.peak * Math.sin(Math.PI * Math.min(1, (now - gl.start) / gl.duration)) : 0;
+    if (gl && now - gl.start >= gl.duration) glow.current = null;
+    if (level > 0.01 || glowOn.current) {
+      g.traverse((o) => {
+        const mat = (o as Mesh).material as MeshPhysicalMaterial | undefined;
+        if (mat && 'emissive' in mat && mat.emissive) {
+          if (gl) mat.emissive.set(gl.color);
+          mat.emissiveIntensity = level > 0.01 ? level : 0;
+        }
+      });
+      glowOn.current = level > 0.01;
+    }
+
+    // A rider hopping on from its square.
+    const hop = riderHop.current;
+    const r = riderRef.current;
+    if (hop && r) {
+      const q = Math.min(1, (now - hop.start) / 600);
+      const e = easeInOut(q);
+      const base = PIECE_HEIGHT[piece.type] - 0.06;
+      r.position.set(hop.from.x * (1 - e), hop.from.y + (base - hop.from.y) * e + Math.sin(Math.PI * q) * 0.7, hop.from.z * (1 - e));
+      r.scale.setScalar(1 + (RIDER_SCALE - 1) * e);
+      if (q >= 1) {
+        riderHop.current = null;
+        r.position.set(0, base, 0);
+        r.scale.setScalar(RIDER_SCALE);
+        playSfx('move', { strength: 0.6 });
+      }
+    }
   });
 
   /** Plays a recorded flight, then (on the board) glides the piece upright onto its square. */
@@ -404,7 +580,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       <PieceModel type={piece.type} color={piece.color} facing={facing(piece)} />
       {!captured && <TagDecorations piece={piece} top={height} />}
       {rider && (
-        <group position={[0, riderBase, 0]} scale={RIDER_SCALE}>
+        <group ref={riderRef} position={[0, riderBase, 0]} scale={RIDER_SCALE}>
           <PieceModel type={rider.type} color={rider.color} facing={facing(rider)} />
           <TagDecorations piece={{ ...rider, tags: rider.tags?.filter((t) => t.name !== RIDE) }} top={PIECE_HEIGHT[rider.type]} />
         </group>

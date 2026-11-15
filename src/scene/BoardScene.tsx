@@ -13,6 +13,7 @@ import { TourCamera, type TourInset, type TourPhase } from './TourCamera';
 import { DoodleLayer, type DoodleTool } from './DoodleLayer';
 import type { Doodle, DoodleOp } from '../session/doodle';
 import { FxLayer, type FxShow } from './FxLayer';
+import type { PieceDirection } from './pieceMotion';
 
 /** 'dice' looks at the dice tray beside the board while a roll plays. */
 export type ViewMode = 'side' | 'top' | 'dice';
@@ -42,8 +43,8 @@ interface Props {
   captured: Piece[];
   /** Title screen: a camera tour of the table instead of the player's view. */
   tour?: { inset: TourInset; onPhase: (phase: TourPhase) => void };
-  /** Pieces whose latest move was a special action or chaos: they fly with physics. */
-  flung?: ReadonlySet<string>;
+  /** What each piece does in the show being played, by piece id. */
+  directions?: ReadonlyMap<string, PieceDirection>;
   /** Doodles on the table; with a tool picked, pointer drags draw and the camera holds still. */
   doodle?: { doodles: Doodle[]; tool: DoodleTool | null; myKey: string; moderator: boolean; onDoodle: (op: DoodleOp) => void };
   /** The particle effects of the show being played. */
@@ -170,7 +171,7 @@ export function BoardScene({
   captured,
   tour,
   doodle,
-  flung,
+  directions,
   fx = null,
   shake = null,
 }: Props) {
@@ -250,7 +251,7 @@ export function BoardScene({
             position={squareToWorld(sq)}
             selected={sq === selected}
             popIn={!startingIds.has(piece.id)}
-            flung={flung?.has(piece.id) ?? false}
+            direction={directions?.get(piece.id)}
             onClick={click(sq)}
             onHover={(on) => onHoverSquare(on ? sq : null)}
           />

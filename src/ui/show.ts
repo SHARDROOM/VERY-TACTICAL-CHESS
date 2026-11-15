@@ -9,6 +9,7 @@ import {
   type Staging,
   type Timeline,
 } from '../engine';
+import type { PieceDirection } from '../scene/pieceMotion';
 
 /**
  * A staged show, worked out from one batch of game events: the board after each effect (so
@@ -81,4 +82,65 @@ export function buildShow(events: GameEvent[], before: GameState, outcomeLabel: 
     steps,
     movers,
   };
+}
+
+/** What each piece does in a show, by piece id. `startedAt` is when the show starts (ms). */
+export function directionsFor(show: Show, startedAt: number): Map<string, PieceDirection> {
+  const out = new Map<string, PieceDirection>();
+  const get = (id: string) => {
+    let d = out.get(id);
+    if (!d) out.set(id, (d = { motions: [], acts: [] }));
+    return d;
+  };
+  const { timeline, staging } = show;
+  show.effects.forEach((e, i) => {
+    const beat = staging?.beats.find((b) => b.effect === i);
+    const before = show.steps[i].board;
+    const after = show.steps[i + 1].board;
+    const duration = timeline.effectDurations[i];
+    switch (e.type) {
+      case 'move': {
+        const id = before[e.from]?.id;
+        if (id) get(id).motions.push({ style: beat?.motion ?? 'default', duration });
+        break;
+      }
+      case 'unboard': {
+        const id = before[e.at]?.rider?.id;
+        if (id) {
+          const d = get(id);
+          d.appearFrom = e.at;
+          d.motions.push({ style: !beat || beat.motion === 'default' ? 'hop' : beat.motion, duration });
+        }
+        break;
+      }
+      case 'board': {
+        const id = after[e.carrier]?.id;
+        if (id) get(id).boardFrom = e.rider;
+        break;
+      }
+      case 'spawn': {
+        const id = after[e.at]?.id;
+        if (id) get(id).entrance = { style: beat?.entrance ?? 'default', duration };
+        break;
+      }
+      case 'transform': {
+        const id = after[e.at]?.id;
+        if (id) get(id).morph = true;
+        break;
+      }
+      case 'convert': {
+        const id = after[e.at]?.id;
+        if (id) get(id).swirl = true;
+        break;
+      }
+    }
+  });
+  (staging?.acts ?? []).forEach((a, i) => {
+    const start = timeline.actStarts[i];
+    // Whoever stands on the square when the act begins.
+    const step = timeline.effectStarts.filter((t) => t <= start).length;
+    const id = show.steps[Math.min(step, show.steps.length - 1)].board[a.at]?.id;
+    if (id) get(id).acts.push({ kind: a.act, start: startedAt + start * 1000, duration: timeline.actDurations[i] });
+  });
+  return out;
 }
