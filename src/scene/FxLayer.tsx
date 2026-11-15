@@ -13,6 +13,7 @@ import {
   type PointLight,
 } from 'three';
 import type { Fx } from '../engine';
+import type { AuraSpec } from './auras';
 import { squareToWorld } from './coords';
 import { ELEMENT_LOOK, type ElementLook, type FxLayerKind, type FxPart } from './fxLooks';
 import { playFxSound } from '../audio/sfx';
@@ -284,7 +285,10 @@ function boltPath(a: Vector3, b: Vector3, roughness: number): Vector3[] {
  * Particle effects over the board: bursts, beams, areas and trails for the twelve elements,
  * with a flash of light and lightning bolts where the element has them.
  */
-export function FxLayer({ show, pieceAt }: { show: FxShow | null; pieceAt: (id: string) => Vector3 | null }) {
+/** Auras use at most this share of each pool, so a show always has room. */
+const AURA_SHARE = 0.45;
+
+export function FxLayer({ show, pieceAt, auras = [], light = false }: { show: FxShow | null; pieceAt: (id: string) => Vector3 | null; auras?: AuraSpec[]; light?: boolean }) {
   const pools = useMemo(
     () => ({ glow: new ParticlePool(CAPS.glow, 'glow'), smoke: new ParticlePool(CAPS.smoke, 'smoke'), chunk: new ParticlePool(CAPS.chunk, 'chunk') }),
     [],
@@ -296,7 +300,31 @@ export function FxLayer({ show, pieceAt }: { show: FxShow | null; pieceAt: (id: 
   const lights = useRef<(PointLight | null)[]>([null, null]);
   const lightLevel = useRef([0, 0]);
   const nextLight = useRef(0);
-  const density = show?.light ? 0.4 : 1;
+  const density = light || show?.light ? 0.4 : 1;
+  const auraCarry = useRef(new Map<string, number>());
+
+  /** Particles clinging to a piece: born on its body, drifting the way the element drifts. */
+  const emitAura = (a: AuraSpec, at: Vector3, n: number) => {
+    const look = ELEMENT_LOOK[a.element];
+    for (const part of look.parts) {
+      const pool = pools[part.layer];
+      if (pool.count > pool.cap * AURA_SHARE) continue;
+      const count = Math.round(n * part.share + Math.random() * 0.5);
+      for (let k = 0; k < count; k++) {
+        const ang = Math.random() * Math.PI * 2;
+        const r = a.radius * (0.6 + Math.random() * 0.5);
+        const x = at.x + Math.cos(ang) * r;
+        const z = at.z + Math.sin(ang) * r;
+        const y = at.y + 0.05 + Math.random() * a.height;
+        // Gentler than an fx: drift, no burst; rain-like elements just drip.
+        const vx = Math.cos(ang) * part.speed * 0.15 + (Math.random() - 0.5) * part.jitter * 0.4;
+        const vz = Math.sin(ang) * part.speed * 0.15 + (Math.random() - 0.5) * part.jitter * 0.4;
+        const vy = part.gravity < -3 ? 0.2 : part.up * 0.35;
+        const soft: FxPart = part.gravity < -3 ? { ...part, gravity: part.gravity * 0.25, ground: 'die' } : part;
+        pool.spawn(x, y, z, vx, vy, vz, soft, 0.55 + 0.1 * a.strength, at.x, at.z);
+      }
+    }
+  };
 
   useEffect(() => {
     if (!show) {
@@ -489,6 +517,20 @@ export function FxLayer({ show, pieceAt }: { show: FxShow | null; pieceAt: (id: 
       e.carry -= n;
       if (n > 0) emit(e, n, 'sustain');
     }
+
+    // Auras: a steady trickle for each tagged piece, stronger auras thicker.
+    const seen = new Set<string>();
+    for (const a of auras) {
+      const at = pieceAt(a.pieceId);
+      if (!at) continue;
+      seen.add(a.pieceId);
+      const rate = ELEMENT_LOOK[a.element].rate * (0.08 + 0.07 * a.strength) * density;
+      const carry = (auraCarry.current.get(a.pieceId) ?? 0) + rate * step;
+      const n = Math.floor(carry);
+      auraCarry.current.set(a.pieceId, carry - n);
+      if (n > 0) emitAura(a, at, n);
+    }
+    for (const id of auraCarry.current.keys()) if (!seen.has(id)) auraCarry.current.delete(id);
 
     for (const pool of Object.values(pools)) pool.update(step);
     lights.current.forEach((l, i) => {

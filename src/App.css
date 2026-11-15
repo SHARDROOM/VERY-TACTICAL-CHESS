@@ -341,6 +341,9 @@ select option { background: var(--walnut); }
 .piece-info .muted { color: var(--muted); display: block; }
 .piece-info .rider { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
 .piece-info-square { color: var(--muted); font-size: 0.8125rem; }
+.aura-mark { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; color: var(--muted); font-size: 0.8125rem; white-space: nowrap; }
+.aura-swatch { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 6px rgba(255, 220, 160, 0.35); }
+.aura-strength { letter-spacing: 1px; font-size: 0.6rem; color: var(--accent); }
 @media (max-width: 600px) {
   .piece-info { bottom: calc(40% + 24px); }
 }

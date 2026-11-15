@@ -13,6 +13,7 @@ import { TourCamera, type TourInset, type TourPhase } from './TourCamera';
 import { DoodleLayer, type DoodleTool } from './DoodleLayer';
 import type { Doodle, DoodleOp } from '../session/doodle';
 import { FxLayer, type FxShow } from './FxLayer';
+import { aurasOn } from './auras';
 import type { PieceDirection } from './pieceMotion';
 
 /** 'dice' looks at the dice tray beside the board while a roll plays. */
@@ -53,6 +54,8 @@ interface Props {
   fx?: FxShow | null;
   /** A jolt of the table: when (performance.now()) and how hard (1..3). */
   shake?: { at: number; strength: number } | null;
+  /** Fewer particles (the "light" staging setting). */
+  lightFx?: boolean;
 }
 
 /** Shakes everything on the table (not the camera, which the player controls) for a moment. */
@@ -177,6 +180,7 @@ export function BoardScene({
   directions,
   fx = null,
   shake = null,
+  lightFx = false,
 }: Props) {
   const resting = useRef(new Map<string, Obstacle>());
   const objects = useRef(new Map<string, Group>());
@@ -187,6 +191,7 @@ export function BoardScene({
   // first effect, so such a flag would make every starting piece drop in too.
   const startingIds = useMemo(() => new Set([...board, ...captured].flatMap((p) => (p ? [p.id, ...(p.rider ? [p.rider.id] : [])] : []))), []);
   const graveyard = useMemo(() => graveyardLayout(captured, diceSide), [captured, diceSide]);
+  const auras = useMemo(() => aurasOn(board), [board]);
   const click = (sq: Square) => (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
     onSquareClick(sq);
@@ -266,7 +271,7 @@ export function BoardScene({
         )),
       ]}
       </PiecePhysicsContext.Provider>
-      <FxLayer show={fx} pieceAt={pieceAt} />
+      <FxLayer show={fx} pieceAt={pieceAt} auras={auras} light={lightFx} />
       </ShakeGroup>
     </Canvas>
   );

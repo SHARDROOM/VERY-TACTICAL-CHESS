@@ -1,8 +1,25 @@
-import { RIDE, squareName, type Piece, type Square, type Tag } from '../engine';
+import { ELEMENT_NAME, RIDE, squareName, type Piece, type Square, type Tag } from '../engine';
+import { ELEMENT_LOOK } from '../scene/fxLooks';
 import { COLOR_NAME, PIECE_NAME } from './messages';
 
 function tagText(t: Tag) {
   return t.turnsLeft === null ? `${t.name} (영구)` : `${t.name} (${t.turnsLeft}턴 남음)`;
+}
+
+/** The element a tag wraps its piece in, as a swatch of its colour and its name. */
+function AuraMark({ tag }: { tag: Tag }) {
+  if (!tag.aura) return null;
+  const [from, to] = ELEMENT_LOOK[tag.aura.element].parts[0].colors;
+  return (
+    <span className="aura-mark" title={`오라 세기 ${tag.aura.strength}`}>
+      <span className="aura-swatch" style={{ background: `radial-gradient(circle at 35% 35%, ${from}, ${to})` }} aria-hidden />
+      {ELEMENT_NAME[tag.aura.element]} 오라
+      <span className="aura-strength" aria-hidden>
+        {'●'.repeat(tag.aura.strength)}
+        {'○'.repeat(3 - tag.aura.strength)}
+      </span>
+    </span>
+  );
 }
 
 function Line({ piece }: { piece: Piece }) {
@@ -15,7 +32,10 @@ function Line({ piece }: { piece: Piece }) {
       {tags.length > 0 ? (
         <ul>
           {tags.map((t) => (
-            <li key={t.name}>{tagText(t)}</li>
+            <li key={t.name}>
+              {tagText(t)}
+              <AuraMark tag={t} />
+            </li>
           ))}
         </ul>
       ) : (

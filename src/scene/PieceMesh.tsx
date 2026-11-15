@@ -270,7 +270,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       });
   };
 
-  // Effects (trails) find the piece by id, on the board or on its way off it.
+  // Effects (trails, auras) find the piece by id, on the board or on its way off it.
   useEffect(() => {
     const g = group.current;
     if (!physics || !g) return;
@@ -279,6 +279,16 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       if (physics.objects.get(piece.id) === g) physics.objects.delete(piece.id);
     };
   }, []);
+  // ...and a rider by its own id, where it sits on top.
+  const riderId = piece.rider?.id;
+  useEffect(() => {
+    const r = riderRef.current;
+    if (!physics || !r || !riderId) return;
+    physics.objects.set(riderId, r);
+    return () => {
+      if (physics.objects.get(riderId) === r) physics.objects.delete(riderId);
+    };
+  }, [riderId]);
 
   // A piece already lying beside the board when the scene opens is solid for later throws.
   useEffect(() => {
