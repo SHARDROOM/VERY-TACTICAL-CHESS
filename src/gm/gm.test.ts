@@ -24,7 +24,7 @@ describe('parseGmRuling', () => {
 
   it('converts algebraic squares to engine squares', () => {
     const r = parseGmRuling(valid);
-    expect(r).toEqual({
+    expect(r).toMatchObject({
       ok: true,
       ruling: {
         ...valid,
@@ -154,8 +154,8 @@ describe('full effect vocabulary through the GM boundary', () => {
   });
 
   it('fake GM understands stun, shield and riding', () => {
-    expect(fakeRuling('g8 나이트를 기절시킨다').effects).toEqual([{ type: 'tag', at: 'g8', tag: '기절', turns: 1 }]);
-    expect(fakeRuling('e1 킹에 보호막').effects).toEqual([{ type: 'tag', at: 'e1', tag: '보호막', turns: 0 }]);
+    expect(fakeRuling('g8 나이트를 기절시킨다').effects).toEqual([{ type: 'tag', at: 'g8', tag: '기절', turns: 1, aura: 'none', auraStrength: 0 }]);
+    expect(fakeRuling('e1 킹에 보호막').effects).toEqual([{ type: 'tag', at: 'e1', tag: '보호막', turns: 0, aura: 'none', auraStrength: 0 }]);
     expect(fakeRuling('a2 폰을 b1 나이트에 태운다').effects).toEqual([{ type: 'board', rider: 'a2', carrier: 'b1' }]);
   });
 });
@@ -163,7 +163,7 @@ describe('full effect vocabulary through the GM boundary', () => {
 describe('fake GM crits', () => {
   it('backfires by stunning the acting piece on a 1, and its rulings pass engine validation', () => {
     const r = fakeRuling('b1 나이트를 c3로 보낸다');
-    expect(r.critFailureEffects).toEqual([{ type: 'tag', at: 'b1', tag: '기절', turns: 1 }]);
+    expect(r.critFailureEffects).toEqual([{ type: 'tag', at: 'b1', tag: '기절', turns: 1, aura: 'none', auraStrength: 0 }]);
     const parsed = parseGmRuling(r);
     if (!parsed.ok) throw new Error(parsed.error);
     const state = { ...createInitialState(), ap: { white: 5, black: 0 } };

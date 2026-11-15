@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import type { GameState } from '../engine';
-import type { GmChaosSchema, GmEffectSchema, GmRulingSchema } from './schema';
+import type { GmChaosSchema, GmEffectReplySchema, GmEffectSchema, GmRulingSchema } from './schema';
 
 /**
  * The ruling exactly as a GM (LLM or fake) returns it: plain JSON with
@@ -8,6 +8,8 @@ import type { GmChaosSchema, GmEffectSchema, GmRulingSchema } from './schema';
  */
 export type GmRulingJson = z.infer<typeof GmRulingSchema>;
 export type GmEffectJson = z.infer<typeof GmEffectSchema>;
+/** An effect as read from a reply (visual fields may be missing). */
+export type GmEffectReplyJson = z.infer<typeof GmEffectReplySchema>;
 export type GmChaosJson = z.infer<typeof GmChaosSchema>;
 
 export interface GmRequest {

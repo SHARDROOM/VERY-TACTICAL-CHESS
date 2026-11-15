@@ -1,4 +1,4 @@
-import { applyCommand, createInitialState, type Color, type Command, type GameEvent, type GameState, type RuleConfig } from '../engine';
+import { applyCommand, buildTimeline, createInitialState, type Color, type Command, type Effect, type GameEvent, type GameState, type RuleConfig, type Staging } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
@@ -27,6 +27,11 @@ export interface AuthorityOptions {
 
 /** Extra time after an attempt, for the dice to roll on screen. */
 export const DICE_GRACE_MS = 4000;
+
+/** How long a staged show takes on screen, in ms (the clock does not run during it). */
+export function showMs(staging: Staging | undefined, effects: Effect[]): number {
+  return Math.round(buildTimeline(staging, effects).length * 1000);
+}
 
 /**
  * The one place game state changes, for hotseat and for the online host.
@@ -148,8 +153,10 @@ export class Authority {
     if (events.some((e) => e.type === 'turnPassed')) {
       this.restartClock();
       this.maybeChaos();
-    } else if (events.some((e) => e.type === 'specialResolved')) {
-      this.addTime(DICE_GRACE_MS);
+    } else {
+      const resolved = events.find((e) => e.type === 'specialResolved');
+      // The roll and the show that follows it do not eat the player's time.
+      if (resolved) this.addTime(DICE_GRACE_MS + showMs(resolved.staging, resolved.effects));
     }
   }
 
@@ -226,6 +233,8 @@ export class Authority {
         const before = this.state;
         this.state = result.state;
         this.emit({ kind: 'events', events: result.events, before, after: result.state });
+        // The clock restarts when the GM is done (setBusy below); the show is extra.
+        this.addTime(showMs(parsed.chaos.staging, parsed.chaos.effects));
         return;
       }
       skip(problem ?? '규칙에 맞지 않음');

@@ -95,7 +95,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (name === RIDE) return fail('탑승은 tag가 아니라 board 효과로 표현해야 함');
         if (!isInt(e.turns) || e.turns < 0) return fail('지속 턴은 0(영구) 이상의 정수여야 함');
         const turnsLeft = e.turns === 0 ? null : e.turns;
-        board[e.at as Square] = withTag(piece, { name, turnsLeft, appliedOnTurn: ctx.turnNumber });
+        board[e.at as Square] = withTag(piece, { name, turnsLeft, appliedOnTurn: ctx.turnNumber, ...(e.aura && { aura: e.aura }) });
         events.push({ type: 'tagged', pieceId: piece.id, at: e.at as Square, tag: name, turns: turnsLeft });
         break;
       }

@@ -7,3 +7,5 @@ export { squareName, parseSquare, fileOf, rankOf, squareAt, opponent } from './s
 export { applyEffects, validateRuling, type EffectContext } from './effects';
 export { hasTag, isStunned, isShielded, CORE_TAGS } from './tags';
 export { DEFAULT_RULES, withDefaultRules, type RuleConfig } from './config';
+export * from './staging';
+export { buildTimeline, effectDuration, moveDuration, ACT_DURATION, type Timeline } from './timeline';

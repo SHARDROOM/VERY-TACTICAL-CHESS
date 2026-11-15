@@ -1,6 +1,7 @@
 import { parseSquare, type ChaosEvent, type Effect, type Ruling, type Square } from '../engine';
-import { GmChaosSchema, GmRulingSchema } from './schema';
-import type { GmEffectJson } from './types';
+import { GmChaosReplySchema, GmRulingReplySchema } from './schema';
+import { cleanAura, cleanRulingStaging, cleanStaging } from './staging';
+import type { GmEffectReplyJson } from './types';
 
 export type ParseResult = { ok: true; ruling: Ruling } | { ok: false; error: string };
 
@@ -9,12 +10,12 @@ export type ParseResult = { ok: true; ruling: Ruling } | { ok: false; error: str
  * (DC/cost ranges, impossible or forbidden effects) are the engine's job.
  */
 export function parseGmRuling(raw: unknown): ParseResult {
-  const checked = GmRulingSchema.safeParse(raw);
+  const checked = GmRulingReplySchema.safeParse(raw);
   if (!checked.success) {
     const issue = checked.error.issues[0];
     return { ok: false, error: `${issue.path.join('.') || '판정'}: ${issue.message}` };
   }
-  const { effects, critSuccessEffects, critFailureEffects, ...rest } = checked.data;
+  const { effects, critSuccessEffects, critFailureEffects, staging, ...rest } = checked.data;
 
   const lists: Record<string, Effect[]> = {};
   for (const [key, label, list] of [
@@ -30,6 +31,9 @@ export function parseGmRuling(raw: unknown): ParseResult {
     }
     lists[key] = out;
   }
+  // Staging is only for show: whatever is wrong in it is dropped, never the ruling.
+  const crit = lists.critSuccessEffects.length ? lists.critSuccessEffects : lists.effects;
+  const counts = { success: lists.effects.length, failure: 0, critSuccess: crit.length, critFailure: lists.critFailureEffects.length };
   return {
     ok: true,
     ruling: {
@@ -37,14 +41,15 @@ export function parseGmRuling(raw: unknown): ParseResult {
       effects: lists.effects,
       critSuccessEffects: lists.critSuccessEffects,
       critFailureEffects: lists.critFailureEffects,
+      staging: cleanRulingStaging(staging, counts),
     },
   };
 }
 
 /** Converts one effect, or returns the first bad square name. */
-function convert(e: GmEffectJson): Effect | string {
+function convert(e: GmEffectReplyJson): Effect | string {
   const squares: Record<string, Square> = {};
-  const fields: Record<GmEffectJson['type'], string[]> = {
+  const fields: Record<GmEffectReplyJson['type'], string[]> = {
     move: ['from', 'to'],
     remove: ['at'],
     tag: ['at'],
@@ -61,6 +66,11 @@ function convert(e: GmEffectJson): Effect | string {
     if (s === null) return name;
     squares[f] = s;
   }
+  if (e.type === 'tag') {
+    const { aura, auraStrength, ...tag } = e;
+    const clean = cleanAura(aura, auraStrength);
+    return { ...tag, ...squares, ...(clean && { aura: clean }) } as unknown as Effect;
+  }
   return { ...e, ...squares } as unknown as Effect;
 }
 
@@ -68,7 +78,7 @@ export type ChaosParseResult = { ok: true; chaos: ChaosEvent } | { ok: false; er
 
 /** Shape-checks a chaos event from the GM and converts its squares; the engine checks the rest. */
 export function parseGmChaos(raw: unknown): ChaosParseResult {
-  const checked = GmChaosSchema.safeParse(raw);
+  const checked = GmChaosReplySchema.safeParse(raw);
   if (!checked.success) {
     const issue = checked.error.issues[0];
     return { ok: false, error: `${issue.path.join('.') || '혼돈'}: ${issue.message}` };
@@ -79,5 +89,8 @@ export function parseGmChaos(raw: unknown): ChaosParseResult {
     if (typeof converted === 'string') return { ok: false, error: `효과 ${i + 1}: 칸 이름 "${converted}"이(가) 올바르지 않음` };
     effects.push(converted);
   }
-  return { ok: true, chaos: { title: checked.data.title, narration: checked.data.narration, effects } };
+  return {
+    ok: true,
+    chaos: { title: checked.data.title, narration: checked.data.narration, effects, staging: cleanStaging(checked.data.staging, effects.length) },
+  };
 }

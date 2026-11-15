@@ -35,6 +35,8 @@ import { DOODLE_COLORS, type DoodleOp } from '../session/doodle';
 import { clockText, rulesSummary } from './rules';
 import { Icon } from './Icon';
 import { PieceSilhouette } from './PieceSilhouette';
+import { buildShow, type Show } from './show';
+import type { FxShow } from '../scene/FxLayer';
 
 interface LogLine extends LogEntry {
   id: number;
@@ -47,9 +49,30 @@ interface Batch {
   after: GameState;
   /** The dice for this batch have already been shown. */
   rolled: boolean;
+  /** Its show (if any) has started. */
+  staged?: boolean;
+}
+
+/** A show being played: the GM's staging, from `startedAt` (performance.now()). */
+interface Playing {
+  show: Show;
+  startedAt: number;
+}
+
+/** The GM's narration across the screen while (and a little after) a show plays. */
+interface Caption {
+  kind: Show['kind'];
+  title: string;
+  text: string;
+  outcome: Outcome | null;
 }
 
 let nextLogId = 1;
+
+/** Seconds between the dice result and the show, while the camera swings back to the board. */
+const SHOW_LEAD_IN = 0.6;
+
+const prefersReducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 /** A piece on the board or riding on one. */
 function findPiece(board: GameState['board'], id: string): Piece | undefined {
@@ -103,18 +126,23 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const onDoodle = useMemo(() => (op: DoodleOp) => session.doodle(op), [session]);
   /** Pieces moved by the latest special action or chaos: they fly with physics instead of being carried. */
   const [flung, setFlung] = useState<ReadonlySet<string>>(() => new Set());
-  /** A chaos event being announced across the screen. */
-  const [chaosBanner, setChaosBanner] = useState<{ title: string; narration: string } | null>(null);
+  /** The show on screen (null between shows), and the caption that goes with it. */
+  const [stage, setStage] = useState<Playing | null>(null);
+  const [caption, setCaption] = useState<Caption | null>(null);
+  const showTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const endShow = useRef<(() => void) | null>(null);
   const [unread, setUnread] = useState(0);
   const chatRef = useRef<HTMLOListElement>(null);
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
   }, [chat.length, tab]);
+  // The caption stays a moment after the show so it can be read to the end.
   useEffect(() => {
-    if (!chaosBanner) return;
-    const t = setTimeout(() => setChaosBanner(null), 5000);
+    if (!caption || stage) return;
+    const t = setTimeout(() => setCaption(null), 2200 + 30 * caption.text.length);
     return () => clearTimeout(t);
-  }, [chaosBanner]);
+  }, [caption, stage]);
+  useEffect(() => () => showTimers.current.forEach(clearTimeout), []);
   /**
    * The roll being shown on the table, and the board as it was before it (kept on screen
    * until the die lands). `landed` flips when the die stops; `done` reveals the result.
@@ -145,8 +173,16 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   }, [seat]);
 
   useEffect(() => {
+    /** In hotseat, the camera swings to whoever moves next. */
+    const swingCamera = ({ before, after }: Batch) => {
+      if (seat === 'both' && after.status.kind === 'playing' && after.turn !== before.turn) {
+        setCamera((c) => ({ ...c, side: after.turn, nonce: c.nonce + 1 }));
+      }
+    };
+
     /** Logs a batch of game events and reacts to them (the moment the board shows them). */
-    const applyBatch = ({ events, before, after }: Batch) => {
+    const applyBatch = (batch: Batch, staged = false) => {
+      const { events, before, after } = batch;
       const typeOf = (id: string) => findPiece(before.board, id)?.type ?? findPiece(after.board, id)?.type;
       addLog(describeEvents(events, typeOf));
       const magic = events.some((ev) => ev.type === 'specialResolved' || ev.type === 'chaos');
@@ -158,11 +194,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       if (passed) playSfx('turn', { delay: 0.25 });
       if (events.some((ev) => ev.type === 'check')) playSfx('check', { delay: 0.45 });
       if (events.some((ev) => ev.type === 'specialProposed')) playSfx('ruling');
-      const chaos = events.find((ev) => ev.type === 'chaos');
-      if (chaos) {
-        playSfx('chaos');
-        setChaosBanner({ title: chaos.title, narration: chaos.narration });
-      }
+      if (events.some((ev) => ev.type === 'chaos')) playSfx('chaos');
       if (events.some((ev) => ev.type === 'timedOut')) playSfx('timeout');
       const exposed = events.find((ev) => ev.type === 'ownKingExposed');
       if (exposed) setWarning(`${COLOR_NAME[exposed.color]} 킹이 공격받는 위치에 놓였습니다.`);
@@ -170,10 +202,33 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       const proposed = events.find((ev) => ev.type === 'specialProposed');
       if (proposed && (seat === 'both' || proposed.color === seat)) setText('');
       setSelected(null);
-      if (seat === 'both' && after.status.kind === 'playing' && after.turn !== before.turn) {
-        // Hotseat: swing the camera to the player whose turn it is.
-        setCamera((c) => ({ ...c, side: after.turn, nonce: c.nonce + 1 }));
-      }
+      // After a show, not in the middle of it.
+      if (!staged) swingCamera(batch);
+    };
+
+    /**
+     * Plays a show: the board steps through the effects one by one on its timeline, with the
+     * GM's particle effects, shake and narration; then `done`. Skipping ends it at once.
+     */
+    const startShow = (show: Show, batch: Batch, done: () => void) => {
+      // After a roll the camera is still turning back from the dice: give it a moment.
+      const lead = batch.rolled ? SHOW_LEAD_IN : 0;
+      setFrozen(show.steps[0]);
+      setStage({ show, startedAt: performance.now() + lead * 1000 });
+      setCaption({ kind: show.kind, title: show.title, text: show.caption, outcome: show.outcome });
+      const timers = show.timeline.effectStarts.map((t, i) => setTimeout(() => setFrozen(show.steps[i + 1]), (lead + t) * 1000));
+      const finish = () => {
+        showTimers.current.forEach(clearTimeout);
+        showTimers.current = [];
+        endShow.current = null;
+        setStage(null);
+        swingCamera(batch);
+        done();
+      };
+      // A little time after the last effect for pieces to land.
+      timers.push(setTimeout(finish, (lead + show.timeline.length) * 1000 + 500));
+      showTimers.current = timers;
+      endShow.current = finish;
     };
 
     /** Rolls the die on the table: simulate, look at the tray, then reveal via `done`. */
@@ -207,6 +262,20 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             pump();
           });
           return;
+        }
+        if (!head.staged) {
+          head.staged = true;
+          const show = buildShow(head.events, head.before, (o) => OUTCOME_LABEL[o]);
+          if (show && show.timeline.length > 0) {
+            applyBatch(head, true);
+            startShow(show, head, () => {
+              queue.shift();
+              pump();
+            });
+            return;
+          }
+          // Nothing to watch (e.g. a plain failure): the narration still gets its moment.
+          if (show) setCaption({ kind: show.kind, title: show.title, text: show.caption, outcome: show.outcome });
         }
         queue.shift();
         applyBatch(head);
@@ -273,6 +342,24 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   }, [dice?.landed]);
 
   const game = frozen ?? view.state;
+  const fxShow = useMemo<FxShow | null>(() => {
+    if (!stage) return null;
+    const { show, startedAt } = stage;
+    const fx = show.staging?.fx ?? [];
+    return {
+      fx,
+      starts: show.timeline.fxStarts,
+      ends: show.timeline.fxEnds,
+      startedAt,
+      followers: fx.map((f) => (f.shape === 'trail' && f.withEffect !== null ? (show.movers[f.withEffect] ?? null) : null)),
+    };
+  }, [stage]);
+  const shake = useMemo(() => {
+    const strength = stage?.show.staging?.shake ?? 0;
+    const at = stage?.show.timeline.shakeAt ?? null;
+    if (!stage || !strength || at === null || prefersReducedMotion()) return null;
+    return { at: stage.startedAt + at * 1000, strength };
+  }, [stage]);
   const targets = useMemo(() => (selected === null ? [] : legalTargets(game, selected).map((t) => t.to)), [game, selected]);
 
   const sideToMove = game.turn;
@@ -282,7 +369,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const checkedKing = inCheck ? findKing(game.board, sideToMove) : null;
   const pending = game.pending;
   const connected = view.connection.kind === 'local' || view.connection.kind === 'hosting' || view.connection.kind === 'connected';
-  const locked = !playing || view.gmBusy || !!pending || !myTurn || !connected || !!dice;
+  const locked = !playing || view.gmBusy || !!pending || !myTurn || !connected || !!dice || !!stage;
   // A turn has to be used for something: a normal move ends it by itself, so passing is only
   // for after a special action (or when no piece can move at all).
   const canEndTurn = game.usedApThisTurn || !hasAnyMove(game);
@@ -372,6 +459,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         ap={game.ap}
         captured={game.captured ?? []}
         flung={flung}
+        fx={fxShow}
+        shake={shake}
         doodle={
           game.rules.doodle
             ? { doodles: view.doodles, tool: doodleTool, myKey: view.myKey, moderator: view.isAuthority, onDoodle }
@@ -666,10 +755,21 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
 
       <ConnectionOverlay connection={view.connection} onLeave={onLeave} />
 
-      {chaosBanner && !dice && (
-        <div className="chaos-banner" role="status" onClick={() => setChaosBanner(null)}>
-          <div className="chaos-title">🌪 혼돈! {chaosBanner.title}</div>
-          <div className="chaos-text">{chaosBanner.narration}</div>
+      {caption && !dice && (
+        <div className={`hud show-caption show-${caption.kind} ${caption.outcome ?? ''}`} role="status">
+          <div className="show-head">
+            <span className="show-title">{caption.kind === 'chaos' ? `🌪 혼돈! ${caption.title}` : caption.title}</span>
+            {stage ? (
+              <button className="show-skip" onClick={() => endShow.current?.()}>
+                건너뛰기
+              </button>
+            ) : (
+              <button className="link show-close" onClick={() => setCaption(null)}>
+                닫기
+              </button>
+            )}
+          </div>
+          {caption.text && <p className="show-text">{caption.text}</p>}
         </div>
       )}
 

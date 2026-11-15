@@ -246,15 +246,37 @@ select option { background: var(--walnut); }
 .silhouette-black { fill: #17110c; stroke: #c9b896; stroke-width: 0.6; }
 .promo:hover:not(:disabled) .silhouette { transform: translateY(-2px); }
 
-.chaos-banner {
-  position: absolute; z-index: 3; left: 50%; top: 18%; transform: translateX(-50%); width: min(560px, calc(100% - 32px));
-  background: rgba(36, 20, 48, 0.94); border: 1px solid rgba(180, 140, 220, 0.6); border-radius: 12px;
-  padding: 16px 20px; text-align: center; box-shadow: 0 14px 44px rgba(70, 30, 110, 0.55); cursor: pointer;
-  animation: chaos-in 0.5s cubic-bezier(0.2, 1.4, 0.4, 1);
+/* Subtitles at the bottom left, beside the notebook; on narrow screens under the top bar. */
+.show-caption {
+  left: 12px; bottom: 12px; width: min(560px, calc(100% - 416px)); z-index: 2;
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px;
+  padding: 10px 14px 12px 16px; box-shadow: var(--shadow);
+  animation: caption-in 0.35s cubic-bezier(0.2, 1.2, 0.4, 1);
 }
-.chaos-title { font-family: var(--font-voice); font-size: 1.5rem; font-weight: 800; color: #ead6fb; }
-.chaos-text { margin-top: 6px; color: #ddd0ea; font-family: var(--font-voice); line-height: 1.6; }
-@keyframes chaos-in { from { transform: translateX(-50%) scale(0.7) rotate(-3deg); } }
+.show-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.show-title { font-family: var(--font-voice); font-weight: 800; font-size: 1.05rem; color: var(--accent-bright); }
+.show-text { margin: 4px 0 0; font-family: var(--font-voice); font-size: 1.02rem; line-height: 1.65; color: var(--text); }
+.show-skip { padding: 4px 12px; font-size: 0.85rem; flex-shrink: 0; }
+.show-close { font-size: 0.85rem; flex-shrink: 0; }
+.show-caption.success { border-left-color: var(--success); }
+.show-caption.success .show-title { color: var(--success); }
+.show-caption.failure { border-left-color: var(--failure); }
+.show-caption.failure .show-title { color: var(--failure); }
+.show-caption.critSuccess { border-left-color: var(--accent-bright); box-shadow: var(--shadow), 0 0 26px rgba(226, 180, 90, 0.35); }
+.show-caption.critFailure { border-left-color: #e8604f; }
+.show-caption.critFailure .show-title { color: #e8604f; }
+/* Chaos comes from outside the game: its own colour, and a bigger entrance. */
+.show-caption.show-chaos {
+  background: rgba(36, 20, 48, 0.94); border-color: rgba(180, 140, 220, 0.5); border-left: 3px solid var(--chaos);
+  box-shadow: 0 14px 44px rgba(70, 30, 110, 0.55); animation: chaos-in 0.5s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.show-chaos .show-title { color: #ead6fb; font-size: 1.3rem; }
+.show-chaos .show-text { color: #ddd0ea; }
+@media (max-width: 860px) {
+  .show-caption { top: 70px; bottom: auto; left: 12px; width: calc(100% - 24px); }
+}
+@keyframes caption-in { from { translate: 0 10px; } }
+@keyframes chaos-in { from { scale: 0.7; rotate: -3deg; } }
 
 /* ---- settings ---- */
 .settings { max-width: min(440px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 10px; }

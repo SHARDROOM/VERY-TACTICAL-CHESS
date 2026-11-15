@@ -47,25 +47,75 @@ export class FakeGameMaster implements GameMaster {
   }
 }
 
+type StagingJson = GmRulingJson['staging']['success'];
+type FxJson = StagingJson['fx'][number];
+type BeatJson = StagingJson['beats'][number];
+
+const look = (p: Partial<StagingJson> = {}): StagingJson => ({ fx: [], shake: 0, beats: [], acts: [], ...p });
+const fx = (element: string, shape: string, at: string, extra: Partial<FxJson> = {}): FxJson => ({
+  element,
+  shape,
+  at,
+  to: '',
+  radius: 1,
+  strength: 3,
+  duration: 1.2,
+  withEffect: 0,
+  delay: 0,
+  ...extra,
+});
+const beat = (effect: number, extra: Partial<BeatJson> = {}): BeatJson => ({
+  effect,
+  wait: 0,
+  motion: 'default',
+  speed: 'normal',
+  entrance: 'default',
+  exit: 'default',
+  ...extra,
+});
+const tag = (at: string, name: string, turns: number) => ({ type: 'tag' as const, at, tag: name, turns, aura: 'none', auraStrength: 0 });
+
+/** A bigger version of a success look, for a natural 20. */
+function grander(s: StagingJson): StagingJson {
+  return { ...s, shake: Math.min(3, s.shake + 1), fx: s.fx.map((f) => ({ ...f, strength: Math.min(5, f.strength + 1), radius: Math.min(3, f.radius + 0.5) })) };
+}
+
 export function fakeRuling(action: string, color: Color = 'white'): GmRulingJson {
   const base = fakeBaseRuling(action, color);
   // The fake GM keeps crits simple: a 20 does the same thing, a 1 stuns the acting piece for a turn.
   const actor = base.effects[0];
   const actorSquare = actor?.type === 'move' ? actor.from : actor?.type === 'board' ? actor.rider : null;
+  const success = base.look ?? look();
+  const { look: _look, ...rest } = base;
+  void _look;
   return {
-    ...base,
+    ...rest,
     critSuccessEffects: [],
-    critFailureEffects: actorSquare ? [{ type: 'tag', at: actorSquare, tag: '기절', turns: 1 }] : [],
+    critFailureEffects: actorSquare ? [tag(actorSquare, '기절', 1)] : [],
     narration: {
       ...base.narration,
       critSuccess: base.narration.success ? `완벽하다! ${base.narration.success}` : '',
       critFailure: actorSquare ? `대참사! 기물이 비틀거리다 정신을 잃었다.` : base.narration.failure,
     },
+    staging: {
+      success,
+      critSuccess: grander(success),
+      // A miss: the piece stumbles where it stands.
+      failure: actorSquare ? look({ acts: [{ at: actorSquare, act: 'stagger', delay: 0 }], fx: [fx('wind', 'burst', actorSquare, { strength: 1, duration: 0.8 })] }) : look(),
+      critFailure: actorSquare
+        ? look({
+            shake: 1,
+            acts: [{ at: actorSquare, act: 'fall', delay: 0.2 }],
+            fx: [fx('lightning', 'burst', actorSquare, { strength: 3, withEffect: 1 }), fx('impact', 'burst', actorSquare, { strength: 2, delay: 0.2 })],
+          })
+        : look(),
+    },
   };
 }
 
-type BaseRuling = Omit<GmRulingJson, 'critSuccessEffects' | 'critFailureEffects' | 'narration'> & {
+type BaseRuling = Omit<GmRulingJson, 'critSuccessEffects' | 'critFailureEffects' | 'narration' | 'staging'> & {
   narration: { success: string; failure: string };
+  look?: StagingJson;
 };
 
 function fakeBaseRuling(action: string, color: Color): BaseRuling {
@@ -80,6 +130,7 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
       dc: 8,
       cost: 1,
       effects: [{ type: 'board', rider, carrier }],
+      look: look({ beats: [beat(1, { motion: 'hop' })], fx: [fx('arcane', 'burst', carrier, { strength: 2, withEffect: 1, delay: 0.3 })] }),
       narration: { success: `${rider}의 기물이 ${josa(carrier, '으로/로')} 훌쩍 뛰어올라 등에 자리를 잡았다!`, failure: '올라타려다 미끄러져 엉덩방아를 찧었다.' },
     };
   }
@@ -91,7 +142,8 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
       feasible: true,
       dc: 12,
       cost: 1,
-      effects: [{ type: 'tag', at, tag: '기절', turns: 1 }],
+      effects: [tag(at, '기절', 1)],
+      look: look({ shake: 1, fx: [fx('lightning', 'burst', at, { strength: 3, withEffect: 1 })], acts: [{ at, act: 'shiver', delay: 0.3 }] }),
       narration: { success: `${at}의 기물이 눈앞에 별을 보며 휘청거린다!`, failure: `${at}의 기물이 고개를 흔들며 정신을 차렸다.` },
     };
   }
@@ -103,7 +155,8 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
       feasible: true,
       dc: 11,
       cost: 2,
-      effects: [{ type: 'tag', at, tag: '보호막', turns: 0 }],
+      effects: [tag(at, '보호막', 0)],
+      look: look({ fx: [fx('light', 'burst', at, { strength: 3, radius: 1, withEffect: 1 })] }),
       narration: { success: `푸른 결계가 ${at}의 기물을 감쌌다!`, failure: '결계가 형태를 이루지 못하고 흩어졌다.' },
     };
   }
@@ -118,6 +171,11 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
       dc: strong ? 18 : named === 'pawn' ? 9 : 13,
       cost: strong ? 3 : named === 'pawn' ? 1 : 2,
       effects: [{ type: 'spawn', at, color, piece: named }],
+      look: look({
+        shake: strong ? 1 : 0,
+        beats: [beat(1, { entrance: strong ? 'materialize' : 'rise' })],
+        fx: [fx('light', 'burst', at, { strength: strong ? 5 : 3, radius: 1, withEffect: 1 })],
+      }),
       narration: { success: `하늘이 갈라지며 ${at}에 ${josa(PIECE_KO[named], '이/가')} 내려앉았다!`, failure: '소환진이 반짝이다 꺼져 버렸다.' },
     };
   }
@@ -131,6 +189,7 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
       dc: strong ? 18 : 12,
       cost: strong ? 3 : 2,
       effects: [{ type: 'transform', at, into: named }],
+      look: look({ fx: [fx('arcane', 'burst', at, { strength: 4, withEffect: 1 })] }),
       narration: { success: `빛에 휩싸인 ${at}의 기물이 ${josa(PIECE_KO[named], '으로/로')} 변했다!`, failure: '변신 주문이 엉켜 아무 일도 일어나지 않았다.' },
     };
   }
@@ -143,6 +202,11 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
       dc: 14,
       cost: 2,
       effects: [{ type: 'remove', at }],
+      look: look({
+        shake: 2,
+        beats: [beat(1, { wait: 0.4, exit: 'shatter' })],
+        fx: [fx('lightning', 'burst', at, { strength: 4, duration: 0.8 }), fx('impact', 'burst', at, { strength: 4, withEffect: 1 })],
+      }),
       narration: {
         success: `번쩍이는 일격! ${at}의 기물이 전장에서 사라졌다.`,
         failure: `공격이 빗나갔다. ${at}의 기물은 비웃듯 자리를 지킨다.`,
@@ -160,6 +224,10 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
       dc,
       cost: distance > 3 ? 2 : 1,
       effects: [{ type: 'move', from: names[0], to: names[1] }],
+      look: look({
+        beats: [beat(1, { motion: distance > 3 ? 'fly' : 'hop' })],
+        fx: [fx('wind', 'trail', '', { withEffect: 1, strength: 3 }), fx('earth', 'burst', names[1], { withEffect: 1, delay: 0.9, strength: 2, radius: 0.6 })],
+      }),
       narration: {
         success: `믿을 수 없는 기동! 기물이 ${names[0]}에서 ${josa(names[1], '으로/로')} 날아들었다.`,
         failure: `기물이 ${names[0]}에서 발을 헛디뎠다. 작전은 실패로 돌아갔다.`,

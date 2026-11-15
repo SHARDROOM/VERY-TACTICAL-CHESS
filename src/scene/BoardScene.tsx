@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react';
-import { CanvasTexture, SRGBColorSpace } from 'three';
-import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { CanvasTexture, SRGBColorSpace, Vector3, type Group } from 'three';
+import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { CameraControls, Environment, Lightformer } from '@react-three/drei';
 import { fileOf, rankOf, type Board, type Color, type Piece, type Square } from '../engine';
 import { squareToWorld } from './coords';
@@ -12,6 +12,7 @@ import { DiceTray, trayCenterX, type ActiveRoll } from '../dice3d/DiceTray';
 import { TourCamera, type TourInset, type TourPhase } from './TourCamera';
 import { DoodleLayer, type DoodleTool } from './DoodleLayer';
 import type { Doodle, DoodleOp } from '../session/doodle';
+import { FxLayer, type FxShow } from './FxLayer';
 
 /** 'dice' looks at the dice tray beside the board while a roll plays. */
 export type ViewMode = 'side' | 'top' | 'dice';
@@ -45,6 +46,28 @@ interface Props {
   flung?: ReadonlySet<string>;
   /** Doodles on the table; with a tool picked, pointer drags draw and the camera holds still. */
   doodle?: { doodles: Doodle[]; tool: DoodleTool | null; myKey: string; moderator: boolean; onDoodle: (op: DoodleOp) => void };
+  /** The particle effects of the show being played. */
+  fx?: FxShow | null;
+  /** A jolt of the table: when (performance.now()) and how hard (1..3). */
+  shake?: { at: number; strength: number } | null;
+}
+
+/** Shakes everything on the table (not the camera, which the player controls) for a moment. */
+function ShakeGroup({ shake, children }: { shake: Props['shake']; children: ReactNode }) {
+  const ref = useRef<Group>(null);
+  useFrame(() => {
+    const g = ref.current;
+    if (!g) return;
+    const t = shake ? (performance.now() - shake.at) / 1000 : -1;
+    const duration = shake ? 0.35 + 0.2 * shake.strength : 0;
+    if (!shake || t < 0 || t > duration) {
+      if (g.position.lengthSq()) g.position.set(0, 0, 0);
+      return;
+    }
+    const amp = 0.035 * shake.strength * (1 - t / duration) ** 2;
+    g.position.set(Math.sin(t * 71) * amp, Math.sin(t * 53 + 1) * amp * 0.5, Math.sin(t * 61 + 2) * amp);
+  });
+  return <group ref={ref}>{children}</group>;
 }
 
 /**
@@ -148,9 +171,13 @@ export function BoardScene({
   tour,
   doodle,
   flung,
+  fx = null,
+  shake = null,
 }: Props) {
   const resting = useRef(new Map<string, Obstacle>());
-  const physics = useMemo<PiecePhysics>(() => ({ diceSide, resting: resting.current }), [diceSide]);
+  const objects = useRef(new Map<string, Group>());
+  const physics = useMemo<PiecePhysics>(() => ({ diceSide, resting: resting.current, objects: objects.current }), [diceSide]);
+  const pieceAt = useMemo(() => (id: string) => objects.current.get(id)?.getWorldPosition(new Vector3()) ?? null, []);
   // Pieces that were not on the table when the scene opened (spawned by a special action or
   // chaos) drop in. Not a "mounted yet?" flag: the 3D children render after this component's
   // first effect, so such a flag would make every starting piece drop in too.
@@ -184,6 +211,7 @@ export function BoardScene({
         <CameraRig camera={camera} diceSide={diceSide} locked={!!doodle?.tool} />
       )}
 
+      <ShakeGroup shake={shake}>
       <WoodTable />
       <DiceTray side={diceSide} roll={diceRoll} onLanded={onDiceLanded} />
       <CoinTable ap={ap} side={diceSide === 1 ? -1 : 1} />
@@ -232,7 +260,8 @@ export function BoardScene({
         <PieceMesh key={piece.id} piece={piece} position={position} selected={false} captured />
       ))}
       </PiecePhysicsContext.Provider>
-
+      <FxLayer show={fx} pieceAt={pieceAt} />
+      </ShakeGroup>
     </Canvas>
   );
 }

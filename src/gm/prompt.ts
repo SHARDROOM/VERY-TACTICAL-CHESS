@@ -59,6 +59,15 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - 선언이 체스판의 상황과 맞아떨어질수록(예: 실제로 인접한 기물끼리의 협동) DC를 낮추고, 억지스러울수록 높이세요.
 - 한 번의 특수 행동이 게임을 사실상 끝내지 않도록 효과를 선언에 꼭 필요한 만큼만 넣으세요.
 
+## 연출 (staging, 보기용)
+판정과 함께 결과 넷(success, failure, critSuccess, critFailure)이 화면에서 어떻게 보일지 정합니다. 규칙에는 영향이 없고, 서술을 눈으로 보여 주는 도구입니다. 서술과 맞게, 결과의 크기에 맞게 쓰세요. 대성공은 화려하게, 실패는 짧게, 대실패는 행동한 쪽에 역효과처럼. 무엇을 어떻게 보여 줄지는 당신이 정합니다.
+- fx: 이펙트 (최대 6개). element는 fire, light, water, nature, darkness, lightning, ice, wind, poison, arcane, earth, impact. shape는 burst(at 칸 중심, radius 0.5~3), beam(at에서 to까지), area(at과 to를 모서리로 하는 직사각형, 둘 다 ""이면 보드 전체), trail(withEffect 번호의 효과로 움직이는 기물을 따라감). strength 1~5, duration 0.5~5초. withEffect(1부터, 0이면 연출 시작 기준)와 delay(초)로 시점을 정합니다.
+- shake: 화면 흔들림 0~3. 큰 사건에만.
+- beats: 효과별 연출. effect(효과 번호, 1부터), wait(이 효과 전 대기 0~2초), motion(move·unboard: default, fly, hop, slide, teleport, charge, sneak, spin, burrow), speed(slow, normal, fast), entrance(spawn: default, drop, rise, materialize), exit(remove나 move로 잡힌 기물: default, knock, burn, ash, vanish, sink, shatter).
+- acts: 보드를 바꾸지 않는 제자리 연기(hop, stagger, fall, shiver, spin). 실패에서도 쓸 수 있습니다.
+- tag 효과의 aura: 태그가 남아 있는 동안 기물에 두를 원소(none이면 없음)와 세기 1~3. 예: "불타는 중" 태그에 fire.
+전체 연출은 6초 안에 끝나야 합니다. 쓰지 않을 항목은 빈 목록, "", 0, default로 두세요.
+
 ## 판례
 사용자 메시지에 이번 게임에서 이미 내린 판정(판례)이 함께 옵니다. 비슷한 선언에는 판례와 비슷한 DC와 비용을 매기세요. 같은 행동이 어떤 때는 쉽고 어떤 때는 어려우면 플레이어는 불공평하다고 느낍니다. 보드 상황이 달라 판단이 달라질 때는 interpretation에 그 이유를 짧게 쓰세요.
 
@@ -188,6 +197,9 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 - 사건이 끝난 뒤 어느 쪽 킹도 공격받는 상태(체크)가 되면 안 됩니다.
 - 기물이 없는 칸을 대상으로 하지 말고, 같은 편 기물이 있는 칸으로 move하지 마세요. 기절한 기물은 move할 수 없습니다.
 - 폰을 그 편의 마지막 줄(백은 8번 줄, 흑은 1번 줄)에 만들지 마세요.
+
+## 연출 (staging, 보기용)
+사건이 화면에서 어떻게 보일지 staging에 정합니다. 서술과 맞게 쓰세요. fx(element: fire, light, water, nature, darkness, lightning, ice, wind, poison, arcane, earth, impact / shape: burst, beam, area, trail / strength 1~5, duration 0.5~5초, withEffect와 delay로 시점), shake 0~3, beats(효과별 wait, motion, speed, entrance, exit), acts(제자리 연기)를 쓸 수 있습니다. 넓은 사건(모래폭풍, 비)은 area로 보드를 덮어도 좋습니다. 전체 6초 이내.
 
 ## 무엇을 바꿀까
 - 가능하면 기물의 위치, 편, 종류가 실제로 바뀌는 사건을 고르세요(move, convert, transform, spawn, remove). 태그만 붙이는 사건은 가끔만 쓰세요.

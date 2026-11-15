@@ -1,4 +1,5 @@
 import type { RuleConfig } from './config';
+import type { Aura, Staging } from './staging';
 
 export type Color = 'white' | 'black';
 export type PieceType = 'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn';
@@ -16,6 +17,8 @@ export interface Tag {
   turnsLeft: number | null;
   /** Turn number on which the tag was applied (that turn never counts down). */
   appliedOnTurn: number;
+  /** A lasting look while the tag lasts (GM staging; no rule meaning). */
+  aura?: Aura;
 }
 
 export interface Piece {
@@ -41,7 +44,7 @@ export type Effect =
   | { type: 'move'; from: Square; to: Square }
   | { type: 'remove'; at: Square }
   /** turns: 0 = permanent. Not for 탑승 (use 'board'). */
-  | { type: 'tag'; at: Square; tag: string; turns: number }
+  | { type: 'tag'; at: Square; tag: string; turns: number; aura?: Aura }
   | { type: 'untag'; at: Square; tag: string }
   /** The piece on `rider` climbs onto the friendly piece on `carrier`. */
   | { type: 'board'; rider: Square; carrier: Square }
@@ -69,6 +72,8 @@ export interface Ruling {
   /** Backfire applied on a natural 1. Empty or missing: nothing happens. */
   critFailureEffects?: Effect[];
   narration: { success: string; failure: string; critSuccess?: string; critFailure?: string };
+  /** How each outcome looks (GM staging, already cleaned; purely visual). */
+  staging?: Partial<Record<Outcome, Staging>>;
 }
 
 export type Outcome = 'critSuccess' | 'success' | 'failure' | 'critFailure';
@@ -90,6 +95,7 @@ export interface ChaosEvent {
   title: string;
   narration: string;
   effects: Effect[];
+  staging?: Staging;
 }
 
 /** A chaos event that happened, kept so later rulings can build on it. */
@@ -159,7 +165,8 @@ export type GameEvent =
   | { type: 'spawned'; piece: Piece; at: Square }
   | { type: 'converted'; pieceId: string; at: Square; to: Color }
   | { type: 'timedOut'; color: Color; apLost: number }
-  | { type: 'chaos'; title: string; narration: string }
+  /** Carries the applied effects and their staging so every screen can play the event step by step. */
+  | { type: 'chaos'; title: string; narration: string; effects: Effect[]; staging?: Staging }
   /** A special action left the opponent's king attacked, so the turn ended by itself. */
   | { type: 'autoTurnEnd'; color: Color; reason: 'check' }
   /** A capture hit a shield: the shield is gone, the target stays, the attacker did not move. */
@@ -182,6 +189,9 @@ export type GameEvent =
       success: boolean;
       outcome: Outcome;
       narration: string;
+      /** The effects that were applied for this outcome (empty on a plain failure), for step-by-step playback. */
+      effects: Effect[];
+      staging?: Staging;
     };
 
 export type RejectReason =

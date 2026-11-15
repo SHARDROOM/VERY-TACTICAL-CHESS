@@ -35,7 +35,7 @@ describe('chaos', () => {
     expect(r.state.board[sq('a6')]).toMatchObject({ color: 'black', type: 'knight' });
     expect(r.state.ap).toEqual(s.ap);
     expect(r.state.turn).toBe('white');
-    expect(r.events[0]).toEqual({ type: 'chaos', title: '모래바람', narration: '모래바람이 분다.' });
+    expect(r.events[0]).toEqual({ type: 'chaos', title: '모래바람', narration: '모래바람이 분다.', effects: [{ type: 'move', from: sq('b8'), to: sq('a6') }] });
     expect(r.state.chaosLog).toEqual([{ turnNumber: 1, title: '모래바람', narration: '모래바람이 분다.' }]);
   });
 

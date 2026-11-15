@@ -7,6 +7,7 @@ import { memoryChannelPair, type Channel } from './channel';
 import { HostSession } from './hostSession';
 import { GuestSession } from './guestSession';
 import { LocalSession } from './localSession';
+import { DICE_GRACE_MS, showMs } from './authority';
 import { parseGuestMessage } from './protocol';
 import type { Session, SessionEvent } from './types';
 
@@ -353,6 +354,26 @@ describe('turn clock', () => {
       expect(s.view().state).toMatchObject({ turn: 'black', pending: null, ap: { white: 0 } });
       // A fresh clock for black.
       expect(s.view().timer).toMatchObject({ remainingMs: 30_000, running: true });
+      s.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the dice and the show that follows an attempt add to the clock', async () => {
+    vi.useFakeTimers();
+    try {
+      const s = new LocalSession(new TestGm(), { roll: () => 15 });
+      s.setRules({ turnSeconds: 30, apPerTurn: 3 });
+      s.start();
+      s.request({ type: 'declare', action: 'b1 나이트를 투석기로 e5까지 날린다' });
+      await vi.advanceTimersByTimeAsync(0);
+      const ruling = s.view().state.pending!.ruling;
+      s.request({ type: 'attempt' });
+      await vi.advanceTimersByTimeAsync(0);
+      const show = showMs(ruling.staging?.success, ruling.effects);
+      expect(show).toBeGreaterThan(500);
+      expect(s.view().timer!.remainingMs).toBe(30_000 + DICE_GRACE_MS + show);
       s.dispose();
     } finally {
       vi.useRealTimers();

@@ -1,8 +1,8 @@
 import type { z } from 'zod';
-import type { ChaosRequest, GameMaster, GmChaosJson, GmRequest, GmRulingJson } from './types';
+import type { ChaosRequest, GameMaster, GmRequest } from './types';
 import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
 import { GM_CHAOS_JSON_SCHEMA, GM_RULING_JSON_SCHEMA } from './jsonSchema';
-import { GmChaosSchema, GmRulingSchema } from './schema';
+import { GmChaosReplySchema, GmRulingReplySchema } from './schema';
 import { GmError, describeHttpError, describeNetworkError, fetchWithRetry } from './errors';
 import { REFUSED, TRUNCATED, jsonFromText } from './llmReply';
 
@@ -35,12 +35,12 @@ export class GeminiGameMaster implements GameMaster {
     this.name = `Gemini GM (${options.model})`;
   }
 
-  rule({ action, state }: GmRequest): Promise<GmRulingJson> {
-    return this.ask(buildSystemPrompt(state.rules), buildUserMessage(action, state), GM_RULING_JSON_SCHEMA, GmRulingSchema);
+  rule({ action, state }: GmRequest): Promise<unknown> {
+    return this.ask(buildSystemPrompt(state.rules), buildUserMessage(action, state), GM_RULING_JSON_SCHEMA, GmRulingReplySchema);
   }
 
-  chaos({ state, inspiration, problem }: ChaosRequest): Promise<GmChaosJson> {
-    return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state, inspiration, problem), GM_CHAOS_JSON_SCHEMA, GmChaosSchema);
+  chaos({ state, inspiration, problem }: ChaosRequest): Promise<unknown> {
+    return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state, inspiration, problem), GM_CHAOS_JSON_SCHEMA, GmChaosReplySchema);
   }
 
   private async ask<T extends z.ZodTypeAny>(system: string, user: string, jsonSchema: object, schema: T): Promise<z.infer<T>> {

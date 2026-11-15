@@ -1,3 +1,6 @@
+import { ELEMENTS } from '../engine';
+import { GM_RULING_STAGING_JSON_SCHEMA, GM_STAGING_JSON_SCHEMA } from './staging';
+
 /**
  * Hand-written JSON Schema for the GM ruling, for providers whose structured
  * output takes plain JSON Schema (OpenAI strict mode, Gemini responseJsonSchema).
@@ -24,6 +27,8 @@ export const GM_EFFECT_JSON_SCHEMAS = [
     at: sq('태그를 붙일 기물의 칸'),
     tag: { type: 'string', description: '태그 이름. 핵심 태그: "기절", "보호막". 그 밖의 이름은 서사용 자유 태그' },
     turns: { type: 'integer', description: '지속 턴 수 (그 기물 주인의 턴 기준). 0이면 영구' },
+    aura: { type: 'string', enum: ['none', ...ELEMENTS], description: '태그가 남아 있는 동안 기물에 두를 원소 오라' },
+    auraStrength: { type: 'number', description: '오라 세기 1~3 (none이면 0)' },
   }),
   effect('untag', { at: sq('태그를 뗄 기물의 칸'), tag: { type: 'string', description: '뗄 태그 이름' } }),
   effect('board', { rider: sq('올라탈 기물의 칸'), carrier: sq('태울 같은 편 기물의 칸') }),
@@ -47,8 +52,9 @@ export const GM_CHAOS_JSON_SCHEMA = {
     title: { type: 'string', description: '사건의 짧은 제목 (한국어, 15자 이내)' },
     narration: { type: 'string', description: '무슨 일이 일어났는지 해설 (한국어, 1~2문장)' },
     effects: { type: 'array', description: '순서대로 적용할 효과 (1~3개)', items: { anyOf: GM_EFFECT_JSON_SCHEMAS } },
+    staging: { ...GM_STAGING_JSON_SCHEMA, description: '사건이 화면에서 어떻게 보일지 (보기용 연출)' },
   },
-  required: ['title', 'narration', 'effects'],
+  required: ['title', 'narration', 'effects', 'staging'],
   additionalProperties: false,
 } as const;
 
@@ -85,7 +91,8 @@ export const GM_RULING_JSON_SCHEMA = {
       required: ['success', 'failure', 'critSuccess', 'critFailure'],
       additionalProperties: false,
     },
+    staging: { ...GM_RULING_STAGING_JSON_SCHEMA, description: '결과 넷 각각이 화면에서 어떻게 보일지 (보기용 연출, 규칙에는 영향 없음)' },
   },
-  required: ['interpretation', 'feasible', 'dc', 'cost', 'effects', 'critSuccessEffects', 'critFailureEffects', 'narration'],
+  required: ['interpretation', 'feasible', 'dc', 'cost', 'effects', 'critSuccessEffects', 'critFailureEffects', 'narration', 'staging'],
   additionalProperties: false,
 } as const;

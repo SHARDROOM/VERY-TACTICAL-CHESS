@@ -1,8 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import type { z } from 'zod';
-import type { ChaosRequest, GameMaster, GmChaosJson, GmRequest, GmRulingJson } from './types';
-import { GmChaosSchema, GmRulingSchema } from './schema';
+import type { ChaosRequest, GameMaster, GmRequest } from './types';
+import { GmChaosReplySchema, GmChaosSchema, GmRulingReplySchema, GmRulingSchema } from './schema';
 import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
 import { GmError } from './errors';
 import { REFUSED, TRUNCATED, jsonFromText } from './llmReply';
@@ -46,15 +46,16 @@ export class ClaudeGameMaster implements GameMaster {
     });
   }
 
-  rule({ action, state }: GmRequest): Promise<GmRulingJson> {
-    return this.ask(buildSystemPrompt(state.rules), buildUserMessage(action, state), GmRulingSchema);
+  rule({ action, state }: GmRequest): Promise<unknown> {
+    return this.ask(buildSystemPrompt(state.rules), buildUserMessage(action, state), GmRulingSchema, GmRulingReplySchema);
   }
 
-  chaos({ state, inspiration, problem }: ChaosRequest): Promise<GmChaosJson> {
-    return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state, inspiration, problem), GmChaosSchema);
+  chaos({ state, inspiration, problem }: ChaosRequest): Promise<unknown> {
+    return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state, inspiration, problem), GmChaosSchema, GmChaosReplySchema);
   }
 
-  private async ask<T extends z.ZodTypeAny>(system: string, user: string, schema: T): Promise<z.infer<T>> {
+  /** `schema` shapes the structured output; `reply` reads it (lenient about the visual parts). */
+  private async ask<T extends z.ZodTypeAny, R extends z.ZodTypeAny>(system: string, user: string, schema: T, reply: R): Promise<z.infer<R>> {
     let response;
     try {
       response = await this.client.beta.messages.create({
@@ -75,7 +76,7 @@ export class ClaudeGameMaster implements GameMaster {
     if (response.stop_reason === 'max_tokens') throw new GmError(TRUNCATED);
     // Read content only after the stop reason says it is complete.
     const text = response.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
-    return jsonFromText(text, schema);
+    return jsonFromText(text, reply);
   }
 }
 

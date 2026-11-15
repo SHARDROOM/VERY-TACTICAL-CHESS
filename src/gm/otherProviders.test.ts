@@ -39,8 +39,10 @@ describe('shared JSON schema', () => {
     }
   });
 
-  it('describes the same shape as the zod schema', () => {
-    expect(GmRulingSchema.safeParse(ruling).success).toBe(true);
+  it('describes the same shape as the zod schema', async () => {
+    const { fakeRuling } = await import('./fakeGm');
+    // A complete ruling (staging and auras included) satisfies the generation schema.
+    expect(GmRulingSchema.safeParse(fakeRuling('b1 나이트를 투석기로 e5까지 날린다')).success).toBe(true);
     expect(Object.keys(GM_RULING_JSON_SCHEMA.properties).sort()).toEqual(Object.keys(GmRulingSchema.shape).sort());
     expect(Object.keys(GM_RULING_JSON_SCHEMA.properties.narration.properties).sort()).toEqual(
       Object.keys(GmRulingSchema.shape.narration.shape).sort(),
@@ -125,7 +127,7 @@ describe('chaos requests', () => {
     const { GmChaosSchema } = await import('./schema');
     expect(GM_CHAOS_JSON_SCHEMA.additionalProperties).toBe(false);
     expect([...GM_CHAOS_JSON_SCHEMA.required].sort()).toEqual(Object.keys(GmChaosSchema.shape).sort());
-    expect(GmChaosSchema.safeParse(chaosReply).success).toBe(true);
+    expect(GmChaosSchema.safeParse({ ...chaosReply, staging: { fx: [], shake: 0, beats: [], acts: [] } }).success).toBe(true);
   });
 
   it('OpenAI and Gemini send the chaos prompts with the chaos schema', async () => {

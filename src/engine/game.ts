@@ -73,7 +73,10 @@ function chaos(state: GameState, event: ChaosEvent): CommandResult {
   if (isInCheck(applied.board, 'white') || isInCheck(applied.board, 'black')) return bad('혼돈 뒤에 킹이 공격받는 상태가 됨');
   const title = event.title.trim().slice(0, 40);
   const narration = event.narration.trim().slice(0, 300);
-  const events: GameEvent[] = [{ type: 'chaos', title, narration }, ...applied.events];
+  const events: GameEvent[] = [
+    { type: 'chaos', title, narration, effects: event.effects, ...(event.staging && { staging: event.staging }) },
+    ...applied.events,
+  ];
   const after = withCaptured(
     {
       ...state,
@@ -270,8 +273,9 @@ function attempt(state: GameState, roll: number): CommandResult {
           ? ruling.narration.success
           : ruling.narration.failure;
 
+  const staging = ruling.staging?.[outcome];
   const events: GameEvent[] = [
-    { type: 'specialResolved', color, action, roll, dc: ruling.dc, cost: ruling.cost, success, outcome, narration },
+    { type: 'specialResolved', color, action, roll, dc: ruling.dc, cost: ruling.cost, success, outcome, narration, effects: toApply, ...(staging && { staging }) },
     ...effectEvents,
   ];
   const precedent: Precedent = {

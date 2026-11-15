@@ -13,6 +13,8 @@ export interface PiecePhysics {
   diceSide: 1 | -1;
   /** Pieces lying beside the board, solid for the next throw. */
   resting: Map<string, Obstacle>;
+  /** Every piece's 3D object by id, so effects can follow a piece as it moves. */
+  objects: Map<string, Group>;
 }
 
 export const PiecePhysicsContext = createContext<PiecePhysics | null>(null);
@@ -186,6 +188,16 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         motion.current = fallback;
       });
   };
+
+  // Effects (trails) find the piece by id.
+  useEffect(() => {
+    const g = group.current;
+    if (!physics || !g || captured) return;
+    physics.objects.set(piece.id, g);
+    return () => {
+      if (physics.objects.get(piece.id) === g) physics.objects.delete(piece.id);
+    };
+  }, [captured]);
 
   // A piece already lying beside the board when the scene opens is solid for later throws.
   useEffect(() => {
