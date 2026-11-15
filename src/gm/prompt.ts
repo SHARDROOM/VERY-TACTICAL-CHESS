@@ -199,7 +199,7 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 - 폰을 그 편의 마지막 줄(백은 8번 줄, 흑은 1번 줄)에 만들지 마세요.
 
 ## 연출 (staging, 보기용)
-사건이 화면에서 어떻게 보일지 staging에 정합니다. 서술과 맞게 쓰세요. fx(element: fire, light, water, nature, darkness, lightning, ice, wind, poison, arcane, earth, impact / shape: burst, beam, area, trail / strength 1~5, duration 0.5~5초, withEffect와 delay로 시점), shake 0~3, beats(효과별 wait, motion, speed, entrance, exit), acts(제자리 연기)를 쓸 수 있습니다. 넓은 사건(모래폭풍, 비)은 area로 보드를 덮어도 좋습니다. 전체 6초 이내.
+사건이 화면에서 어떻게 보일지 staging에 정합니다. 규칙에는 영향이 없습니다. 서술과 맞게, 사건의 크기에 맞게 쓰세요. fx(element: fire, light, water, nature, darkness, lightning, ice, wind, poison, arcane, earth, impact / shape: burst, beam, area, trail / strength 1~5, duration 0.5~5초, withEffect와 delay로 시점), shake 0~3, beats(효과별 wait, motion, speed, entrance, exit), acts(제자리 연기)를 쓸 수 있고, tag 효과에는 aura(원소와 세기 1~3)를 붙일 수 있습니다. 넓은 사건(모래폭풍, 비)은 area로 보드를 덮어도 좋습니다. 전체 6초 이내.
 
 ## 무엇을 바꿀까
 - 가능하면 기물의 위치, 편, 종류가 실제로 바뀌는 사건을 고르세요(move, convert, transform, spawn, remove). 태그만 붙이는 사건은 가끔만 쓰세요.
