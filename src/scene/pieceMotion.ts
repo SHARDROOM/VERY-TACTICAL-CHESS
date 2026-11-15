@@ -1,4 +1,5 @@
 import type { ActKind, Entrance, MotionStyle, Square } from '../engine';
+import type { DuelRun } from './duel';
 
 /**
  * Poses for staged piece motion: where a piece is, how it leans and turns, at a moment of a
@@ -32,6 +33,8 @@ export interface PieceDirection {
   revive?: { style: Entrance; duration: number };
   /** Thrown into a pit: it travels there for `duration` seconds, then falls in. */
   fallInto?: { at: Square; duration: number };
+  /** In a clash's duel: plays its side of the recorded duel from `start` (performance.now() ms). */
+  duel?: { run: DuelRun; role: 'attacker' | 'defender'; start: number };
 }
 
 export interface Pose {

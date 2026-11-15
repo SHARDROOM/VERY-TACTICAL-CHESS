@@ -37,7 +37,7 @@ const BOARD_HALF = 4.6;
 const hullCache = new Map<PieceType, Float32Array>();
 
 /** Convex hull points of a piece (in its own frame, unscaled), sampled from its rendered parts. */
-function hullPoints(type: PieceType): Float32Array {
+export function hullPoints(type: PieceType): Float32Array {
   let pts = hullCache.get(type);
   if (pts) return pts;
   const out: number[] = [];

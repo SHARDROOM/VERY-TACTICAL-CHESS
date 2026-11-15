@@ -71,3 +71,11 @@ export function clashWinChance(attack: number, defense: number): number {
   }
   return win / (win + lose);
 }
+
+/** How long a clash's duel lasts on screen, in seconds: camera in, the approach, each exchange, the decisive blow, camera out. */
+export const DUEL_TIMING = { camera: 0.9, approach: 0.6, exchange: 0.75, finale: 1.3 } as const;
+
+export function duelSeconds(exchanges: number): number {
+  const t = DUEL_TIMING;
+  return t.camera * 2 + t.approach + Math.max(0, exchanges - 1) * t.exchange + t.finale;
+}

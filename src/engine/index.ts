@@ -1,6 +1,6 @@
 export * from './types';
 export { applyCommand, clashEventFor, exitsOf, hasAnyMove } from './game';
-export { CLASH_MAX, CLASH_MIN, CLASH_ROLLS, canResist, clashMultiplier, clashWinChance, exchangesFor, resolveClash } from './clash';
+export { CLASH_MAX, CLASH_MIN, CLASH_ROLLS, DUEL_TIMING, duelSeconds, canResist, clashMultiplier, clashWinChance, exchangesFor, resolveClash } from './clash';
 export { capturedAfter } from './captured';
 export { blockedSquares, terrainAt, tickTerrain, MAX_TERRAIN } from './terrain';
 export { createInitialState, createStateFrom } from './setup';

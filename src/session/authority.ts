@@ -1,4 +1,4 @@
-import { CLASH_ROLLS, applyCommand, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type GameEvent, type GameState, type RuleConfig, type Staging } from '../engine';
+import { CLASH_ROLLS, applyCommand, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type GameEvent, type GameState, type RuleConfig, type Staging } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
@@ -156,7 +156,7 @@ export class Authority {
   private afterChange(events: GameEvent[]): void {
     if (this.state.status.kind !== 'playing') return this.restartClock();
     // A clash's dice (and its duel) do not eat the time of whoever moves next.
-    const clashTime = events.filter((e) => e.type === 'clash').length * DICE_GRACE_MS;
+    const clashTime = events.reduce((t, e) => t + (e.type === 'clash' ? DICE_GRACE_MS + Math.round(duelSeconds(e.exchanges) * 1000) : 0), 0);
     if (events.some((e) => e.type === 'turnPassed')) {
       this.restartClock();
       if (clashTime) this.addTime(clashTime);

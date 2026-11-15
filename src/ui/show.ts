@@ -39,6 +39,8 @@ export interface Show {
   movers: (string | null)[];
   /** Pieces taken by an effect with a staged exit: who, when (seconds into the show) and how. */
   exits: { pieceId: string; at: Square; exit: Exit; start: number }[];
+  /** Clashes (합) in the show: the effect that set each off. The show stops there for the dice and the duel. */
+  clashes: { effect: number; clash: Extract<GameEvent, { type: 'clash' }> }[];
 }
 
 /** The particles that go with each way of leaving (burning follows the piece as it is thrown off). */
@@ -110,11 +112,14 @@ export function buildShow(events: GameEvent[], before: GameState, outcomeLabel: 
     captured: before.captured ?? [],
     ...(head.type === 'specialResolved' && { clash: { mode: 'play' as const, rolls } }),
   };
+  const clashes: Show['clashes'] = [];
   for (let i = 0; i < effects.length; i++) {
     movers.push(moverOf(effects[i], steps[i].board));
     // From the start each time, so spawned pieces get the same ids as in the real result.
     const applied = applyEffects(before.board, effects.slice(0, i + 1), ctx);
     if (!applied.ok) break; // cannot happen for a result the engine accepted; show what we have
+    const fought = applied.events.filter((e): e is Extract<GameEvent, { type: 'clash' }> => e.type === 'clash');
+    if (fought.length > clashes.length) clashes.push({ effect: i, clash: fought[fought.length - 1] });
     const captured = capturedAfter(before.captured, applied.events, exitsOf(applied.events, applied.sources, staging));
     steps.push({ ...start, board: applied.board, terrain: applied.terrain, captured });
   }
@@ -161,11 +166,15 @@ export function buildShow(events: GameEvent[], before: GameState, outcomeLabel: 
     steps,
     movers,
     exits,
+    clashes,
   };
 }
 
-/** What each piece does in a show, by piece id. `startedAt` is when the show starts (ms). */
-export function directionsFor(show: Show, startedAt: number): Map<string, PieceDirection> {
+/**
+ * What each piece does in a show, by piece id. `startedAt` is when the show starts (ms). `from`:
+ * the show picks up again at this effect (after a clash's duel), so what came before is done.
+ */
+export function directionsFor(show: Show, startedAt: number, from = 0): Map<string, PieceDirection> {
   const out = new Map<string, PieceDirection>();
   const get = (id: string) => {
     let d = out.get(id);
@@ -173,7 +182,9 @@ export function directionsFor(show: Show, startedAt: number): Map<string, PieceD
     return d;
   };
   const { timeline, staging } = show;
+  const resumeAt = from > 0 ? timeline.effectStarts[from] ?? 0 : 0;
   show.effects.forEach((e, i) => {
+    if (i < from) return;
     const beat = staging?.beats.find((b) => b.effect === i);
     const before = show.steps[i].board;
     const after = show.steps[i + 1].board;
@@ -233,11 +244,13 @@ export function directionsFor(show: Show, startedAt: number): Map<string, PieceD
   });
   // A piece taken by a trip waits for the attacker to arrive before it leaves.
   for (const x of show.exits) {
+    if (x.start < resumeAt) continue;
     const i = timeline.effectStarts.filter((t) => t <= x.start).length - 1;
     get(x.pieceId).exitDelay = Math.max(0, x.start - (timeline.effectStarts[i] ?? 0));
   }
   (staging?.acts ?? []).forEach((a, i) => {
     const start = timeline.actStarts[i];
+    if (start < resumeAt) return;
     // Whoever stands on the square when the act begins.
     const step = timeline.effectStarts.filter((t) => t <= start).length;
     const id = show.steps[Math.min(step, show.steps.length - 1)].board[a.at]?.id;

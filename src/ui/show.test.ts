@@ -137,3 +137,26 @@ describe('swaps, revivals, pits and walls in a show', () => {
     expect(show.steps[2].captured).toEqual([expect.objectContaining({ id: knight, exit: 'sink' })]);
   });
 });
+
+describe('clashes in a show', () => {
+  it('a move effect that sets off a clash marks where the show stops; the board steps match the real result', () => {
+    const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 5, cost: 1, effects: [{ type: 'move', from: sq('b1'), to: sq('c3') }, { type: 'move', from: sq('c3'), to: sq('d5') }, { type: 'tag', at: sq('d5'), tag: '용기', turns: 1 }], narration: { success: 's', failure: 'f' } };
+    let s: GameState = { ...createInitialState(), ap: { white: 3, black: 0 } };
+    const b = [...s.board];
+    b[sq('d5')] = { id: 'bp', color: 'black', type: 'pawn', tags: [{ name: '검술', turnsLeft: null, appliedOnTurn: 1, clash: 1.5 }] };
+    s = { ...s, board: b };
+    const proposed = applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling });
+    if (!proposed.ok) throw new Error(proposed.detail);
+    // The knight loses the clash: 4 against 15×1.5.
+    const r = applyCommand(proposed.state, { type: 'attemptSpecial', roll: 15, clashRolls: [4, 15] });
+    if (!r.ok) throw new Error(r.reason);
+    const show = buildShow(r.events, proposed.state, label)!;
+    expect(show.clashes).toEqual([{ effect: 1, clash: expect.objectContaining({ winner: 'defender', defense: 1.5 }) }]);
+    // Only the effects that happened: the third never did.
+    expect(show.effects).toHaveLength(2);
+    expect(show.steps[2].board).toEqual(r.state.board);
+    // Picking up after the duel, the pieces only do what is still to come.
+    const later = directionsFor(show, 0, 1);
+    expect(later.get(proposed.state.board[sq('b1')]!.id)?.motions ?? []).toHaveLength(1);
+  });
+});

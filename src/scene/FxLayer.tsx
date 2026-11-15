@@ -27,6 +27,8 @@ export interface FxShow {
   startedAt: number;
   /** For each fx, the piece its trail follows (null: not a trail). */
   followers: (string | null)[];
+  /** For each fx, a point on the table (x, z) to centre it on instead of its square (a duel's sparks fly between two). */
+  points?: ([number, number] | null)[];
   /** Fewer particles, for slow devices. */
   light?: boolean;
 }
@@ -236,6 +238,7 @@ interface Emitter {
   /** Next lightning strike, seconds into the fx. */
   nextBolt: number;
   follower: string | null;
+  point: Vector3 | null;
 }
 
 const world = (sq: number) => {
@@ -341,6 +344,7 @@ export function FxLayer({ show, pieceAt, auras = [], light = false }: { show: Fx
       carry: 0,
       nextBolt: 0,
       follower: show.followers[i],
+      point: show.points?.[i] ? new Vector3(show.points[i]![0], 0, show.points[i]![1]) : null,
     }));
   }, [show]);
 
@@ -374,7 +378,7 @@ export function FxLayer({ show, pieceAt, auras = [], light = false }: { show: Fx
         let cx = 0;
         let cz = 0;
         if (fx.shape === 'burst' && fx.at !== null) {
-          const c = world(fx.at);
+          const c = e.point ?? world(fx.at);
           const ang = Math.random() * Math.PI * 2;
           const rr = fx.radius * Math.sqrt(Math.random()) * (origin === 'start' ? 0.35 : 0.8);
           x = c.x + Math.cos(ang) * rr;
@@ -438,6 +442,7 @@ export function FxLayer({ show, pieceAt, auras = [], light = false }: { show: Fx
       return new Vector3((r.x0 + r.x1) / 2, 0, (r.z0 + r.z1) / 2);
     }
     if (fx.shape === 'beam' && fx.to !== null) return world(fx.to);
+    if (e.point) return e.point.clone();
     return fx.at === null ? null : world(fx.at);
   };
 
@@ -542,7 +547,7 @@ export function FxLayer({ show, pieceAt, auras = [], light = false }: { show: Fx
 
   /** A shockwave along the table. */
   function ring(e: Emitter) {
-    const c = world(e.fx.at!);
+    const c = e.point ?? world(e.fx.at!);
     const look = e.look.ring!;
     const part: FxPart = { layer: 'smoke', share: 1, colors: look.colors, life: [0.55, 0.9], size: [0.3, 0.42], grow: 2.2, speed: 0, up: 0, gravity: 0, drag: 3.2, jitter: 0, alpha: look.alpha };
     const n = Math.round(70 * density);
@@ -555,7 +560,7 @@ export function FxLayer({ show, pieceAt, auras = [], light = false }: { show: Fx
 
   /** A column of light rising from the square. */
   function pillar(e: Emitter) {
-    const c = world(e.fx.at!);
+    const c = e.point ?? world(e.fx.at!);
     const part: FxPart = { layer: 'glow', share: 1, colors: ['#fffbe8', '#ffcf6b'], life: [0.7, 1.2], size: [0.3, 0.45], grow: 0.6, speed: 0, up: 0, gravity: 0, drag: 0.5, jitter: 0, alpha: 0.5 };
     const n = Math.round(90 * density * (0.6 + 0.15 * e.fx.strength));
     const r = 0.25 + 0.2 * e.fx.radius;

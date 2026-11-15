@@ -11,6 +11,7 @@ import { actPose, easeInOut, entrancePose, stylePose, swapPose, swerve, type Pie
 import { squareToWorld } from './coords';
 import { finishMaterial, type Finish } from './pieceFinish';
 import { AshPile, SHATTER_SECONDS, ShardPile, SmokeWisp } from './Remains';
+import { duelLength, duelPose } from './duel';
 
 /** What the pieces share for physics: which side the dice are on, and where taken pieces lie. */
 export interface PiecePhysics {
@@ -230,6 +231,9 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const exitingRef = useRef(exiting);
   exitingRef.current = exiting;
   const bobPhase = useRef(Math.random() * 6);
+  /** The duel this piece last played (so it stands back up on its square once only). */
+  const duelDone = useRef<unknown>(null);
+  const duelOut = useRef({ p: new Vector3(), q: new Quaternion() });
   const physics = useContext(PiecePhysicsContext);
   const phys = useRef<PhysicsMotion | null>(null);
   const shownQ = useRef(new Quaternion());
@@ -527,6 +531,31 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     const now = performance.now();
     const height = PIECE_HEIGHT[piece.type];
     let squash = 1;
+    // A clash's duel: the recorded fight drives the piece; then it stands where the fight left it.
+    const duel = direction?.duel;
+    if (duel && duelDone.current !== duel) {
+      const t = (now - duel.start) / 1000;
+      if (t >= 0) {
+        const pose = duelPose(duel.run, duel.role, t, duelOut.current);
+        shownAt.current.copy(pose.p);
+        shownQ.current.copy(pose.q);
+        phys.current = null;
+        motion.current = null;
+        if (t > duelLength(duel.run)) {
+          duelDone.current = duel;
+          // Still on the board where it was before (it held, or a shield took the blow): step back home.
+          const home = new Vector3(...position);
+          if (!captured && shownAt.current.distanceTo(home) > 0.05) {
+            motion.current = { from: shownAt.current.clone(), to: home, fromScale: shownScale.current, toScale: targetScale, delay: 0, duration: 0.45, arc: 0.15, startedAt: null, kind: 'move' };
+            shownQ.current.identity();
+          }
+        }
+        g.position.copy(shownAt.current);
+        g.quaternion.copy(shownQ.current);
+        g.scale.setScalar(shownScale.current);
+        if (!duelDone.current || duelDone.current !== duel) return;
+      }
+    }
     const pm = phys.current;
     if (pm) playPhysics(pm, clock.elapsedTime);
     const m = pm ? null : motion.current;

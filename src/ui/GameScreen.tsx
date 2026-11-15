@@ -9,7 +9,12 @@ import {
   parseMoveText,
   rankOf,
   squareName,
+  DUEL_TIMING,
+  canResist,
+  clashMultiplier,
+  clashWinChance,
   type Color,
+  type Fx,
   type GameEvent,
   type GameState,
   type Outcome,
@@ -40,6 +45,7 @@ import { buildShow, directionsFor, exitFx, type Show } from './show';
 import { reachOf } from './reach';
 import { prefersReducedMotion, useStagingLook } from './stagingLook';
 import type { FxShow } from '../scene/FxLayer';
+import { duelLength, planDuel, simulateDuel, type DuelPlan, type DuelRun } from '../scene/duel';
 
 interface LogLine extends LogEntry {
   id: number;
@@ -64,6 +70,33 @@ type ClashEvent = Extract<GameEvent, { type: 'clash' }>;
 interface Playing {
   show: Show;
   startedAt: number;
+  /** The effect the show (re)started at: 0, or the one after a clash's duel. */
+  from: number;
+}
+
+/** A clash's duel on screen: who, the recorded fight, and when it starts (performance.now() ms). */
+interface Duel {
+  clash: ClashEvent;
+  plan: DuelPlan;
+  run: DuelRun;
+  startedAt: number;
+}
+
+/** Where the camera looks from during a duel: beside the two, a little behind the attacker. */
+function duelCamera(plan: DuelPlan, side: Color): [number, number, number, number, number, number] {
+  const a = plan.attacker.stance;
+  const d = plan.defender.home;
+  const mid = a.clone().lerp(d, 0.5);
+  const dir = d.clone().sub(a).setY(0).normalize();
+  const s = side === 'white' ? 1 : -1;
+  let px = -dir.z;
+  let pz = dir.x;
+  // Look from the player's own side of the fight.
+  if (pz * s < 0 || (Math.abs(pz) < 0.2 && px < 0)) {
+    px = -px;
+    pz = -pz;
+  }
+  return [mid.x + px * 4.2 - dir.x * 0.6, 2.5, mid.z + pz * 4.2 - dir.z * 0.6, mid.x, 0.5, mid.z];
 }
 
 /** The GM's narration across the screen while (and a little after) a show plays. */
@@ -170,6 +203,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const onDoodle = useMemo(() => (op: DoodleOp) => session.doodle(op), [session]);
   /** The show on screen (null between shows), and the caption that goes with it. */
   const [stage, setStage] = useState<Playing | null>(null);
+  const [duel, setDuel] = useState<Duel | null>(null);
+  const endDuel = useRef<(() => void) | null>(null);
+  const lightRef = useRef(false);
   const [caption, setCaption] = useState<Caption | null>(null);
   const showTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const endShow = useRef<(() => void) | null>(null);
@@ -247,13 +283,19 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
      * Plays a show: the board steps through the effects one by one on its timeline, with the
      * GM's particle effects, shake and narration; then `done`. Skipping ends it at once.
      */
-    const startShow = (show: Show, batch: Batch, done: () => void) => {
+    const startShow = (show: Show, batch: Batch, done: () => void, from = 0, resumed = false) => {
       // After a roll the camera is still turning back from the dice: give it a moment.
-      const lead = batch.rolled ? SHOW_LEAD_IN : 0;
-      setFrozen(show.steps[0]);
-      setStage({ show, startedAt: performance.now() + lead * 1000 });
-      setCaption({ kind: show.kind, title: show.title, text: show.caption, outcome: show.outcome });
-      const timers = show.timeline.effectStarts.map((t, i) => setTimeout(() => setFrozen(show.steps[i + 1]), (lead + t) * 1000));
+      const lead = !resumed && batch.rolled ? SHOW_LEAD_IN : 0;
+      const t0 = resumed ? show.timeline.effectStarts[from] ?? 0 : 0;
+      setFrozen(show.steps[from]);
+      setStage({ show, startedAt: performance.now() + (lead - t0) * 1000, from });
+      if (!resumed) setCaption({ kind: show.kind, title: show.title, text: show.caption, outcome: show.outcome });
+      // A clash (합) stops the show at its effect for the dice and the duel, then it goes on from there.
+      const next = show.clashes.find((c) => (resumed ? c.effect > from : c.effect >= from));
+      const stopAt = next ? next.effect : show.effects.length;
+      const at = (t: number) => (lead + t - t0) * 1000;
+      const timers: ReturnType<typeof setTimeout>[] = [];
+      for (let i = from; i < stopAt; i++) timers.push(setTimeout(() => setFrozen(show.steps[i + 1]), at(show.timeline.effectStarts[i])));
       const finish = () => {
         showTimers.current.forEach(clearTimeout);
         showTimers.current = [];
@@ -262,10 +304,67 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         swingCamera(batch);
         done();
       };
-      // A little time after the last effect for pieces to land.
-      timers.push(setTimeout(finish, (lead + show.timeline.length) * 1000 + 500));
+      if (next) {
+        timers.push(
+          setTimeout(() => {
+            showTimers.current.forEach(clearTimeout);
+            showTimers.current = [];
+            endShow.current = null;
+            setStage(null);
+            const board = show.steps[next.effect].board;
+            startClashRoll(next.clash, () => {
+              setDice(null);
+              startDuel(next.clash, board, () => startShow(show, batch, done, next.effect, true));
+            });
+          }, at(show.timeline.effectStarts[next.effect])),
+        );
+      } else {
+        // A little time after the last effect for pieces to land.
+        timers.push(setTimeout(finish, at(show.timeline.length) + 500));
+      }
       showTimers.current = timers;
-      endShow.current = finish;
+      endShow.current = next ? null : finish;
+    };
+
+    /**
+     * A clash's duel: the camera closes in beside the two, they fight it out (recorded physics),
+     * the loser goes, and the camera goes back to where it was. Then `done`.
+     */
+    const startDuel = (clash: ClashEvent, board: GameState['board'], done: () => void) => {
+      const plan = planDuel(clash, board, lightRef.current ? 2 : 6);
+      if (!plan) return done();
+      const still = prefersReducedMotion();
+      let cameraBefore: CameraRequest | null = null;
+      if (!still) {
+        setCamera((c) => {
+          cameraBefore = c;
+          return { ...c, custom: duelCamera(plan, c.side), nonce: c.nonce + 1 };
+        });
+      }
+      void simulateDuel(plan).then((run) => {
+        const startedAt = performance.now() + (still ? 0 : DUEL_TIMING.camera) * 1000;
+        setDuel({ clash, plan, run, startedAt });
+        let over = false;
+        const end = () => {
+          if (over) return;
+          over = true;
+          clearTimeout(timer);
+          endDuel.current = null;
+          setDuel(null);
+          if (cameraBefore) {
+            const back = cameraBefore;
+            setCamera((c) => ({ ...back, custom: undefined, nonce: c.nonce + 1 }));
+          }
+          done();
+        };
+        // A moment after the last blow so the pieces can stand up; skipping jumps to the end of the fight first.
+        const timer = setTimeout(end, startedAt - performance.now() + duelLength(run) * 1000 + 350);
+        endDuel.current = () => {
+          setDuel((d) => (d ? { ...d, startedAt: performance.now() - duelLength(d.run) * 1000 - 10 } : d));
+          clearTimeout(timer);
+          setTimeout(end, 120);
+        };
+      });
     };
 
     /** Rolls the die on the table: simulate, look at the tray, then reveal via `done`. */
@@ -317,15 +416,16 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
           });
           return;
         }
-        // A clash (합) shows its dice before anything moves (after a special action's own roll).
-        const clashes = head.events.filter((ev): ev is ClashEvent => ev.type === 'clash');
+        // A clash (합) in a normal move: its dice, then the duel, before anything moves. (A special
+        // action's clashes play inside its show, where its effect comes.)
+        const clashes = resolved ? [] : head.events.filter((ev): ev is ClashEvent => ev.type === 'clash');
         if ((head.clashesShown ?? 0) < clashes.length) {
           const clash = clashes[head.clashesShown ?? 0];
           head.clashesShown = (head.clashesShown ?? 0) + 1;
           setFrozen(head.before);
           startClashRoll(clash, () => {
             setDice(null);
-            pump();
+            startDuel(clash, head.before.board, pump);
           });
           return;
         }
@@ -410,29 +510,84 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const game = frozen ?? view.state;
   // "Light" staging: fewer particles and no shake; a device asking for less motion never shakes.
   const look = useStagingLook();
+  lightRef.current = look === 'light';
   const fxShow = useMemo<FxShow | null>(() => {
+    if (duel) {
+      // Sparks where they meet; a burst of light when a shield breaks.
+      const { run, clash, startedAt } = duel;
+      const point: [number, number] = [run.contact.x, run.contact.z];
+      const fx = run.hits.map((h): Fx => ({ element: 'impact', shape: 'burst', at: clash.at, to: null, radius: 0.35 + 0.35 * h.strength, strength: h.final ? 4 : 2, duration: 0.45, withEffect: null, delay: 0 }));
+      const final = run.hits.find((h) => h.final);
+      if (final && duel.plan.finale === 'shield') fx.push({ element: 'light', shape: 'burst', at: clash.at, to: null, radius: 0.8, strength: 3, duration: 0.8, withEffect: null, delay: 0 });
+      const starts = [...run.hits.map((h) => h.t), ...(fx.length > run.hits.length ? [final!.t] : [])];
+      return {
+        fx,
+        starts,
+        ends: starts.map((t, i) => t + fx[i].duration),
+        startedAt,
+        followers: fx.map(() => null),
+        points: fx.map((f) => (f.element === 'impact' ? point : null)),
+        light: look === 'light',
+      };
+    }
     if (!stage) return null;
-    const { show, startedAt } = stage;
+    const { show, startedAt, from } = stage;
+    // Picking up after a duel: only what is still to come.
+    const resumeAt = from > 0 ? show.timeline.effectStarts[from] ?? 0 : 0;
     const fx = show.staging?.fx ?? [];
     const exits = exitFx(show);
-    return {
+    const all = {
       fx: [...fx, ...exits.map((x) => x.fx)],
       starts: [...show.timeline.fxStarts, ...exits.map((x) => x.start)],
       ends: [...show.timeline.fxEnds, ...exits.map((x) => x.end)],
-      startedAt,
       followers: [...fx.map((f) => (f.shape === 'trail' && f.withEffect !== null ? (show.movers[f.withEffect] ?? null) : null)), ...exits.map((x) => x.follower)],
+    };
+    const keep = all.starts.map((t) => t >= resumeAt - 0.01);
+    return {
+      fx: all.fx.filter((_, i) => keep[i]),
+      starts: all.starts.filter((_, i) => keep[i]),
+      ends: all.ends.filter((_, i) => keep[i]),
+      followers: all.followers.filter((_, i) => keep[i]),
+      startedAt,
       light: look === 'light',
     };
-  }, [stage, look]);
-  // What each piece does in the show (how it travels, appears, acts); hand moves have nothing.
-  const directions = useMemo(() => (stage ? directionsFor(stage.show, stage.startedAt) : undefined), [stage]);
+  }, [stage, duel, look]);
+  // What each piece does in the show (how it travels, appears, acts) or in a duel; hand moves have nothing.
+  const directions = useMemo(() => {
+    if (duel) {
+      const fight = (role: 'attacker' | 'defender') => ({ motions: [], acts: [], duel: { run: duel.run, role, start: duel.startedAt } });
+      return new Map([
+        [duel.plan.attackerId, fight('attacker')],
+        [duel.plan.defenderId, fight('defender')],
+      ]);
+    }
+    return stage ? directionsFor(stage.show, stage.startedAt, stage.from) : undefined;
+  }, [stage, duel]);
   const shake = useMemo(() => {
+    if (look === 'light' || prefersReducedMotion()) return null;
+    if (duel) {
+      const final = duel.run.hits.find((h) => h.final);
+      return final ? { at: duel.startedAt + final.t * 1000, strength: 1 } : null;
+    }
     const strength = stage?.show.staging?.shake ?? 0;
     const at = stage?.show.timeline.shakeAt ?? null;
-    if (!stage || !strength || at === null || look === 'light' || prefersReducedMotion()) return null;
+    if (!stage || !strength || at === null) return null;
     return { at: stage.startedAt + at * 1000, strength };
-  }, [stage, look]);
+  }, [stage, duel, look]);
   const targets = useMemo(() => (selected === null ? [] : legalTargets(game, selected).map((t) => t.to)), [game, selected]);
+  // Captures that would be clashes (합), with the selected piece's chance of winning each.
+  const clashOdds = useMemo(() => {
+    const mover = selected === null ? null : game.board[selected];
+    if (selected === null || !mover) return [];
+    return legalTargets(game, selected).flatMap((t) => {
+      const victimSq = t.special?.kind === 'enPassant' ? t.to + (mover.color === 'white' ? -8 : 8) : t.to;
+      const victim = game.board[victimSq];
+      if (!victim || victim.color === mover.color || !canResist(victim)) return [];
+      const attack = clashMultiplier(mover);
+      const defense = clashMultiplier(victim);
+      return [{ at: t.to, attack, defense, shield: !!victim.tags?.some((g) => g.name === '보호막'), chance: clashWinChance(attack, defense) }];
+    });
+  }, [game, selected]);
 
   const sideToMove = game.turn;
   const playing = game.status.kind === 'playing';
@@ -444,7 +599,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const reach = useMemo(() => (pending ? reachOf(pending.ruling, game.board) : null), [pending, game.board]);
   const marks = useMemo(() => (reach && !stage ? { actor: reach.actor, targets: reach.targets.map((t) => t.at) } : null), [reach, stage]);
   const connected = view.connection.kind === 'local' || view.connection.kind === 'hosting' || view.connection.kind === 'connected';
-  const locked = !playing || view.gmBusy || !!pending || !myTurn || !connected || !!dice || !!stage;
+  const locked = !playing || view.gmBusy || !!pending || !myTurn || !connected || !!dice || !!stage || !!duel;
   // A turn has to be used for something: a normal move ends it by itself, so passing is only
   // for after a special action (or when no piece can move at all).
   const canEndTurn = game.usedApThisTurn || !hasAnyMove(game);
@@ -535,6 +690,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         captured={game.captured ?? []}
         terrain={game.terrain}
         marks={marks}
+        clashTargets={clashOdds.map((c) => c.at)}
         directions={directions}
         fx={fxShow}
         shake={shake}
@@ -867,6 +1023,27 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             )}
           </div>
           {caption.text && <p className="show-text">{caption.text}</p>}
+        </div>
+      )}
+
+      {duel && (
+        <div className="hud dice-hud duel-hud" role="status">
+          <span className="clash-title">합</span>
+          <span className="duel-who">
+            {COLOR_NAME[duel.clash.attacker]} {pieceName(game, duel.clash.attackerId)} 대 {COLOR_NAME[opponent(duel.clash.attacker)]} {pieceName(game, duel.clash.defenderId)}
+          </span>
+          <button onClick={() => endDuel.current?.()}>건너뛰기</button>
+        </div>
+      )}
+
+      {clashOdds.length > 0 && !locked && (
+        <div className="hud clash-odds" role="status">
+          {clashOdds.map((c) => (
+            <span key={c.at} className="clash-odd">
+              <span className="clash-odd-square">{squareName(c.at)}</span> 합 ×{c.attack} 대 ×{c.defense}
+              {c.shield ? ' (보호막)' : ''} · 승률 <strong>{Math.round(c.chance * 100)}%</strong>
+            </span>
+          ))}
         </div>
       )}
 
