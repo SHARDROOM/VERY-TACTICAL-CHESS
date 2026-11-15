@@ -225,6 +225,18 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const [log, setLog] = useState<LogLine[]>(() => (startNotice ? [{ id: nextLogId++, text: startNotice, tone: 'warn' }] : []));
   const [text, setText] = useState('');
   const [camera, setCamera] = useState<CameraRequest>({ mode: 'side', side: homeSide, nonce: 0 });
+  // Dev only: "x,y,z,tx,ty,tz" pins the camera there (for screenshots from odd angles).
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const w = window as unknown as { __vtcCam?: (spec: string) => void };
+    w.__vtcCam = (spec) => {
+      const v = spec.split(',').map(Number);
+      if (v.length === 6 && v.every(Number.isFinite)) setCamera((c) => ({ ...c, custom: v as CameraRequest['custom'], nonce: c.nonce + 1 }));
+    };
+    return () => {
+      delete w.__vtcCam;
+    };
+  }, []);
   const [warning, setWarning] = useState<string | null>(null);
   const [showPrecedents, setShowPrecedents] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
