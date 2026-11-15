@@ -91,6 +91,15 @@ describe('saved games', () => {
     expect(back.board[sq('e2')]?.tags?.[0].aura).toEqual({ element: 'fire', strength: 3 });
   });
 
+  it('keeps clash multipliers and props on tags', () => {
+    const storage = new MemoryStorage();
+    const board = [...createInitialState().board];
+    board[sq('e2')] = { ...board[sq('e2')]!, tags: [{ name: '검술', turnsLeft: 3, appliedOnTurn: 1, clash: 1.5, prop: { preset: 'sword', parts: [], attach: 'rightHand', scale: 1 } }] };
+    const state: GameState = { ...createInitialState(), board };
+    saveGame({ kind: 'hotseat', state, gm: { provider: 'fake' } }, storage);
+    expect(loadSavedGame(storage)!.state.board[sq('e2')]?.tags).toEqual(board[sq('e2')]!.tags);
+  });
+
   it('keeps walls and pits with their turns left', () => {
     const storage = new MemoryStorage();
     const state: GameState = {

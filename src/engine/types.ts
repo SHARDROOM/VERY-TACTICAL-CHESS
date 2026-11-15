@@ -1,5 +1,6 @@
 import type { RuleConfig } from './config';
 import type { Aura, Exit, Staging } from './staging';
+import type { Prop } from './props';
 
 export type Color = 'white' | 'black';
 export type PieceType = 'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn';
@@ -26,6 +27,8 @@ export interface Tag {
    * someone tries to capture it, and uses it when it attacks into a clash. See clash.ts.
    */
   clash?: number;
+  /** What the tag looks like on the piece (a sword for 검술); goes with the tag. */
+  prop?: Prop;
 }
 
 /** A piece beside the board, and how it left (as the GM staged it; missing = knocked off). */
@@ -71,8 +74,8 @@ export type CastlingRights = Record<Color, { kingSide: boolean; queenSide: boole
 export type Effect =
   | { type: 'move'; from: Square; to: Square }
   | { type: 'remove'; at: Square }
-  /** turns: 0 = permanent. Not for 탑승 (use 'board'). */
-  | { type: 'tag'; at: Square; tag: string; turns: number; aura?: Aura }
+  /** turns: 0 = permanent. Not for 탑승 (use 'board'). `clash`: a clash multiplier; `prop`: its look on the piece. */
+  | { type: 'tag'; at: Square; tag: string; turns: number; aura?: Aura; clash?: number; prop?: Prop }
   | { type: 'untag'; at: Square; tag: string }
   /** The piece on `rider` climbs onto the friendly piece on `carrier`. */
   | { type: 'board'; rider: Square; carrier: Square }

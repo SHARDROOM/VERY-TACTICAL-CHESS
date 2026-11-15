@@ -23,7 +23,8 @@ import { SHIELD } from './types';
 import { MAX_TERRAIN } from './terrain';
 import { capturedAfter } from './captured';
 import { checkActor } from './actor';
-import { canResist, clashMultiplier, resolveClash } from './clash';
+import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, resolveClash } from './clash';
+import { cleanProp } from './props';
 
 const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑' };
 const PIECE_NAME: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
@@ -209,7 +210,18 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (name === BURN && piece.type === 'king') return fail('킹에는 화상을 입힐 수 없음');
         if (name === BURN && e.turns === 0) return fail('화상은 1턴 이상이어야 함 (턴이 다하면 기물이 탄다)');
         const turnsLeft = e.turns === 0 ? null : e.turns;
-        board[e.at as Square] = withTag(piece, { name, turnsLeft, appliedOnTurn: ctx.turnNumber, ...(e.aura && { aura: e.aura }) });
+        if (e.clash !== undefined && (typeof e.clash !== 'number' || !(e.clash >= CLASH_MIN && e.clash <= CLASH_MAX))) {
+          return fail(`합 배율은 ×${CLASH_MIN}~×${CLASH_MAX}`);
+        }
+        const prop = e.prop ? cleanProp(e.prop) : null;
+        board[e.at as Square] = withTag(piece, {
+          name,
+          turnsLeft,
+          appliedOnTurn: ctx.turnNumber,
+          ...(e.aura && { aura: e.aura }),
+          ...(e.clash !== undefined && { clash: Math.round(e.clash * 10) / 10 }),
+          ...(prop && { prop }),
+        });
         events.push({ type: 'tagged', pieceId: piece.id, at: e.at as Square, tag: name, turns: turnsLeft });
         break;
       }

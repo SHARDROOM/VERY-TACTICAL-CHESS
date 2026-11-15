@@ -19,6 +19,9 @@ import {
   type FxShape,
   type MotionStyle,
   type PieceType,
+  type AttachPoint,
+  type PropPreset,
+  defaultAttach,
 } from '../engine';
 import type { PieceDirection } from '../scene/pieceMotion';
 import { BoardScene } from '../scene/BoardScene';
@@ -30,6 +33,8 @@ import type { FxShow } from '../scene/FxLayer';
  * `&top` looks from above, `&side-table` at the dice; `&cam=x,y,z,tx,ty,tz` from anywhere; `&shake=2` jolts the table.
  * Pieces: `&trip=hop:b1-c3,spin:g1-f5` `&enter=rise:e4:queen` `&act=fall:e2` `&morph=c1:knight` `&swirl=a7`
  * `&exit=ash:d7,shatter:e7` (removed, leaving that way), `&aura=fire:e2:3` (a tag with an aura).
+ * Props: `&prop=sword:e2,shield:d2:leftHand,flag:c2::#3355cc,crown:e1` (preset:square:attach:colour), and
+ * `&parts=e4:<url-encoded JSON array of parts>` for a prop of the GM's own parts.
  */
 function staged(params: URLSearchParams, start: Board): { board: Board; captured: CapturedPiece[]; directions: Map<string, PieceDirection> } {
   const list = (name: string) => (params.get(name) ?? '').split(',').filter(Boolean).map((x) => x.split(':'));
@@ -46,6 +51,14 @@ function staged(params: URLSearchParams, start: Board): { board: Board; captured
   for (const [sq] of list('swirl')) effects.push({ type: 'convert', at: parseSquare(sq)!, color: 'white' });
   for (const [element, sq, strength] of list('aura')) {
     effects.push({ type: 'tag', at: parseSquare(sq)!, tag: `${element} 오라`, turns: 3, aura: { element: element as Element, strength: Number(strength) || 2 } });
+  }
+  for (const [preset, sq, attach, color] of list('prop')) {
+    effects.push({ type: 'tag', at: parseSquare(sq)!, tag: `${preset} 소품`, turns: 0, prop: { preset: preset as PropPreset, parts: [], attach: (attach || defaultAttach(preset as PropPreset)) as AttachPoint, scale: 1, ...(color && { color }) } });
+  }
+  const custom = params.get('parts');
+  if (custom) {
+    const [sq, json] = [custom.slice(0, 2), custom.slice(3)];
+    effects.push({ type: 'tag', at: parseSquare(sq)!, tag: '자유 조형물', turns: 0, prop: { preset: null, parts: JSON.parse(json), attach: 'rightHand', scale: 1 } });
   }
   const exits = new Map<string, Exit>();
   for (const [exit, sq] of list('exit')) {

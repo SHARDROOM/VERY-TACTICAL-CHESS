@@ -12,6 +12,7 @@ import { squareToWorld } from './coords';
 import { finishMaterial, type Finish } from './pieceFinish';
 import { AshPile, SHATTER_SECONDS, ShardPile, SmokeWisp } from './Remains';
 import { duelLength, duelPose } from './duel';
+import { PropOnPiece } from './PropMesh';
 
 /** What the pieces share for physics: which side the dice are on, and where taken pieces lie. */
 export interface PiecePhysics {
@@ -96,6 +97,7 @@ function TagDecorations({ piece, top }: { piece: Piece; top: number }) {
       {hasTag(piece, SHIELD) && <ShieldBubble height={top} />}
       {stunned && <StunStars y={top + 0.12} />}
       {chips.length > 0 && <TurnBadges chips={chips} y={top + (stunned ? 0.36 : 0.2)} />}
+      {(piece.tags ?? []).map((t) => t.prop && <PropOnPiece key={t.name} prop={t.prop} color={piece.color} height={top} />)}
     </>
   );
 }
