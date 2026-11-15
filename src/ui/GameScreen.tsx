@@ -46,6 +46,8 @@ import { reachOf } from './reach';
 import { prefersReducedMotion, useStagingLook } from './stagingLook';
 import type { FxShow } from '../scene/FxLayer';
 import { duelLength, planDuel, simulateDuel, type DuelPlan, type DuelRun } from '../scene/duel';
+import { runLength, simulateRomp, type BoardRun, type Mover } from '../scene/boardPhysics';
+import type { PieceDirection } from '../scene/pieceMotion';
 
 interface LogLine extends LogEntry {
   id: number;
@@ -72,6 +74,40 @@ interface Playing {
   startedAt: number;
   /** The effect the show (re)started at: 0, or the one after a clash's duel. */
   from: number;
+  /** Flights in the show played as romps (the flung piece bowls others over), by effect. */
+  romps: { effect: number; run: BoardRun }[];
+}
+
+/** A plain move played as a romp: the recording and when it started (performance.now() ms). */
+interface Romp {
+  run: BoardRun;
+  start: number;
+}
+
+/** The pieces a plain move sends across the board (a castling king takes its rook along). */
+function moversOf(ev: Extract<GameEvent, { type: 'moved' }>, board: GameState['board']): Mover[] {
+  const piece = board[ev.from];
+  if (!piece) return [];
+  const movers: Mover[] = [{ id: piece.id, type: piece.type, from: ev.from, to: ev.to, mode: piece.type === 'knight' ? 'throw' : 'slide' }];
+  if (ev.special?.kind === 'castle') {
+    const rank = rankOf(ev.from);
+    const [rf, rt] = ev.special.side === 'king' ? [7, 5] : [0, 3];
+    const rook = board[rank * 8 + rf];
+    if (rook) movers.push({ id: rook.id, type: rook.type, from: rank * 8 + rf, to: rank * 8 + rt, mode: 'slide' });
+  }
+  return movers;
+}
+
+/** The same flight on every screen: a seed from the move. */
+const moveSeed = (turn: number, from: Square, to: Square) => turn * 4099 + from * 67 + to * 7 + 1;
+
+/** Puppet directions for every piece a recording moves, from `start`. */
+function puppets(run: BoardRun, start: number, into = new Map<string, PieceDirection>()): Map<string, PieceDirection> {
+  for (const [id, frames] of run.tracks) {
+    const d = into.get(id) ?? { motions: [], acts: [] };
+    into.set(id, { ...d, puppet: { frames, steps: run.steps, dt: run.dt, start } });
+  }
+  return into;
 }
 
 /** A clash's duel on screen: who, the recorded fight, and when it starts (performance.now() ms). */
@@ -206,6 +242,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   /** The show on screen (null between shows), and the caption that goes with it. */
   const [stage, setStage] = useState<Playing | null>(null);
   const [duel, setDuel] = useState<Duel | null>(null);
+  const [romp, setRomp] = useState<Romp | null>(null);
   const endDuel = useRef<(() => void) | null>(null);
   const lightRef = useRef(false);
   const [caption, setCaption] = useState<Caption | null>(null);
@@ -285,12 +322,12 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
      * Plays a show: the board steps through the effects one by one on its timeline, with the
      * GM's particle effects, shake and narration; then `done`. Skipping ends it at once.
      */
-    const startShow = (show: Show, batch: Batch, done: () => void, from = 0, resumed = false) => {
+    const startShow = (show: Show, batch: Batch, done: () => void, from = 0, resumed = false, romps: Playing['romps'] = []) => {
       // After a roll the camera is still turning back from the dice: give it a moment.
       const lead = !resumed && batch.rolled ? SHOW_LEAD_IN : 0;
       const t0 = resumed ? show.timeline.effectStarts[from] ?? 0 : 0;
       setFrozen(show.steps[from]);
-      setStage({ show, startedAt: performance.now() + (lead - t0) * 1000, from });
+      setStage({ show, startedAt: performance.now() + (lead - t0) * 1000, from, romps });
       if (!resumed) setCaption({ kind: show.kind, title: show.title, text: show.caption, outcome: show.outcome });
       // A clash (합) stops the show at its effect for the dice and the duel, then it goes on from there.
       const next = show.clashes.find((c) => (resumed ? c.effect > from : c.effect >= from));
@@ -316,13 +353,14 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             const board = show.steps[next.effect].board;
             startClashRoll(next.clash, () => {
               setDice(null);
-              startDuel(next.clash, board, () => startShow(show, batch, done, next.effect, true));
+              startDuel(next.clash, board, () => startShow(show, batch, done, next.effect, true, romps));
             });
           }, at(show.timeline.effectStarts[next.effect])),
         );
       } else {
-        // A little time after the last effect for pieces to land.
-        timers.push(setTimeout(finish, at(show.timeline.length) + 500));
+        // A little time after the last effect for pieces to land (and any romp to be over).
+        const rompEnd = Math.max(0, ...romps.map((r) => (show.timeline.effectStarts[r.effect] ?? 0) + runLength(r.run)));
+        timers.push(setTimeout(finish, at(Math.max(show.timeline.length, rompEnd)) + 500));
       }
       showTimers.current = timers;
       endShow.current = next ? null : finish;
@@ -346,20 +384,66 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
           over = true;
           clearTimeout(timer);
           endDuel.current = null;
-          setDuel(null);
-          // The result plays out while the camera is still close (the loser shatters or flies off),
-          // then it pulls back to the player's view (whatever side that is by now).
+          // The result goes on the board just before the recording ends, so each piece eases from
+          // where the fight left it to where the rules put it (the loser shatters or flies off).
           done();
+          setTimeout(() => setDuel(null), 450);
+          // Then the camera pulls back to the player's view (whatever side that is by now).
           if (!still) setTimeout(() => setCamera((c) => (c.custom ? { ...c, custom: undefined, nonce: c.nonce + 1 } : c)), DUEL_AFTERMATH_MS);
         };
-        // A moment after the last blow so the pieces can stand up; skipping jumps to the end of the fight first.
-        const timer = setTimeout(end, startedAt - performance.now() + duelLength(run) * 1000 + 350);
+        const timer = setTimeout(end, startedAt - performance.now() + duelLength(run) * 1000 - 60);
         endDuel.current = () => {
+          // Skipping: the fight is over at once.
           setDuel((d) => (d ? { ...d, startedAt: performance.now() - duelLength(d.run) * 1000 - 10 } : d));
           clearTimeout(timer);
-          setTimeout(end, 120);
+          setTimeout(end, 30);
         };
       });
+    };
+
+    /**
+     * A plain move as a romp: the piece is shoved (or flung) across the board, bowling over what
+     * it meets; just before it is over the move goes on the board, and every piece eases back.
+     */
+    const startRomp = (batch: Batch, done: () => void) => {
+      const ev = batch.events.find((e): e is Extract<GameEvent, { type: 'moved' }> => e.type === 'moved')!;
+      const movers = moversOf(ev, batch.before.board);
+      void simulateRomp({ board: batch.before.board, movers, terrain: batch.before.terrain, seed: moveSeed(batch.before.turnNumber, ev.from, ev.to) })
+        .then((run) => {
+          const start = performance.now();
+          setRomp({ run, start });
+          setTimeout(done, Math.max(0, runLength(run) * 1000 - 60));
+          setTimeout(() => setRomp((r) => (r?.run === run ? null : r)), runLength(run) * 1000 + 450);
+        })
+        .catch(done);
+    };
+
+    /** The flights of a show (default and fly moves) as romps, simulated before it starts. */
+    const prepareRomps = async (show: Show): Promise<Playing['romps']> => {
+      if (prefersReducedMotion()) return [];
+      const out: Playing['romps'] = [];
+      for (const [i, e] of show.effects.entries()) {
+        if (e.type !== 'move' || show.clashes.some((c) => c.effect === i)) continue;
+        const style = show.staging?.beats.find((b) => b.effect === i)?.motion ?? 'default';
+        const before = show.steps[i];
+        const piece = before.board[e.from];
+        // Into a pit, or a piece that is not there any more: the usual ways.
+        if (!piece || (style !== 'default' && style !== 'fly') || !show.steps[i + 1].board.some((p) => p?.id === piece.id)) continue;
+        const victim = before.board[e.to];
+        try {
+          const run = await simulateRomp({
+            board: before.board,
+            movers: [{ id: piece.id, type: piece.type, from: e.from, to: e.to, mode: 'throw' }],
+            exclude: new Set(victim ? [victim.id] : []),
+            terrain: before.terrain,
+            seed: moveSeed(before.turnNumber, e.from, e.to) + i,
+          });
+          out.push({ effect: i, run });
+        } catch {
+          // No physics: the usual flight.
+        }
+      }
+      return out;
     };
 
     /** Rolls the die on the table: simulate, look at the tray, then reveal via `done`. */
@@ -429,8 +513,29 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
           const show = buildShow(head.events, head.before, (o) => OUTCOME_LABEL[o]);
           if (show && show.timeline.length > 0) {
             applyBatch(head, true);
-            startShow(show, head, () => {
+            setFrozen(show.steps[0]);
+            void prepareRomps(show).then((romps) =>
+              startShow(
+                show,
+                head,
+                () => {
+                  queue.shift();
+                  pump();
+                },
+                0,
+                false,
+                romps,
+              ),
+            );
+            return;
+          }
+          // A plain move: a romp across the board (unless the device asks for less motion).
+          const plain = !show && !resolved && head.events.some((ev) => ev.type === 'moved') && !head.events.some((ev) => ev.type === 'clash' || ev.type === 'chaos');
+          if (plain && !prefersReducedMotion()) {
+            setFrozen(head.before);
+            startRomp(head, () => {
               queue.shift();
+              applyBatch(head);
               pump();
             });
             return;
@@ -550,14 +655,22 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   // What each piece does in the show (how it travels, appears, acts) or in a duel; hand moves have nothing.
   const directions = useMemo(() => {
     if (duel) {
-      const fight = (role: 'attacker' | 'defender') => ({ motions: [], acts: [], duel: { run: duel.run, role, start: duel.startedAt } });
+      const { run } = duel;
+      const fight = (frames: Float32Array): PieceDirection => ({ motions: [], acts: [], puppet: { frames, steps: run.steps, dt: run.dt, start: duel.startedAt } });
       return new Map([
-        [duel.plan.attackerId, fight('attacker')],
-        [duel.plan.defenderId, fight('defender')],
+        [duel.plan.attackerId, fight(run.attacker)],
+        [duel.plan.defenderId, fight(run.defender)],
       ]);
     }
-    return stage ? directionsFor(stage.show, stage.startedAt, stage.from) : undefined;
-  }, [stage, duel]);
+    if (romp) return puppets(romp.run, romp.start);
+    if (!stage) return undefined;
+    const base = directionsFor(stage.show, stage.startedAt, stage.from);
+    for (const r of stage.romps) {
+      if (r.effect < stage.from) continue;
+      puppets(r.run, stage.startedAt + (stage.show.timeline.effectStarts[r.effect] ?? 0) * 1000, base);
+    }
+    return base;
+  }, [stage, duel, romp]);
   const shake = useMemo(() => {
     if (look === 'light' || prefersReducedMotion()) return null;
     if (duel) {
@@ -594,7 +707,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const reach = useMemo(() => (pending ? reachOf(pending.ruling, game.board) : null), [pending, game.board]);
   const marks = useMemo(() => (reach && !stage ? { actor: reach.actor, targets: reach.targets.map((t) => t.at) } : null), [reach, stage]);
   const connected = view.connection.kind === 'local' || view.connection.kind === 'hosting' || view.connection.kind === 'connected';
-  const locked = !playing || view.gmBusy || !!pending || !myTurn || !connected || !!dice || !!stage || !!duel;
+  const locked = !playing || view.gmBusy || !!pending || !myTurn || !connected || !!dice || !!stage || !!duel || !!romp;
   // A turn has to be used for something: a normal move ends it by itself, so passing is only
   // for after a special action (or when no piece can move at all).
   const canEndTurn = game.usedApThisTurn || !hasAnyMove(game);

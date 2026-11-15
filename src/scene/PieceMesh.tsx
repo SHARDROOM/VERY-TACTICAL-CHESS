@@ -11,7 +11,6 @@ import { actPose, easeInOut, entrancePose, stylePose, swapPose, swerve, type Pie
 import { squareToWorld } from './coords';
 import { finishMaterial, type Finish } from './pieceFinish';
 import { AshPile, SHATTER_SECONDS, ShardPile, SmokeWisp } from './Remains';
-import { duelLength, duelPose } from './duel';
 import { PropOnPiece } from './PropMesh';
 
 /** What the pieces share for physics: which side the dice are on, and where taken pieces lie. */
@@ -150,7 +149,9 @@ interface Motion {
   duration: number;
   arc: number;
   startedAt: number | null;
-  kind: 'move' | 'captured' | 'pop' | 'styled' | 'entrance' | 'exit' | 'swap' | 'revive';
+  kind: 'move' | 'captured' | 'pop' | 'styled' | 'entrance' | 'exit' | 'swap' | 'revive' | 'settle';
+  /** For 'settle': the tilt it starts from (it stands up on the way). */
+  fromQ?: Quaternion;
   /** For 'styled' trips, 'entrance's, 'exit's and 'revive's. */
   style?: MotionStyle | Entrance | Exit;
   /** Trading squares: swerve to this side of the line so the two pieces pass each other. */
@@ -235,9 +236,11 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const exitingRef = useRef(exiting);
   exitingRef.current = exiting;
   const bobPhase = useRef(Math.random() * 6);
-  /** The duel this piece last played (so it stands back up on its square once only). */
-  const duelDone = useRef<unknown>(null);
-  const duelOut = useRef({ p: new Vector3(), q: new Quaternion() });
+  /** The recording this piece last played (so it settles back once only). */
+  const puppetDone = useRef<unknown>(null);
+  /** The next plan is the slow walk back after a recording, not an ordinary trip. */
+  const settleNext = useRef(false);
+  const planRef = useRef<() => void>(() => {});
   const physics = useContext(PiecePhysicsContext);
   const phys = useRef<PhysicsMotion | null>(null);
   const shownQ = useRef(new Quaternion());
@@ -406,8 +409,15 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     }
   }, [piece.type, piece.color, piece.rider?.id]);
 
-  // A new destination: plan the trip from wherever the piece is now.
+  // A new destination: plan the trip from wherever the piece is now (once a recording it is
+  // playing is over: the end of the recording plans it then).
   useEffect(() => {
+    const pup = direction?.puppet;
+    if (pup && puppetDone.current !== pup && performance.now() < pup.start + pup.steps * pup.dt * 1000) return;
+    planRef.current();
+  }, [position[0], position[2], targetScale]);
+
+  planRef.current = () => {
     const key = `${position[0]},${position[2]},${targetScale}`;
     if (key === lastTarget.current) return;
     lastTarget.current = key;
@@ -429,6 +439,17 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       motion.current = { ...scripted, delay: 0, duration, arc: 2, kind: 'revive', style };
       glow.current = { color: '#fff1c9', peak: 1.5, start: performance.now(), duration: duration * 1000 };
       return;
+    }
+    if (settleNext.current) {
+      settleNext.current = false;
+      if (!captured) {
+        // After a romp or a duel: back to its square slowly, standing up on the way.
+        const d = from.distanceTo(to);
+        phys.current = null;
+        motion.current = { ...scripted, delay: 0, duration: 0.7 + 0.12 * Math.min(d, 4), arc: Math.min(0.45, 0.1 + 0.08 * d), kind: 'settle', fromQ: shownQ.current.clone() };
+        return;
+      }
+      // Taken: it goes off from wherever it lies (below).
     }
     if (trip && trip.style !== 'default' && trip.style !== 'fly') {
       // A styled trip from the show, timed to its place in the show.
@@ -527,7 +548,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     }
     phys.current = null;
     motion.current = scripted;
-  }, [position[0], position[2], targetScale]);
+  };
 
   useFrame(({ clock }, dt) => {
     const g = group.current;
@@ -535,29 +556,28 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     const now = performance.now();
     const height = PIECE_HEIGHT[piece.type];
     let squash = 1;
-    // A clash's duel: the recorded fight drives the piece; then it stands where the fight left it.
-    const duel = direction?.duel;
-    if (duel && duelDone.current !== duel) {
-      const t = (now - duel.start) / 1000;
+    // A recording (a duel, a romp) drives the piece; when it is over it eases back where it belongs.
+    const pup = direction?.puppet;
+    if (pup && puppetDone.current !== pup) {
+      const t = (now - pup.start) / 1000;
       if (t >= 0) {
-        const pose = duelPose(duel.run, duel.role, t, duelOut.current);
-        shownAt.current.copy(pose.p);
-        shownQ.current.copy(pose.q);
+        const o = Math.max(0, Math.min(pup.steps - 1, Math.floor(t / pup.dt))) * 7;
+        const f = pup.frames;
+        shownAt.current.set(f[o], f[o + 1], f[o + 2]);
+        shownQ.current.set(f[o + 3], f[o + 4], f[o + 5], f[o + 6]);
         phys.current = null;
         motion.current = null;
-        if (t > duelLength(duel.run)) {
-          duelDone.current = duel;
-          // Still on the board where it was before (it held, or a shield took the blow): step back home.
-          const home = new Vector3(...position);
-          if (!captured && shownAt.current.distanceTo(home) > 0.05) {
-            motion.current = { from: shownAt.current.clone(), to: home, fromScale: shownScale.current, toScale: targetScale, delay: 0, duration: 0.45, arc: 0.15, startedAt: null, kind: 'move' };
-            shownQ.current.identity();
-          }
+        if (t > pup.steps * pup.dt) {
+          puppetDone.current = pup;
+          settleNext.current = true;
+          lastTarget.current = '';
+          planRef.current();
+        } else {
+          g.position.copy(shownAt.current);
+          g.quaternion.copy(shownQ.current);
+          g.scale.setScalar(shownScale.current);
+          return;
         }
-        g.position.copy(shownAt.current);
-        g.quaternion.copy(shownQ.current);
-        g.scale.setScalar(shownScale.current);
-        if (!duelDone.current || duelDone.current !== duel) return;
       }
     }
     const pm = phys.current;
@@ -635,6 +655,13 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
           shownQ.current.setFromAxisAngle(UP, e * Math.PI * 2);
           shownScale.current = m.fromScale + (m.toScale - m.fromScale) * e;
         }
+      } else if (m.kind === 'settle') {
+        // Easing back and standing up as it goes.
+        const e = easeInOut(p);
+        shownAt.current.lerpVectors(m.from, m.to, e);
+        shownAt.current.y = m.from.y * (1 - e) + m.to.y * e + Math.sin(Math.PI * p) * m.arc;
+        shownQ.current.copy(m.fromQ ?? shownQ.current).slerp(new Quaternion(), e);
+        shownScale.current = m.fromScale + (m.toScale - m.fromScale) * e;
       } else {
         const e = m.kind === 'pop' ? 1 - (1 - p) ** 3 : easeInOut(p);
         shownAt.current.lerpVectors(m.from, m.to, e);
@@ -646,7 +673,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         shownAt.current.copy(m.to);
         shownScale.current = m.toScale;
         if (m.kind !== 'move' && m.kind !== 'captured' && m.kind !== 'pop') shownQ.current.identity();
-        if (m.kind === 'move' || m.kind === 'styled' || m.kind === 'swap' || m.kind === 'revive') playSfx('move', { strength: Math.min(1, 0.55 + 0.1 * m.from.distanceTo(m.to)) });
+        if (m.kind === 'move' || m.kind === 'styled' || m.kind === 'swap' || m.kind === 'revive' || m.kind === 'settle') playSfx('move', { strength: Math.min(1, 0.45 + 0.1 * m.from.distanceTo(m.to)) });
         else if (m.kind === 'captured') playSfx('land', { strength: 0.6 });
         m.next?.();
       }

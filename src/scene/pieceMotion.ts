@@ -1,5 +1,4 @@
 import type { ActKind, Entrance, MotionStyle, Square } from '../engine';
-import type { DuelRun } from './duel';
 
 /**
  * Poses for staged piece motion: where a piece is, how it leans and turns, at a moment of a
@@ -33,8 +32,12 @@ export interface PieceDirection {
   revive?: { style: Entrance; duration: number };
   /** Thrown into a pit: it travels there for `duration` seconds, then falls in. */
   fallInto?: { at: Square; duration: number };
-  /** In a clash's duel: plays its side of the recorded duel from `start` (performance.now() ms). */
-  duel?: { run: DuelRun; role: 'attacker' | 'defender'; start: number };
+  /**
+   * Played from a recording (a clash's duel, or a move as a romp that shoves pieces about): its
+   * poses, 7 numbers per step, from `start` (performance.now() ms). Afterwards it eases back to
+   * where the rules put it, standing up.
+   */
+  puppet?: { frames: Float32Array; steps: number; dt: number; start: number };
 }
 
 export interface Pose {
