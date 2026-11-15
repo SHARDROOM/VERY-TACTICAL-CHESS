@@ -250,6 +250,16 @@ function areaRect(fx: Fx): { x0: number; x1: number; z0: number; z1: number } {
   return { x0: Math.min(a.x, b.x) - 0.5, x1: Math.max(a.x, b.x) + 0.5, z0: Math.min(a.z, b.z) - 0.5, z1: Math.max(a.z, b.z) + 0.5 };
 }
 
+/** How much more an fx emits for its size: a beam per its length, an area per its size. */
+function spread(fx: Fx): number {
+  if (fx.shape === 'beam' && fx.at !== null && fx.to !== null) return Math.min(3, Math.max(1, world(fx.at).distanceTo(world(fx.to)) / 2.5));
+  if (fx.shape === 'area') {
+    const r = areaRect(fx);
+    return Math.min(4, Math.max(1, ((r.x1 - r.x0) * (r.z1 - r.z0)) / 6));
+  }
+  return 1;
+}
+
 /** A jagged path from `a` to `b` (midpoint displacement). */
 function boltPath(a: Vector3, b: Vector3, roughness: number): Vector3[] {
   let pts = [a, b];
@@ -369,9 +379,10 @@ export function FxLayer({ show, pieceAt }: { show: FxShow | null; pieceAt: (id: 
           z = r.z0 + Math.random() * (r.z1 - r.z0);
           cx = (r.x0 + r.x1) / 2;
           cz = (r.z0 + r.z1) / 2;
-          if (look.rain) {
-            y = 3 + Math.random() * 1.5;
-            vy = -6 - Math.random() * 2;
+          if (look.rain && part.ground === 'die') {
+            // Drops fall from above; the mist stays low over the table.
+            y = 2.2 + Math.random() * 1.2;
+            vy = -5 - Math.random() * 2;
             vx *= 0.2;
             vz *= 0.2;
           } else y = 0.05 + Math.random() * 0.2;
@@ -471,9 +482,9 @@ export function FxLayer({ show, pieceAt }: { show: FxShow | null; pieceAt: (id: 
         // A few quick strikes, then now and then for as long as it lasts.
         e.nextBolt = t + (t < 0.4 ? 0.09 + Math.random() * 0.08 : 0.35 + Math.random() * 0.5 / strength);
       }
-      // Bursts die down; areas and trails keep going.
-      const fade = fx.shape === 'burst' || fx.shape === 'beam' ? Math.max(0, 1 - t / (e.end - e.start)) : 1;
-      e.carry += look.rate * strength * fade * step;
+      // Bursts die down; areas and trails keep going. Long beams and wide areas need more.
+      const fade = fx.shape === 'burst' ? Math.max(0, 1 - t / (e.end - e.start)) : fx.shape === 'beam' ? Math.max(0.3, 1 - t / (e.end - e.start)) : 1;
+      e.carry += look.rate * strength * fade * spread(fx) * step;
       const n = Math.floor(e.carry);
       e.carry -= n;
       if (n > 0) emit(e, n, 'sustain');
@@ -490,7 +501,8 @@ export function FxLayer({ show, pieceAt }: { show: FxShow | null; pieceAt: (id: 
   /** A shockwave along the table. */
   function ring(e: Emitter) {
     const c = world(e.fx.at!);
-    const part: FxPart = { layer: 'smoke', share: 1, colors: ['#d9c7a6', '#7d6b55'], life: [0.55, 0.9], size: [0.3, 0.42], grow: 2.2, speed: 0, up: 0, gravity: 0, drag: 3.2, jitter: 0, alpha: 0.75 };
+    const look = e.look.ring!;
+    const part: FxPart = { layer: 'smoke', share: 1, colors: look.colors, life: [0.55, 0.9], size: [0.3, 0.42], grow: 2.2, speed: 0, up: 0, gravity: 0, drag: 3.2, jitter: 0, alpha: look.alpha };
     const n = Math.round(70 * density);
     const speed = 5 + 1.6 * e.fx.radius;
     for (let i = 0; i < n; i++) {

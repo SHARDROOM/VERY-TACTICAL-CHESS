@@ -48,8 +48,8 @@ export interface ElementLook {
   bolts?: boolean;
   /** Area: falls from above like rain instead of rising from the table. */
   rain?: boolean;
-  /** Burst: a shockwave ring along the table. */
-  ring?: boolean;
+  /** Burst: a shockwave ring along the table, in these colours. */
+  ring?: { colors: [string, string]; alpha: number };
   /** Burst: a column of rising light. */
   pillar?: boolean;
 }
@@ -83,12 +83,14 @@ export const ELEMENT_LOOK: Record<Element, ElementLook> = {
     ],
   },
   water: {
-    rate: 140,
+    rate: 200,
     light: null,
     rain: true,
+    ring: { colors: ['#9ed6ff', '#2f74c0'], alpha: 0.8 },
     parts: [
-      { layer: 'smoke', share: 0.65, colors: ['#d6f0ff', '#3f8fd6'], life: [0.6, 1], size: [0.07, 0.12], grow: 0.8, speed: 2.4, up: 3, gravity: -9.8, drag: 0.2, jitter: 0.6, alpha: 0.9, ground: 'die' },
-      { layer: 'smoke', share: 0.35, colors: ['#e8f7ff', '#8cc6ec'], life: [0.9, 1.5], size: [0.25, 0.4], grow: 2, speed: 0.6, up: 0.4, gravity: 0, drag: 1.5, jitter: 0.2, alpha: 0.3 },
+      { layer: 'smoke', share: 0.55, colors: ['#8fd0ff', '#1f63b0'], life: [0.6, 1], size: [0.1, 0.16], grow: 0.8, speed: 2.4, up: 3.4, gravity: -9.8, drag: 0.2, jitter: 0.6, alpha: 1, ground: 'die' },
+      { layer: 'glow', share: 0.2, colors: ['#e6f6ff', '#5aa8ff'], life: [0.5, 0.9], size: [0.06, 0.1], grow: 0.6, speed: 2, up: 3, gravity: -9.8, drag: 0.2, jitter: 0.6, flicker: true, ground: 'die' },
+      { layer: 'smoke', share: 0.25, colors: ['#bfe4ff', '#5f9fd6'], life: [0.9, 1.5], size: [0.3, 0.45], grow: 2, speed: 0.6, up: 0.4, gravity: 0, drag: 1.5, jitter: 0.2, alpha: 0.4 },
     ],
   },
   nature: {
@@ -111,17 +113,18 @@ export const ELEMENT_LOOK: Record<Element, ElementLook> = {
     rate: 110,
     light: '#cfefff',
     parts: [
-      { layer: 'chunk', share: 0.4, colors: ['#f2fdff', '#8fd8ff'], life: [0.8, 1.3], size: [0.06, 0.11], grow: 0.7, speed: 2.4, up: 1.6, gravity: -6, drag: 0.6, jitter: 0.6, ground: 'bounce' },
-      { layer: 'glow', share: 0.35, colors: ['#e6f9ff', '#6cc2ff'], life: [1, 1.6], size: [0.12, 0.22], grow: 0.4, speed: 0.6, up: 0.3, gravity: -0.3, drag: 2, jitter: 0.3, alpha: 0.6, flicker: true },
-      { layer: 'smoke', share: 0.25, colors: ['#f2fbff', '#b4e2f5'], life: [1.2, 1.8], size: [0.3, 0.45], grow: 2, speed: 0.4, up: 0.1, gravity: -0.1, drag: 1.5, jitter: 0.15, alpha: 0.3 },
+      { layer: 'chunk', share: 0.4, colors: ['#d9f6ff', '#5fb8ec'], life: [0.8, 1.3], size: [0.08, 0.13], grow: 0.7, speed: 2.4, up: 1.6, gravity: -6, drag: 0.6, jitter: 0.6, ground: 'bounce' },
+      { layer: 'glow', share: 0.35, colors: ['#d8f4ff', '#3e9cf0'], life: [1, 1.6], size: [0.16, 0.26], grow: 0.4, speed: 0.6, up: 0.3, gravity: -0.3, drag: 2, jitter: 0.3, alpha: 0.8, flicker: true },
+      { layer: 'smoke', share: 0.25, colors: ['#cdeefc', '#7cc2e6'], life: [1.2, 1.8], size: [0.32, 0.48], grow: 2, speed: 0.4, up: 0.1, gravity: -0.1, drag: 1.5, jitter: 0.15, alpha: 0.45 },
     ],
   },
   wind: {
-    rate: 130,
+    rate: 190,
     light: null,
     parts: [
-      { layer: 'smoke', share: 0.6, colors: ['#ddd1b8', '#9c8f76'], life: [0.9, 1.4], size: [0.16, 0.28], grow: 2, speed: 1.2, up: 0.6, gravity: 0, drag: 0.8, jitter: 0.6, alpha: 0.35, swirl: 4 },
-      { layer: 'glow', share: 0.4, colors: ['#ffffff', '#c8d2da'], life: [0.5, 0.9], size: [0.05, 0.08], grow: 0.6, speed: 1.6, up: 0.4, gravity: 0, drag: 0.5, jitter: 0.8, alpha: 0.4, swirl: 5 },
+      { layer: 'smoke', share: 0.6, colors: ['#b9a888', '#7f705a'], life: [0.9, 1.4], size: [0.18, 0.3], grow: 2, speed: 1.2, up: 0.7, gravity: 0, drag: 0.8, jitter: 0.6, alpha: 0.55, swirl: 5 },
+      { layer: 'smoke', share: 0.2, colors: ['#8a7a60', '#5c4f3d'], life: [0.7, 1.1], size: [0.04, 0.07], grow: 1, speed: 2, up: 0.8, gravity: -0.5, drag: 0.5, jitter: 0.8, alpha: 0.9, swirl: 6 },
+      { layer: 'glow', share: 0.2, colors: ['#ffffff', '#c8d2da'], life: [0.5, 0.9], size: [0.06, 0.09], grow: 0.6, speed: 1.6, up: 0.4, gravity: 0, drag: 0.5, jitter: 0.8, alpha: 0.5, swirl: 6 },
     ],
   },
   poison: {
@@ -151,7 +154,7 @@ export const ELEMENT_LOOK: Record<Element, ElementLook> = {
   impact: {
     rate: 70,
     light: '#fff0d0',
-    ring: true,
+    ring: { colors: ['#d9c7a6', '#7d6b55'], alpha: 0.75 },
     parts: [
       { layer: 'glow', share: 0.3, colors: ['#fff8e6', '#ffcf7a'], life: [0.18, 0.3], size: [0.7, 1], grow: 1.8, speed: 0, up: 0, gravity: 0, drag: 0, jitter: 0, alpha: 0.6 },
       { layer: 'chunk', share: 0.35, colors: ['#7a6550', '#4e3f31'], life: [0.6, 1], size: [0.05, 0.09], grow: 1, speed: 3, up: 2.5, gravity: -9.8, drag: 0.4, jitter: 0.8, ground: 'bounce' },
