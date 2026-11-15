@@ -99,3 +99,41 @@ describe('what each piece does in a show', () => {
     expect(d.get(s.board[sq('e2')]!.id)?.acts[0]).toMatchObject({ kind: 'hop', start: 1000 });
   });
 });
+
+describe('swaps, revivals, pits and walls in a show', () => {
+  it('both pieces of a swap travel at once, each swerving to its own right', () => {
+    const { before, events } = resolve([{ type: 'swap', a: sq('b1'), b: sq('g8') }]);
+    const show = buildShow(events, before, label)!;
+    const d = directionsFor(show, 0);
+    const a = before.board[sq('b1')]!.id;
+    const b = before.board[sq('g8')]!.id;
+    expect(d.get(a)?.motions).toEqual([{ style: 'default', duration: show.timeline.effectDurations[0], side: 1 }]);
+    expect(d.get(b)?.motions).toEqual([{ style: 'default', duration: show.timeline.effectDurations[0], side: 1 }]);
+    expect(show.movers).toEqual([a]);
+  });
+
+  it('a revived piece leaves the side of the board in the step it comes back', () => {
+    const { before, events } = resolve([{ type: 'remove', at: sq('d7') }, { type: 'revive', at: sq('d5'), color: 'black', piece: 'pawn' }]);
+    const show = buildShow(events, before, label)!;
+    const pawn = before.board[sq('d7')]!.id;
+    expect(show.steps[1].captured.map((p) => p.id)).toEqual([pawn]);
+    expect(show.steps[2].captured).toEqual([]);
+    expect(show.steps[2].board[sq('d5')]?.id).toBe(pawn);
+    expect(directionsFor(show, 0).get(pawn)?.revive).toEqual({ style: 'default', duration: show.timeline.effectDurations[1] });
+  });
+
+  it('a piece thrown into a pit travels there and sinks; a wall shows in the step it rises', () => {
+    const { before, events } = resolve([
+      { type: 'terrain', at: sq('d4'), kind: 'pit', turns: 2 },
+      { type: 'move', from: sq('b1'), to: sq('d4') },
+      { type: 'terrain', at: sq('e4'), kind: 'wall', turns: 2 },
+    ]);
+    const show = buildShow(events, before, label)!;
+    const knight = before.board[sq('b1')]!.id;
+    expect(show.steps[1].terrain).toEqual([expect.objectContaining({ at: sq('d4'), kind: 'pit' })]);
+    expect(show.steps[3].terrain?.map((c) => c.kind)).toEqual(['pit', 'wall']);
+    expect(show.exits).toEqual([{ pieceId: knight, at: sq('d4'), exit: 'sink', start: show.timeline.effectStarts[1] + show.timeline.effectDurations[1] * 0.9 }]);
+    expect(directionsFor(show, 0).get(knight)?.fallInto).toEqual({ at: sq('d4'), duration: show.timeline.effectDurations[1] * 0.9 });
+    expect(show.steps[2].captured).toEqual([expect.objectContaining({ id: knight, exit: 'sink' })]);
+  });
+});

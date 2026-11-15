@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { CanvasTexture, SRGBColorSpace, Vector3, type Group } from 'three';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { CameraControls, Environment, Lightformer } from '@react-three/drei';
-import { fileOf, rankOf, type Board, type CapturedPiece, type Color, type Square } from '../engine';
+import { fileOf, rankOf, type Board, type CapturedPiece, type Color, type Square, type TerrainCell } from '../engine';
 import { squareToWorld } from './coords';
 import { PieceMesh, PiecePhysicsContext, type PiecePhysics } from './PieceMesh';
 import type { Obstacle } from './piecePhysics';
@@ -14,6 +14,7 @@ import { DoodleLayer, type DoodleTool } from './DoodleLayer';
 import type { Doodle, DoodleOp } from '../session/doodle';
 import { FxLayer, type FxShow } from './FxLayer';
 import { aurasOn } from './auras';
+import { TerrainLayer } from './Terrain';
 import type { PieceDirection } from './pieceMotion';
 
 /** 'dice' looks at the dice tray beside the board while a roll plays. */
@@ -56,6 +57,8 @@ interface Props {
   shake?: { at: number; strength: number } | null;
   /** Fewer particles (the "light" staging setting). */
   lightFx?: boolean;
+  /** Walls and pits on the board. */
+  terrain?: readonly TerrainCell[];
 }
 
 /** Shakes everything on the table (not the camera, which the player controls) for a moment. */
@@ -94,6 +97,7 @@ export function graveyardLayout(captured: CapturedPiece[], side: 1 | -1): { piec
   });
 }
 
+const NO_TERRAIN: readonly TerrainCell[] = [];
 const LIGHT = '#d4bf98';
 const DARK = '#7d5a3b';
 
@@ -181,6 +185,7 @@ export function BoardScene({
   fx = null,
   shake = null,
   lightFx = false,
+  terrain = NO_TERRAIN,
 }: Props) {
   const resting = useRef(new Map<string, Obstacle>());
   const objects = useRef(new Map<string, Group>());
@@ -248,6 +253,8 @@ export function BoardScene({
           </group>
         );
       })}
+
+      <TerrainLayer terrain={terrain} />
 
       <PiecePhysicsContext.Provider value={physics}>
       {/* One list for the board and the side, so a taken piece stays the same object and travels from its square. */}

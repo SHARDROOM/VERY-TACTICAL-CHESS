@@ -1,13 +1,13 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { Euler, Quaternion, Vector3, type Group, type Mesh, type MeshPhysicalMaterial } from 'three';
-import { CORE_TAGS, RIDE, SHIELD, STUN, hasTag, type Color, type Entrance, type Exit, type MotionStyle, type Piece, type PieceType } from '../engine';
+import { BURN, CORE_TAGS, RIDE, SHIELD, STUN, hasTag, type Color, type Entrance, type Exit, type MotionStyle, type Piece, type PieceType } from '../engine';
 import { PIECE_HEIGHT, pieceParts } from './pieceGeometry';
-import { ShieldBubble, StunStars, TagLabel } from './TagEffects';
+import { ShieldBubble, StunStars, TurnBadges, type Chip } from './TagEffects';
 import { playSfx } from '../audio/sfx';
 import { ballistic, simulatePiece, tumble, type Obstacle, type PieceRun } from './piecePhysics';
 import { TABLE_TOP_Y } from './WoodTable';
-import { actPose, easeInOut, entrancePose, stylePose, type PieceDirection, type Pose } from './pieceMotion';
+import { actPose, easeInOut, entrancePose, stylePose, swapPose, swerve, type PieceDirection, type Pose } from './pieceMotion';
 import { squareToWorld } from './coords';
 import { finishMaterial, type Finish } from './pieceFinish';
 import { AshPile, SHATTER_SECONDS, ShardPile, SmokeWisp } from './Remains';
@@ -71,21 +71,30 @@ function knightFacing(color: Color, x: number): number {
 
 const RIDER_SCALE = 0.62;
 
-function freeTagText(piece: Piece): string | null {
-  const free = (piece.tags ?? []).filter((t) => !CORE_TAGS.includes(t.name));
-  if (!free.length) return null;
-  return free.map((t) => (t.turnsLeft === null ? t.name : `${t.name} ${t.turnsLeft}`)).join(' · ');
+const short = (name: string) => (name.length > 6 ? `${name.slice(0, 5)}…` : name);
+
+/**
+ * The labels above a piece: every tag that runs out, with the turns it has left (a burning
+ * piece's last turn in red), and free tags that never do, by name.
+ */
+export function tagChips(piece: Piece): Chip[] {
+  return (piece.tags ?? []).flatMap((t): Chip[] => {
+    if (t.name === RIDE) return [];
+    if (t.turnsLeft === null) return CORE_TAGS.includes(t.name) ? [] : [{ text: short(t.name), tone: 'free' }];
+    const tone = t.name === STUN ? 'stun' : t.name === SHIELD ? 'shield' : t.name === BURN ? (t.turnsLeft <= 1 ? 'burnLast' : 'burn') : 'free';
+    return [{ text: `${short(t.name)} ${t.turnsLeft}`, tone }];
+  });
 }
 
 /** Tag visuals for one piece whose top is at `top`. */
 function TagDecorations({ piece, top }: { piece: Piece; top: number }) {
-  const label = freeTagText(piece);
+  const chips = tagChips(piece);
   const stunned = hasTag(piece, STUN);
   return (
     <>
       {hasTag(piece, SHIELD) && <ShieldBubble height={top} />}
       {stunned && <StunStars y={top + 0.12} />}
-      {label && <TagLabel text={label} y={top + (stunned ? 0.36 : 0.2)} />}
+      {chips.length > 0 && <TurnBadges chips={chips} y={top + (stunned ? 0.36 : 0.2)} />}
     </>
   );
 }
@@ -136,9 +145,13 @@ interface Motion {
   duration: number;
   arc: number;
   startedAt: number | null;
-  kind: 'move' | 'captured' | 'pop' | 'styled' | 'entrance' | 'exit';
-  /** For 'styled' trips, 'entrance's and 'exit's. */
+  kind: 'move' | 'captured' | 'pop' | 'styled' | 'entrance' | 'exit' | 'swap' | 'revive';
+  /** For 'styled' trips, 'entrance's, 'exit's and 'revive's. */
   style?: MotionStyle | Entrance | Exit;
+  /** Trading squares: swerve to this side of the line so the two pieces pass each other. */
+  side?: 1 | -1;
+  /** What comes right after (a piece thrown into a pit falls in once it gets there). */
+  next?: () => void;
 }
 
 /** A glow over the piece's surface (morphs, side changes, materializing). */
@@ -211,6 +224,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const shownSquash = useRef(1);
   const travel = useRef({ x: 0, z: 0 });
   const prev = useRef({ type: piece.type, color: piece.color, rider: piece.rider?.id ?? null });
+  const wasCaptured = useRef(captured);
   /** An exit being played (the remains show once it is over). */
   const [exiting, setExiting] = useState<{ kind: Exit; start: number; offset: [number, number, number] } | null>(null);
   const exitingRef = useRef(exiting);
@@ -268,6 +282,17 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         phys.current = null;
         motion.current = fallback;
       });
+  };
+
+  /** Burns down, shatters, vanishes or sinks on the spot `from`, then turns up beside the board at `to`. */
+  const beginExit = (exit: Exit, from: Vector3, to: Vector3, delay: number) => {
+    phys.current = null;
+    motion.current = { from, to, fromScale: shownScale.current, toScale: CAPTURED_SCALE, delay, duration: EXIT_SECONDS[exit]!, arc: 0, startedAt: null, kind: 'exit', style: exit };
+    setExiting({ kind: exit, start: performance.now() + delay * 1000, offset: [to.x - from.x, to.y - from.y, to.z - from.z] });
+    const onSquare = EXIT_SECONDS[exit]! * ON_SQUARE * 1000;
+    if (exit === 'ash') glow.current = { color: '#ff6a1f', peak: 1.6, start: performance.now() + delay * 1000, duration: onSquare, hold: true, flicker: true };
+    if (exit === 'vanish') glow.current = { color: '#bfe3ff', peak: 1.4, start: performance.now() + delay * 1000, duration: onSquare };
+    physics?.resting.set(piece.id, { type: piece.type, scale: CAPTURED_SCALE, pose: { position: to.clone(), quaternion: new Quaternion() } });
   };
 
   // Effects (trails, auras) find the piece by id, on the board or on its way off it.
@@ -380,30 +405,65 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     lastTarget.current = key;
     const to = new Vector3(...position);
     const from = shownAt.current.clone();
+    const revived = wasCaptured.current && !captured;
+    wasCaptured.current = captured;
     const trip = !captured ? direction?.motions[tripIndex.current] : undefined;
     if (trip) tripIndex.current++;
     travel.current = { x: to.x - from.x, z: to.z - from.z };
     const scripted: Motion = { from, to, fromScale: shownScale.current, toScale: targetScale, startedAt: null, ...planMove(piece, from, to, captured) };
+    if (revived) {
+      // Back from beside the board: it leaves its remains and comes back as the GM chose.
+      physics?.resting.delete(piece.id);
+      phys.current = null;
+      setExiting(null);
+      const style = direction?.revive?.style ?? 'default';
+      const duration = Math.max(0.4, direction?.revive?.duration ?? 1.3);
+      motion.current = { ...scripted, delay: 0, duration, arc: 2, kind: 'revive', style };
+      glow.current = { color: '#fff1c9', peak: 1.5, start: performance.now(), duration: duration * 1000 };
+      return;
+    }
     if (trip && trip.style !== 'default' && trip.style !== 'fly') {
       // A styled trip from the show, timed to its place in the show.
       phys.current = null;
-      motion.current = { ...scripted, delay: 0, duration: Math.max(0.2, trip.duration), arc: 0, kind: 'styled', style: trip.style };
+      motion.current = { ...scripted, delay: 0, duration: Math.max(0.2, trip.duration), arc: 0, kind: 'styled', style: trip.style, side: trip.side };
+      return;
+    }
+    if (trip?.side) {
+      // A plain swap: up and over, passing the other piece (scripted: two flights would meet).
+      phys.current = null;
+      motion.current = { ...scripted, delay: 0, duration: Math.max(0.3, trip.duration), arc: 0, kind: 'swap', side: trip.side };
       return;
     }
     if (!physics) {
       motion.current = scripted;
       return;
     }
+    const pit = captured ? direction?.fallInto : undefined;
+    if (pit) {
+      // Thrown into a pit: it flies there, then drops in, and turns up beside the board.
+      const [px, , pz] = squareToWorld(pit.at);
+      const edge = new Vector3(px, 0, pz);
+      const dist = Math.hypot(px - from.x, pz - from.z);
+      const sink: Exit = exit && IN_PLACE_EXITS.includes(exit) ? exit : 'sink';
+      phys.current = null;
+      travel.current = { x: px - from.x, z: pz - from.z };
+      motion.current = {
+        from,
+        to: edge,
+        fromScale: shownScale.current,
+        toScale: shownScale.current,
+        delay: 0,
+        duration: Math.max(0.3, pit.duration),
+        arc: 0.3 + 0.09 * dist,
+        startedAt: null,
+        kind: 'move',
+        next: () => beginExit(sink, edge, to, 0),
+      };
+      return;
+    }
     if (captured && exit && IN_PLACE_EXITS.includes(exit)) {
       // Burnt to ash, shattered, vanished or sunk on its square; then it shows up beside the board.
-      const delay = direction?.exitDelay ?? 0;
-      phys.current = null;
-      motion.current = { from, to, fromScale: shownScale.current, toScale: CAPTURED_SCALE, delay, duration: EXIT_SECONDS[exit]!, arc: 0, startedAt: null, kind: 'exit', style: exit };
-      setExiting({ kind: exit, start: performance.now() + delay * 1000, offset: [to.x - from.x, to.y - from.y, to.z - from.z] });
-      const onSquare = EXIT_SECONDS[exit]! * ON_SQUARE * 1000;
-      if (exit === 'ash') glow.current = { color: '#ff6a1f', peak: 1.6, start: performance.now() + delay * 1000, duration: onSquare, hold: true, flicker: true };
-      if (exit === 'vanish') glow.current = { color: '#bfe3ff', peak: 1.4, start: performance.now() + delay * 1000, duration: onSquare };
-      physics?.resting.set(piece.id, { type: piece.type, scale: CAPTURED_SCALE, pose: { position: to.clone(), quaternion: new Quaternion() } });
+      beginExit(exit, from, to, direction?.exitDelay ?? 0);
       return;
     }
     if (captured) {
@@ -500,16 +560,48 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
           shownScale.current = m.toScale * Math.max(0.0001, easeOutBack(q));
         }
         if (p >= 1 && exitingRef.current) setExiting(null);
-      } else if (m.kind === 'styled' || m.kind === 'entrance') {
+      } else if (m.kind === 'styled' || m.kind === 'entrance' || m.kind === 'swap') {
         const len = Math.hypot(travel.current.x, travel.current.z) || 1;
         const ps =
-          m.kind === 'styled'
-            ? stylePose(m.style as MotionStyle, m.from, m.to, p, height)
-            : entrancePose(m.style as Entrance, m.to, p, height);
+          m.kind === 'swap'
+            ? swapPose(m.from, m.to, p, m.side ?? 1)
+            : m.kind === 'styled'
+              ? stylePose(m.style as MotionStyle, m.from, m.to, p, height)
+              : entrancePose(m.style as Entrance, m.to, p, height);
+        if (m.kind === 'styled' && m.side) {
+          // Trading squares: swerve off the line so the two pieces pass each other.
+          const off = swerve(p) * m.side;
+          ps.x -= (travel.current.z / len) * off;
+          ps.z += (travel.current.x / len) * off;
+        }
         shownAt.current.set(ps.x, ps.y, ps.z);
         poseRotation(ps, travel.current.x / len, travel.current.z / len, shownQ.current);
         shownScale.current = (m.fromScale + (m.toScale - m.fromScale) * easeInOut(p)) * ps.scale;
         squash = ps.squashY;
+      } else if (m.kind === 'revive') {
+        const style = m.style as Entrance;
+        if (style === 'rise' || style === 'materialize') {
+          // Fades from beside the board, then rises out of its square or forms out of light.
+          const away = 0.22;
+          if (p < away) {
+            shownAt.current.copy(m.from);
+            shownAt.current.y += 0.25 * (p / away);
+            shownScale.current = m.fromScale * Math.max(0.0001, 1 - p / away);
+          } else {
+            const ps = entrancePose(style, m.to, (p - away) / (1 - away), height);
+            shownAt.current.set(ps.x, ps.y, ps.z);
+            poseRotation(ps, 0, 1, shownQ.current);
+            shownScale.current = m.toScale * ps.scale;
+            squash = ps.squashY;
+          }
+        } else {
+          // Flies back from beside the board in a high arc, turning, and grows to full size.
+          const e = easeInOut(p);
+          shownAt.current.lerpVectors(m.from, m.to, e);
+          shownAt.current.y += Math.sin(Math.PI * p) * m.arc;
+          shownQ.current.setFromAxisAngle(UP, e * Math.PI * 2);
+          shownScale.current = m.fromScale + (m.toScale - m.fromScale) * e;
+        }
       } else {
         const e = m.kind === 'pop' ? 1 - (1 - p) ** 3 : easeInOut(p);
         shownAt.current.lerpVectors(m.from, m.to, e);
@@ -520,9 +612,10 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         motion.current = null;
         shownAt.current.copy(m.to);
         shownScale.current = m.toScale;
-        if (m.kind === 'styled' || m.kind === 'entrance' || m.kind === 'exit') shownQ.current.identity();
-        if (m.kind === 'move' || m.kind === 'styled') playSfx('move', { strength: Math.min(1, 0.55 + 0.1 * m.from.distanceTo(m.to)) });
+        if (m.kind !== 'move' && m.kind !== 'captured' && m.kind !== 'pop') shownQ.current.identity();
+        if (m.kind === 'move' || m.kind === 'styled' || m.kind === 'swap' || m.kind === 'revive') playSfx('move', { strength: Math.min(1, 0.55 + 0.1 * m.from.distanceTo(m.to)) });
         else if (m.kind === 'captured') playSfx('land', { strength: 0.6 });
+        m.next?.();
       }
     }
     g.position.copy(shownAt.current);

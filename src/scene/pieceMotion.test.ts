@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ACTS, MOTION_STYLES } from '../engine';
-import { actPose, entrancePose, stylePose } from './pieceMotion';
+import { actPose, entrancePose, stylePose, swapPose, swerve } from './pieceMotion';
 
 const from = { x: -2.5, y: 0, z: 3.5 };
 const to = { x: 0.5, y: 0, z: -0.5 };
@@ -49,5 +49,22 @@ describe('entrances and acts', () => {
 
   it('falling really tips the piece over', () => {
     expect(actPose('fall', 0.4, 0).roll).toBeCloseTo(Math.PI / 2);
+  });
+});
+
+describe('swapping', () => {
+  it('two pieces trading squares, each swerving right, pass on opposite sides and land exactly', () => {
+    const a = { x: 0, y: 0, z: 0 };
+    const b = { x: 4, y: 0, z: 0 };
+    const one = swapPose(a, b, 0.5, 1);
+    const other = swapPose(b, a, 0.5, 1);
+    expect(Math.abs(one.z - other.z)).toBeGreaterThan(0.6);
+    expect(one.y).toBeGreaterThan(0.5);
+    const end = swapPose(a, b, 1, 1);
+    expect(end.x).toBeCloseTo(4);
+    expect(end.y).toBeCloseTo(0);
+    expect(end.z).toBeCloseTo(0);
+    expect(swerve(0)).toBe(0);
+    expect(swerve(1)).toBeCloseTo(0);
   });
 });

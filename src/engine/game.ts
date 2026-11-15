@@ -116,6 +116,9 @@ export function exitsOf(events: GameEvent[], sources: number[], staging: Staging
   events.forEach((e, i) => {
     const piece = e.type === 'moved' ? e.captured : e.type === 'removed' ? e.piece : null;
     const exit = staging.beats.find((b) => b.effect === sources[i])?.exit;
+    // A piece falls into a pit on the spot: only the exits played in place fit (otherwise it sinks).
+    const inPit = e.type === 'removed' && e.cause === 'pit';
+    if (inPit && exit && !['ash', 'shatter', 'vanish', 'sink'].includes(exit)) return;
     if (piece && exit && exit !== 'default' && exit !== 'knock') exits.set(piece.id, exit);
   });
   return exits;

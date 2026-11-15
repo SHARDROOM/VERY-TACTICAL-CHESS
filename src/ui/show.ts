@@ -63,7 +63,22 @@ export function exitFx(show: Show): { fx: Fx; follower: string | null; start: nu
 function moverOf(effect: Effect, board: GameState['board']): string | null {
   if (effect.type === 'move') return board[effect.from]?.id ?? null;
   if (effect.type === 'unboard') return board[effect.at]?.rider?.id ?? null;
+  if (effect.type === 'swap') return board[effect.a]?.id ?? null;
   return null;
+}
+
+/** Exits played on the square itself (the others throw the piece off the board). */
+const IN_PLACE: readonly Exit[] = ['ash', 'shatter', 'vanish', 'sink'];
+
+/** True if this move effect dropped its piece into a pit (it is gone from both squares after it). */
+function fellIntoPit(e: Effect, before: GameState, after: GameState): boolean {
+  return (
+    e.type === 'move' &&
+    !!before.board[e.from] &&
+    !after.board[e.from] &&
+    !after.board[e.to] &&
+    !!after.terrain?.some((c) => c.at === e.to && c.kind === 'pit')
+  );
 }
 
 /** The show for a batch, or null if it has nothing to stage (a normal move, a timeout...). */
@@ -100,6 +115,22 @@ export function buildShow(events: GameEvent[], before: GameState, outcomeLabel: 
   const exits: Show['exits'] = [];
   shown.forEach((e, i) => {
     const exit = staging?.beats.find((b) => b.effect === i)?.exit;
+    // Into a pit, by a throw or a pit opening underfoot: it sinks out of sight (or goes as staged, on the spot).
+    const sunk: Exit = exit && IN_PLACE.includes(exit) ? exit : 'sink';
+    if (e.type === 'move' && fellIntoPit(e, steps[i], steps[i + 1])) {
+      const mover = steps[i].board[e.from]!;
+      const start = timeline.effectStarts[i] + timeline.effectDurations[i] * 0.9;
+      exits.push({ pieceId: mover.id, at: e.to, exit: sunk, start });
+      if (mover.rider) exits.push({ pieceId: mover.rider.id, at: e.to, exit: sunk, start });
+      return;
+    }
+    if (e.type === 'terrain') {
+      const victim = steps[i].board[e.at];
+      if (!victim || steps[i + 1].board[e.at]) return;
+      exits.push({ pieceId: victim.id, at: e.at, exit: sunk, start: timeline.effectStarts[i] });
+      if (victim.rider) exits.push({ pieceId: victim.rider.id, at: e.at, exit: sunk, start: timeline.effectStarts[i] });
+      return;
+    }
     if (!exit || exit === 'default' || exit === 'knock') return;
     const at = e.type === 'remove' ? e.at : e.type === 'move' ? e.to : null;
     const victim = at === null ? null : steps[i].board[at];
@@ -140,7 +171,23 @@ export function directionsFor(show: Show, startedAt: number): Map<string, PieceD
     switch (e.type) {
       case 'move': {
         const id = before[e.from]?.id;
-        if (id) get(id).motions.push({ style: beat?.motion ?? 'default', duration });
+        if (!id) break;
+        if (fellIntoPit(e, show.steps[i], show.steps[i + 1])) get(id).fallInto = { at: e.to, duration: duration * 0.9 };
+        else get(id).motions.push({ style: beat?.motion ?? 'default', duration });
+        break;
+      }
+      case 'swap': {
+        // Both at once, each swerving to its own right, so they pass each other.
+        const style = beat?.motion ?? 'default';
+        const a = before[e.a]?.id;
+        const b = before[e.b]?.id;
+        if (a) get(a).motions.push({ style, duration, side: 1 });
+        if (b) get(b).motions.push({ style, duration, side: 1 });
+        break;
+      }
+      case 'revive': {
+        const id = after[e.at]?.id;
+        if (id) get(id).revive = { style: beat?.entrance ?? 'default', duration };
         break;
       }
       case 'unboard': {

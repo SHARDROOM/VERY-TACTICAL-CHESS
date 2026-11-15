@@ -17,6 +17,8 @@ type Pair = '이/가' | '을/를' | '은/는' | '와/과' | '으로/로';
 export function josa(word: string, pair: Pair): string {
   const fc = finalConsonant(word);
   if (pair === '으로/로') return word + (fc === 0 || fc === 8 ? '로' : '으로');
+  // 와 follows a vowel, 과 a consonant (the pair is written the other way round from 이/가).
+  if (pair === '와/과') return word + (fc === 0 ? '와' : '과');
   const [withBatchim, without] = pair.split('/');
   return word + (fc === 0 ? without : withBatchim);
 }

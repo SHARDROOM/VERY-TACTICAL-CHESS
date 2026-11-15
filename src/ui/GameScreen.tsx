@@ -365,7 +365,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const sideToMove = game.turn;
   const playing = game.status.kind === 'playing';
   const myTurn = seat === 'both' || seat === sideToMove;
-  const inCheck = playing && isInCheck(game.board, sideToMove);
+  const inCheck = playing && isInCheck(game.board, sideToMove, game.terrain);
   const checkedKing = inCheck ? findKing(game.board, sideToMove) : null;
   const pending = game.pending;
   const connected = view.connection.kind === 'local' || view.connection.kind === 'hosting' || view.connection.kind === 'connected';
@@ -458,6 +458,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         onDiceLanded={onDiceLanded}
         ap={game.ap}
         captured={game.captured ?? []}
+        terrain={game.terrain}
         directions={directions}
         fx={fxShow}
         shake={shake}

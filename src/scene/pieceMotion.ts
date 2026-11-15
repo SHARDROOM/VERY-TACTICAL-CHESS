@@ -8,8 +8,12 @@ import type { ActKind, Entrance, MotionStyle, Square } from '../engine';
 
 /** How one piece should move during a show (absolute times are performance.now() ms). */
 export interface PieceDirection {
-  /** Its trips across the board in this show, in order. */
-  motions: { style: MotionStyle; duration: number }[];
+  /**
+   * Its trips across the board in this show, in order. `side` makes two pieces trading squares
+   * pass each other: each swerves off the line between them, to its right (1) or left (-1) as it
+   * travels, so with the same side the two go round opposite ways.
+   */
+  motions: { style: MotionStyle; duration: number; side?: 1 | -1 }[];
   /** A piece created by the show: how it appears. */
   entrance?: { style: Entrance; duration: number };
   /** Acting in place. */
@@ -24,6 +28,10 @@ export interface PieceDirection {
   appearFrom?: Square;
   /** Taken by a piece's trip: seconds to wait (for the attacker to arrive) before it leaves. */
   exitDelay?: number;
+  /** Comes back from beside the board (revived): how it appears on its square. */
+  revive?: { style: Entrance; duration: number };
+  /** Thrown into a pit: it travels there for `duration` seconds, then falls in. */
+  fallInto?: { at: Square; duration: number };
 }
 
 export interface Pose {
@@ -135,6 +143,26 @@ export function stylePose(style: MotionStyle, from: P3, to: P3, p: number, heigh
       return pose({ ...at, y: at.y + Math.sin(Math.PI * p) * 0.4 });
     }
   }
+}
+
+/**
+ * How far a piece swerves sideways at progress p when two pieces trade squares, so they pass
+ * each other instead of meeting in the middle (0 at both ends).
+ */
+export function swerve(p: number): number {
+  return 0.42 * Math.sin(Math.PI * clamp01(p));
+}
+
+/** A plain swap trip: up and over to the far square, swerving to its right (1) or left (-1). */
+export function swapPose(from: P3, to: P3, p: number, side: 1 | -1): Pose {
+  p = clamp01(p);
+  const e = easeInOut(p);
+  const at = mix(from, to, e);
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const off = swerve(p) * side;
+  return pose({ x: at.x - (dz / len) * off, y: at.y + Math.sin(Math.PI * p) * (0.7 + 0.05 * len), z: at.z + (dx / len) * off }, { lean: 0.18 * Math.sin(Math.PI * p), roll: -0.25 * side * Math.sin(Math.PI * p) });
 }
 
 /** A piece appearing on `at` (progress p 0..1). 'default' and 'drop' are physics drops. */

@@ -149,7 +149,7 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
       cost: 2,
       effects: [{ type: 'swap', a, b }],
       look: look({ beats: [beat(1)], fx: [fx('arcane', 'burst', a, { strength: 3, radius: 0.7 }), fx('arcane', 'burst', b, { strength: 3, radius: 0.7 })] }),
-      narration: { success: `두 기물이 서로를 향해 날아올라 ${a}와 ${b}의 자리가 뒤바뀌었다!`, failure: '두 기물이 엇갈리려다 서로 부딪혀 제자리로 튕겨 났다.' },
+      narration: { success: `두 기물이 서로를 향해 날아올라 ${josa(a, '와/과')} ${b}의 자리가 뒤바뀌었다!`, failure: '두 기물이 엇갈리려다 서로 부딪혀 제자리로 튕겨 났다.' },
     };
   }
 

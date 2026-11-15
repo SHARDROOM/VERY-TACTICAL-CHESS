@@ -91,6 +91,22 @@ describe('saved games', () => {
     expect(back.board[sq('e2')]?.tags?.[0].aura).toEqual({ element: 'fire', strength: 3 });
   });
 
+  it('keeps walls and pits with their turns left', () => {
+    const storage = new MemoryStorage();
+    const state: GameState = {
+      ...createInitialState(),
+      terrain: [
+        { at: sq('d4'), kind: 'wall', turnsLeft: 2, owner: 'white', appliedOnTurn: 1 },
+        { at: sq('e5'), kind: 'pit', turnsLeft: null, owner: 'black', appliedOnTurn: 1 },
+      ],
+    };
+    saveGame({ kind: 'hotseat', state, gm: { provider: 'fake' } }, storage);
+    const back = loadSavedGame(storage)!.state;
+    expect(back.terrain).toEqual(state.terrain);
+    // A wall still blocks after the reload.
+    expect(applyCommand(back, { type: 'move', from: sq('d2'), to: sq('d4') })).toMatchObject({ ok: false, reason: 'illegalMove' });
+  });
+
   it('a restored state keeps playing exactly like the original', () => {
     const storage = new MemoryStorage();
     const state = busyState();

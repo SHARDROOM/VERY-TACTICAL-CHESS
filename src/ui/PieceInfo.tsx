@@ -1,8 +1,9 @@
-import { ELEMENT_NAME, RIDE, squareName, type Piece, type Square, type Tag } from '../engine';
+import { BURN, ELEMENT_NAME, RIDE, squareName, type Piece, type Square, type Tag } from '../engine';
 import { ELEMENT_LOOK } from '../scene/fxLooks';
 import { COLOR_NAME, PIECE_NAME } from './messages';
 
 function tagText(t: Tag) {
+  if (t.name === BURN && t.turnsLeft !== null) return `${t.name} (${t.turnsLeft}턴 안에 움직이지 않으면 타 버림)`;
   return t.turnsLeft === null ? `${t.name} (영구)` : `${t.name} (${t.turnsLeft}턴 남음)`;
 }
 
