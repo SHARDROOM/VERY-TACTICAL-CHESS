@@ -32,6 +32,12 @@ export const runLength = (run: BoardRun) => run.steps * run.dt;
 
 const G = 9.81 * 2.5;
 const DT = 1 / 60;
+/** Grip of a sliding piece on the board (the board's own is 0.55; Rapier averages the two). */
+const SLIDE_FRICTION = 1.1;
+/** How fast that friction slows a slide (the push is sized to stop it about on its square). */
+const SLIDE_DECEL = ((SLIDE_FRICTION + 0.55) / 2) * G;
+/** Slides this long (in squares) or longer come in too fast and topple. */
+export const TOPPLE_FROM = 3;
 
 /** A small seeded random, so a move looks the same on every screen. */
 export function seeded(seed: number): () => number {
@@ -55,10 +61,11 @@ export interface RompOptions {
 }
 
 /**
- * Simulates the move with every piece on the board solid and movable. A sliding piece is pushed
- * along a slightly wobbly line a little past its square (it cannot be stopped); a flung piece is
- * thrown hard at roughly its square and bounces where it lands. Runs until all is still (at most
- * a couple of seconds) and keeps the tracks of the pieces that moved.
+ * Simulates the move with every piece on the board solid and movable. A sliding piece gets one
+ * straight push sized for the board's friction to stop it about on its square (a long slide
+ * tips over); a flung piece is thrown high and hard at a spot a little past its square and
+ * bounces on. Runs until all is still (a couple of seconds at most) and keeps the tracks of the
+ * pieces that moved.
  */
 export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
   const RAPIER = await loadPhysics();
@@ -93,37 +100,47 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
       bodies.push({ id: p.id, body: b });
     });
 
-    /** Where a sliding piece is at time t: shoved fast, past its square, with a wobble. */
-    const slides = o.movers
-      .filter((m) => m.mode === 'slide')
-      .map((m) => {
-        const [fx, , fz] = squareToWorld(m.from);
-        const [tx, , tz] = squareToWorld(m.to);
-        const dx = tx - fx;
-        const dz = tz - fz;
-        const d = Math.hypot(dx, dz) || 1;
-        const over = 0.5 + random() * 0.3;
-        const end = { x: tx + (dx / d) * over, z: tz + (dz / d) * over };
-        const sway = (random() < 0.5 ? -1 : 1) * (0.12 + random() * 0.12);
-        const seconds = 0.18 + 0.075 * d;
-        const b = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(fx, 0, fz));
-        hull(m.type, b, 0.2);
-        bodies.push({ id: m.id, body: b });
-        return { body: b, seconds, at: (t: number) => {
-          const q = Math.min(1, t / seconds);
-          const e = 1 - (1 - q) ** 2;
-          const wobble = Math.sin(Math.PI * q) * sway;
-          return { x: fx + (end.x - fx) * e - (dz / d) * wobble, z: fz + (end.z - fz) * e + (dx / d) * wobble };
-        } };
-      });
+    // Sliding pieces: given one straight push and left to the friction of the board, which stops
+    // a short slide about on its square; a long one comes in too fast and tips over forward.
+    for (const m of o.movers.filter((x) => x.mode === 'slide')) {
+      const [fx, , fz] = squareToWorld(m.from);
+      const [tx, , tz] = squareToWorld(m.to);
+      const dx = tx - fx;
+      const dz = tz - fz;
+      const d = Math.hypot(dx, dz) || 1;
+      const ux = dx / d;
+      const uz = dz / d;
+      // Enough speed to come to rest about on its square against SLIDE_FRICTION.
+      const v0 = Math.sqrt(2 * SLIDE_DECEL * d) * (1.02 + random() * 0.08);
+      const tip = d >= TOPPLE_FROM ? Math.min(9, 3.5 + 1.1 * (d - TOPPLE_FROM)) : 0;
+      const b = world.createRigidBody(
+        RAPIER.RigidBodyDesc.dynamic()
+          .setTranslation(fx, 0.002, fz)
+          .setLinvel(ux * v0, 0, uz * v0)
+          // A long slide leans forward from the start and goes over (axis up × direction).
+          .setAngvel({ x: uz * tip, y: 0, z: -ux * tip })
+          .setLinearDamping(0.05)
+          .setAngularDamping(0.4)
+          .setCcdEnabled(true),
+      );
+      world.createCollider(RAPIER.ColliderDesc.convexHull(hullPoints(m.type))!.setDensity(1).setFriction(SLIDE_FRICTION).setRestitution(0.15), b);
+      world.createCollider(RAPIER.ColliderDesc.cylinder(0.04, 0.28).setTranslation(0, 0.05, 0).setDensity(5).setFriction(SLIDE_FRICTION).setRestitution(0.15), b);
+      // Only along its line: no sideways drift unless something knocks it.
+      if (!tip) b.setEnabledRotations(false, true, false, true);
+      bodies.push({ id: m.id, body: b });
+    }
 
-    // Flung pieces: thrown hard at roughly their square.
+    // Flung pieces: thrown high and hard at a spot a little past their square.
     for (const m of o.movers.filter((x) => x.mode === 'throw')) {
       const [fx, , fz] = squareToWorld(m.from);
       const [tx, , tz] = squareToWorld(m.to);
-      const d = Math.hypot(tx - fx, tz - fz);
-      const aim = { x: tx + (random() - 0.5) * 0.7, z: tz + (random() - 0.5) * 0.7 };
-      const v = ballistic(new Vector3(fx, 0.05, fz), aim, 0, 5.2 + d * 0.45 + random());
+      const d = Math.hypot(tx - fx, tz - fz) || 1;
+      const ux = (tx - fx) / d;
+      const uz = (tz - fz) / d;
+      const past = 0.45 + random() * 0.45;
+      const side = (random() - 0.5) * 0.3;
+      const aim = { x: tx + ux * past - uz * side, z: tz + uz * past + ux * side };
+      const v = ballistic(new Vector3(fx, 0.05, fz), aim, 0, 7.4 + d * 0.5 + random() * 0.8);
       const b = world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic()
           .setTranslation(fx, 0.05, fz)
@@ -137,17 +154,12 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
       bodies.push({ id: m.id, body: b });
     }
 
-    const maxSeconds = o.movers.some((m) => m.mode === 'throw') ? 2.4 : 1.7;
+    const maxSeconds = o.movers.some((m) => m.mode === 'throw') ? 2.6 : 2.2;
     const maxSteps = Math.round(maxSeconds / DT);
     const frames = new Map<string, number[]>(bodies.map((b) => [b.id, []]));
     let steps = 0;
     let still = 0;
     while (steps < maxSteps) {
-      const t = (steps + 1) * DT;
-      for (const s of slides) {
-        const p = s.at(t);
-        s.body.setNextKinematicTranslation({ x: p.x, y: 0, z: p.z });
-      }
       world.step();
       for (const { id, body } of bodies) {
         const p = body.translation();
@@ -155,15 +167,14 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
         frames.get(id)!.push(p.x, p.y, p.z, q.x, q.y, q.z, q.w);
       }
       steps++;
-      // Done when the shoves are over and nothing moves any more.
-      const shoving = slides.some((s) => t < s.seconds);
+      // Done when nothing moves any more.
       const moving = bodies.some(({ body }) => {
-        if (body.isKinematic() || body.isSleeping()) return false;
+        if (body.isSleeping()) return false;
         const v = body.linvel();
         const w = body.angvel();
         return Math.hypot(v.x, v.y, v.z) > 0.05 || Math.hypot(w.x, w.y, w.z) > 0.1;
       });
-      still = !shoving && !moving ? still + 1 : 0;
+      still = !moving ? still + 1 : 0;
       if (still > 12) break;
     }
 
