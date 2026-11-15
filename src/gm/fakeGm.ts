@@ -1,4 +1,4 @@
-import { distance, parseSquare, type Board, type Color, type Means, type PieceType, type Square } from '../engine';
+import { distance, parseSquare, type AttachPoint, type Board, type Color, type Means, type PieceType, type PropPreset, type Square } from '../engine';
 import type { GameMaster, GmRequest, GmRulingJson } from './types';
 import { josa } from '../ui/josa';
 
@@ -33,6 +33,8 @@ function lastPieceWord(text: string): Exclude<PieceType, 'king'> | null {
  *   an arrow or a throw ("불화살을 쏜다"), otherwise refused as too far
  * - "e2 폰이 d4와 e4에 벽을 세운다" → 2-turn walls (up to 3); "… 구덩이를 판다" → a pit on the last
  * - "e2 폰이 d4 벽을 부순다" → clear it
+ * - "e2 폰이 d4 구덩이에 다리를 놓는다" / "… d4 벽에 사다리를 건다" → a 2-turn bridge / ladder; "… 다리를 끊는다" → cut it
+ * - "e2 폰이 영감을 얻어 검술에 눈을 뜬다" → 검술 ×1.5 with a sword in hand (창술: a spear)
  * - "f1 비숍이 g8 나이트를 기절시킨다"; "e2 폰이 e1 킹에 보호막" (or "e1 킹에 보호막" on itself)
  * - "d1 퀸이 d3에 나이트를 되살린다" / "… 소환한다" → revive / spawn one for the player
  * - "a2 폰을 퀸으로 바꾼다" (itself) or "d1 퀸이 a2 폰을 …으로 바꾼다" → transform
@@ -79,7 +81,19 @@ const beat = (effect: number, extra: Partial<BeatJson> = {}): BeatJson => ({
   exit: 'default',
   ...extra,
 });
-const tag = (at: string, name: string, turns: number) => ({ type: 'tag' as const, at, tag: name, turns, aura: 'none', auraStrength: 0 });
+type PropJson = { preset: 'none' | PropPreset; color: string; scale: number; attach: AttachPoint; parts: string };
+/** A ready-made prop as the GM writes it ("none" for no prop). */
+const look3d = (preset: 'none' | PropPreset = 'none', attach: AttachPoint = 'rightHand', color = ''): PropJson => ({ preset, color, scale: 1, attach, parts: '' });
+const tag = (at: string, name: string, turns: number, extra: { aura?: string; auraStrength?: number; clash?: number; prop?: PropJson } = {}) => ({
+  type: 'tag' as const,
+  at,
+  tag: name,
+  turns,
+  aura: extra.aura ?? 'none',
+  auraStrength: extra.auraStrength ?? 0,
+  clash: extra.clash ?? 0,
+  prop: extra.prop ?? look3d(),
+});
 
 /** A bigger version of a success look, for a natural 20. */
 function grander(s: StagingJson): StagingJson {
@@ -192,6 +206,54 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
     };
   }
 
+  if (/사다리/.test(action) || (/다리/.test(action) && /놓|깔|건설|만든|만들|잇|이어|끊|걷어/.test(action))) {
+    const missing = needsActor();
+    if (missing) return missing;
+    const ladder = /사다리/.test(action);
+    const cut = /끊|부숴|부순|부수|치운|치워|걷어|없애/.test(action);
+    if (cut) {
+      return {
+        interpretation: `${who} ${last}의 ${ladder ? '사다리를 치운다' : '다리를 끊는다'}.`,
+        actor: actor!,
+        means: far <= 1 ? 'touch' : 'ranged',
+        feasible: true,
+        dc: 10,
+        cost: 1,
+        effects: [{ type: 'clearCover', at: last }],
+        look: look({ fx: [fx('wind', 'burst', last, { strength: 2, withEffect: 1 })] }),
+        narration: { success: ladder ? `${last}의 사다리가 와르르 넘어갔다!` : `밧줄이 끊어지며 ${last}의 다리가 구덩이로 떨어졌다!`, failure: '꿈쩍도 하지 않는다.' },
+      };
+    }
+    return {
+      interpretation: `${who} ${last}${ladder ? '의 벽에 사다리를 건다' : '의 구덩이에 다리를 놓는다'}. 두 턴 동안 ${ladder ? '넘어갈 수 있다' : '건너고 설 수 있다'}.`,
+      actor: actor!,
+      means: far <= 1 ? 'touch' : 'magic',
+      feasible: true,
+      dc: 10,
+      cost: 1,
+      effects: [{ type: 'cover', at: last, kind: ladder ? 'ladder' : 'bridge', turns: 2, prop: look3d() }],
+      look: look({ fx: [fx(ladder ? 'wind' : 'earth', 'burst', last, { strength: 2, withEffect: 1 })] }),
+      narration: { success: ladder ? `${last}의 벽에 튼튼한 사다리가 걸렸다!` : `${last}의 구덩이 위로 널빤지 다리가 놓였다!`, failure: '널빤지가 미끄러져 떨어졌다.' },
+    };
+  }
+
+  if (/검술|검을 들|검을 쥐|칼을 들|칼을 쥐|창술|창을 들/.test(action) && squares.length >= 1) {
+    // A piece takes up arms (itself, or armed by another): a clash multiplier and the weapon in hand.
+    if (!actor) return needsActor()!;
+    const spear = /창술|창을/.test(action);
+    return {
+      interpretation: `${last}의 기물이 ${spear ? '창술' : '검술'}에 눈을 떴다. 이제 잡히려 하면 합으로 맞선다(×1.5).`,
+      actor,
+      means: far <= 1 ? 'touch' : 'magic',
+      feasible: true,
+      dc: 15,
+      cost: 3,
+      effects: [tag(last, spear ? '창술' : '검술', 0, { clash: 1.5, prop: look3d(spear ? 'spear' : 'sword', 'rightHand') })],
+      look: look({ fx: [fx('light', 'burst', last, { strength: 3, radius: 0.7, withEffect: 1 })], acts: [{ at: last, act: 'spin', delay: 0.3 }] }),
+      narration: { success: `${last}의 기물이 ${spear ? '창' : '검'}을 쥐고 자세를 잡았다! 함부로 덤비면 베인다.`, failure: '휘두르던 막대기가 손에서 미끄러졌다.' },
+    };
+  }
+
   if (/벽|구덩이|함정|구멍/.test(action) && /부숴|부순|부수|허물|허문|메운|메워|메우|없애|치운|치워/.test(action)) {
     const missing = needsActor();
     if (missing) return missing;
@@ -221,7 +283,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       feasible: true,
       dc: 9 + at.length * 2,
       cost: at.length > 1 ? 2 : 1,
-      effects: at.map((sq) => ({ type: 'terrain' as const, at: sq, kind: 'wall' as const, turns: 2 })),
+      effects: at.map((sq) => ({ type: 'terrain' as const, at: sq, kind: 'wall' as const, turns: 2, prop: look3d() })),
       look: look({ shake: 1, fx: at.map((sq, i) => fx('earth', 'burst', sq, { strength: 3, radius: 0.7, withEffect: i + 1 })) }),
       narration: { success: `땅이 울리며 ${at.join(', ')}에 돌벽이 솟아올랐다!`, failure: '돌무더기가 조금 들썩이다 말았다.' },
     };
@@ -237,7 +299,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       feasible: true,
       dc: 12,
       cost: 2,
-      effects: [{ type: 'terrain', at: last, kind: 'pit', turns: 2 }],
+      effects: [{ type: 'terrain', at: last, kind: 'pit', turns: 2, prop: look3d() }],
       look: look({ shake: 2, beats: [beat(1, { exit: 'sink' })], fx: [fx('earth', 'burst', last, { strength: 4, radius: 0.9, withEffect: 1 })] }),
       narration: { success: `${last}의 땅이 꺼지며 시커먼 구덩이가 입을 벌렸다!`, failure: '땅에 금이 갔지만 꺼지지는 않았다.' },
     };
@@ -274,7 +336,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       feasible: true,
       dc: 11 + (far > 1 ? 2 : 0),
       cost: 2,
-      effects: [tag(last, '보호막', 0)],
+      effects: [tag(last, '보호막', 0, { prop: look3d('shield', 'leftHand') })],
       look: look({ fx: [fx('light', 'burst', last, { strength: 3, radius: 1, withEffect: 1 })] }),
       narration: { success: `푸른 결계가 ${last}의 기물을 감쌌다!`, failure: '결계가 형태를 이루지 못하고 흩어졌다.' },
     };
@@ -295,7 +357,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       feasible: true,
       dc: shot ? Math.min(20, 11 + far) : 10,
       cost: 2,
-      effects: [{ type: 'tag', at: last, tag: '화상', turns: 3, aura: 'fire', auraStrength: 2 }],
+      effects: [tag(last, '화상', 3, { aura: 'fire', auraStrength: 2 })],
       look: look({
         fx: [...(shot ? [fx('fire', 'beam', first, { to: last, strength: 3, duration: 0.7 })] : []), fx('fire', 'burst', last, { strength: 3, radius: 0.8, withEffect: 1, delay: shot ? 0.5 : 0 })],
         acts: [{ at: last, act: 'shiver', delay: shot ? 0.8 : 0.4 }],

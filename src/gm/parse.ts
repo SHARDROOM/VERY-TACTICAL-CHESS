@@ -1,6 +1,7 @@
-import { parseSquare, type ChaosEvent, type Effect, type Means, type Ruling, type Square } from '../engine';
+import { CLASH_MAX, CLASH_MIN, parseSquare, type ChaosEvent, type Effect, type Means, type Ruling, type Square } from '../engine';
 import { GmChaosReplySchema, GmRulingReplySchema } from './schema';
 import { cleanAura, cleanRulingStaging, cleanStaging } from './staging';
+import { propFromGm } from './props';
 import type { GmEffectReplyJson } from './types';
 
 export type ParseResult = { ok: true; ruling: Ruling } | { ok: false; error: string };
@@ -68,6 +69,8 @@ function convert(e: GmEffectReplyJson): Effect | string {
     revive: ['at'],
     terrain: ['at'],
     clearTerrain: ['at'],
+    cover: ['at'],
+    clearCover: ['at'],
   };
   for (const f of fields[e.type]) {
     const name = (e as Record<string, unknown>)[f] as string;
@@ -76,9 +79,17 @@ function convert(e: GmEffectReplyJson): Effect | string {
     squares[f] = s;
   }
   if (e.type === 'tag') {
-    const { aura, auraStrength, ...tag } = e;
+    const { aura, auraStrength, clash, prop, ...tag } = e;
     const clean = cleanAura(aura, auraStrength);
-    return { ...tag, ...squares, ...(clean && { aura: clean }) } as unknown as Effect;
+    const look = propFromGm(prop);
+    // A multiplier of 1 or less is none; past the range it is pulled in (it is a judgment, not a typo).
+    const mult = typeof clash === 'number' && clash > 1 ? Math.min(CLASH_MAX, Math.max(CLASH_MIN, Math.round(clash * 10) / 10)) : undefined;
+    return { ...tag, ...squares, ...(clean && { aura: clean }), ...(mult && { clash: mult }), ...(look && { prop: look }) } as unknown as Effect;
+  }
+  if (e.type === 'terrain' || e.type === 'cover') {
+    const { prop, ...rest } = e;
+    const look = propFromGm(prop);
+    return { ...rest, ...squares, ...(look && { prop: look }) } as unknown as Effect;
   }
   return { ...e, ...squares } as unknown as Effect;
 }

@@ -156,7 +156,7 @@ describe('full effect vocabulary through the GM boundary', () => {
   });
 
   it('fake GM understands stun, shield and riding', () => {
-    expect(fakeRuling('f1 비숍이 g8 나이트를 기절시킨다').effects).toEqual([{ type: 'tag', at: 'g8', tag: '기절', turns: 1, aura: 'none', auraStrength: 0 }]);
+    expect(fakeRuling('f1 비숍이 g8 나이트를 기절시킨다').effects).toMatchObject([{ type: 'tag', at: 'g8', tag: '기절', turns: 1, aura: 'none', auraStrength: 0 }]);
     expect(fakeRuling('e1 킹에 보호막')).toMatchObject({ actor: 'e1', means: 'touch', effects: [{ type: 'tag', at: 'e1', tag: '보호막', turns: 0, aura: 'none', auraStrength: 0 }] });
     expect(fakeRuling('a2 폰을 b1 나이트에 태운다')).toMatchObject({ actor: 'a2', means: 'touch', effects: [{ type: 'board', rider: 'a2', carrier: 'b1' }] });
   });
@@ -197,12 +197,12 @@ describe('swap, revive, burn and terrain through the GM boundary', () => {
 
   it('fake GM understands swapping, burning, walls, pits and reviving, and the engine takes its rulings', () => {
     expect(fakeRuling('b1 나이트와 g8 나이트의 자리를 바꾼다').effects).toEqual([{ type: 'swap', a: 'b1', b: 'g8' }]);
-    expect(fakeRuling('e6 폰이 e7 폰에 불을 붙인다').effects).toEqual([{ type: 'tag', at: 'e7', tag: '화상', turns: 3, aura: 'fire', auraStrength: 2 }]);
-    expect(fakeRuling('e2 폰이 d4와 e4에 벽을 세운다').effects).toEqual([
+    expect(fakeRuling('e6 폰이 e7 폰에 불을 붙인다').effects).toMatchObject([{ type: 'tag', at: 'e7', tag: '화상', turns: 3, aura: 'fire', auraStrength: 2 }]);
+    expect(fakeRuling('e2 폰이 d4와 e4에 벽을 세운다').effects).toMatchObject([
       { type: 'terrain', at: 'd4', kind: 'wall', turns: 2 },
       { type: 'terrain', at: 'e4', kind: 'wall', turns: 2 },
     ]);
-    expect(fakeRuling('e2 폰이 e5에 구덩이를 판다').effects).toEqual([{ type: 'terrain', at: 'e5', kind: 'pit', turns: 2 }]);
+    expect(fakeRuling('e2 폰이 e5에 구덩이를 판다').effects).toMatchObject([{ type: 'terrain', at: 'e5', kind: 'pit', turns: 2 }]);
     expect(fakeRuling('e3 폰이 d4 벽을 부순다').effects).toEqual([{ type: 'clearTerrain', at: 'd4' }]);
     expect(fakeRuling('d1 퀸이 c3에 나이트를 되살린다').effects).toEqual([{ type: 'revive', at: 'c3', color: 'white', piece: 'knight' }]);
     const state = { ...createInitialState(), ap: { white: 5, black: 0 } };
@@ -222,15 +222,76 @@ describe('swap, revive, burn and terrain through the GM boundary', () => {
     expect(fakeRuling('g2 폰이 g7 폰에 불을 붙인다', 'white', board).interpretation).toContain('5칸');
     expect(fakeRuling('g2 폰이 불화살을 쏘아 g7 폰에 불을 붙인다', 'white', board)).toMatchObject({ feasible: true, actor: 'g2', means: 'ranged' });
     // The backfire falls on whoever did it.
-    expect(fakeRuling('g2 폰이 불화살을 쏘아 g7 폰에 불을 붙인다', 'white', board).critFailureEffects).toEqual([{ type: 'tag', at: 'g2', tag: '기절', turns: 1, aura: 'none', auraStrength: 0 }]);
+    expect(fakeRuling('g2 폰이 불화살을 쏘아 g7 폰에 불을 붙인다', 'white', board).critFailureEffects).toMatchObject([{ type: 'tag', at: 'g2', tag: '기절', turns: 1, aura: 'none', auraStrength: 0 }]);
   });
 
+});
+
+describe('clash multipliers, props, bridges and ladders through the GM boundary', () => {
+  const base = { interpretation: 'x', actor: 'e2', means: 'magic', feasible: true, dc: 10, cost: 1, critSuccessEffects: [], critFailureEffects: [], narration: { success: 's', failure: 'f', critSuccess: 'cs', critFailure: 'cf' } };
+  const sword = { preset: 'sword', color: '', scale: 1, attach: 'rightHand', parts: '' };
+  const none = { preset: 'none', color: '', scale: 1, attach: 'rightHand', parts: '' };
+
+  it('a tag keeps its multiplier (pulled into range) and its prop; "none" and 0 mean nothing', () => {
+    const r = parseGmRuling({
+      ...base,
+      effects: [
+        { type: 'tag', at: 'e2', tag: '검술', turns: 0, aura: 'none', auraStrength: 0, clash: 1.5, prop: sword },
+        { type: 'tag', at: 'd2', tag: '용기', turns: 2, aura: 'none', auraStrength: 0, clash: 0, prop: none },
+        { type: 'tag', at: 'c2', tag: '괴력', turns: 2, aura: 'none', auraStrength: 0, clash: 3, prop: none },
+      ],
+    });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.ruling.effects).toEqual([
+      { type: 'tag', at: sq('e2'), tag: '검술', turns: 0, clash: 1.5, prop: { preset: 'sword', parts: [], attach: 'rightHand', scale: 1 } },
+      { type: 'tag', at: sq('d2'), tag: '용기', turns: 2 },
+      { type: 'tag', at: sq('c2'), tag: '괴력', turns: 2, clash: 2 },
+    ]);
+  });
+
+  it('a prop of its own parts comes through as parts; a bad prop is dropped, not the ruling', () => {
+    const flagPole = 'cylinder wood 0 0.4 0 0.03 0.9 0.03; nonsense line; cone 1 2';
+    const r = parseGmRuling({
+      ...base,
+      effects: [
+        { type: 'terrain', at: 'd4', kind: 'wall', turns: 2, prop: { preset: 'none', color: '', scale: 1, attach: 'feet', parts: flagPole } },
+        { type: 'terrain', at: 'e4', kind: 'pit', turns: 2, prop: { preset: 'dragon', color: '', scale: 1, attach: 'feet', parts: '' } },
+        { type: 'cover', at: 'e4', kind: 'bridge', turns: 2, prop: none },
+        { type: 'clearCover', at: 'e4' },
+      ],
+    });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.ruling.effects[0]).toEqual({
+      type: 'terrain',
+      at: sq('d4'),
+      kind: 'wall',
+      turns: 2,
+      prop: { preset: null, attach: 'feet', scale: 1, parts: [{ shape: 'cylinder', position: [0, 0.4, 0], size: [0.03, 0.9, 0.03], rotation: [0, 0, 0], material: 'wood' }] },
+    });
+    expect(r.ruling.effects.slice(1)).toEqual([
+      { type: 'terrain', at: sq('e4'), kind: 'pit', turns: 2 },
+      { type: 'cover', at: sq('e4'), kind: 'bridge', turns: 2 },
+      { type: 'clearCover', at: sq('e4') },
+    ]);
+  });
+
+  it('fake GM: swordsmanship with a sword in hand, bridges, ladders, and the engine takes them', () => {
+    expect(fakeRuling('e2 폰이 영감을 얻어 검술에 눈을 뜬다').effects).toMatchObject([{ type: 'tag', at: 'e2', tag: '검술', clash: 1.5, prop: { preset: 'sword' } }]);
+    expect(fakeRuling('e3 폰이 d4 구덩이에 다리를 놓는다').effects).toMatchObject([{ type: 'cover', at: 'd4', kind: 'bridge', turns: 2 }]);
+    expect(fakeRuling('e3 폰이 d4 벽에 사다리를 건다').effects).toMatchObject([{ type: 'cover', at: 'd4', kind: 'ladder' }]);
+    expect(fakeRuling('e3 폰이 d4 다리를 끊는다').effects).toEqual([{ type: 'clearCover', at: 'd4' }]);
+    const state = { ...createInitialState(), ap: { white: 5, black: 0 } };
+    const parsed = parseGmRuling(fakeRuling('e2 폰이 영감을 얻어 검술에 눈을 뜬다', 'white', state.board));
+    if (!parsed.ok) throw new Error(parsed.error);
+    const r = applyCommand(state, { type: 'proposeSpecial', action: 'x', ruling: parsed.ruling });
+    expect(r.ok).toBe(true);
+  });
 });
 
 describe('fake GM crits', () => {
   it('backfires by stunning the acting piece on a 1, and its rulings pass engine validation', () => {
     const r = fakeRuling('b1 나이트를 c3로 보낸다');
-    expect(r.critFailureEffects).toEqual([{ type: 'tag', at: 'b1', tag: '기절', turns: 1, aura: 'none', auraStrength: 0 }]);
+    expect(r.critFailureEffects).toMatchObject([{ type: 'tag', at: 'b1', tag: '기절', turns: 1, aura: 'none', auraStrength: 0 }]);
     const parsed = parseGmRuling(r);
     if (!parsed.ok) throw new Error(parsed.error);
     const state = { ...createInitialState(), ap: { white: 5, black: 0 } };
@@ -253,5 +314,17 @@ describe('chaos', () => {
       chaos: { effects: [{ type: 'convert', at: 12, color: 'black' }] },
     });
     expect(parseGmChaos({ title: 't', narration: 'n', effects: [{ type: 'remove', at: 'z9' }] }).ok).toBe(false);
+  });
+});
+
+describe('prop parts as text', () => {
+  it('reads shape, material, position, size, rotation and colour in any word order; skips lines it cannot read', async () => {
+    const { partsFromText } = await import('./props');
+    expect(partsFromText('torus rope 0 0.03 0 0.24 0.04 0.24; sphere cloth 0.1 0.05 0 0.06 0.06 0.06 #E05A8A\nwood box 0 0 0 1 1 1 0 45 0; hello')).toEqual([
+      { shape: 'torus', material: 'rope', position: [0, 0.03, 0], size: [0.24, 0.04, 0.24], rotation: [0, 0, 0], color: undefined },
+      { shape: 'sphere', material: 'cloth', position: [0.1, 0.05, 0], size: [0.06, 0.06, 0.06], rotation: [0, 0, 0], color: '#E05A8A' },
+      { shape: 'box', material: 'wood', position: [0, 0, 0], size: [1, 1, 1], rotation: [0, 45, 0], color: undefined },
+      null,
+    ]);
   });
 });

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ELEMENTS, MEANS } from '../engine';
 import { GmRulingStagingSchema, GmStagingSchema } from './staging';
+import { GmPropSchema } from './props';
 
 const square = (what: string) => z.string().describe(`${what}, 예: "e4"`);
 const pieceType = z.enum(['queen', 'rook', 'bishop', 'knight', 'pawn']);
@@ -16,7 +17,10 @@ const pieceType = z.enum(['queen', 'rook', 'bishop', 'knight', 'pawn']);
 const auraField = z.string().describe(`태그가 남아 있는 동안 기물에 두를 원소 오라: none 또는 ${ELEMENTS.join(', ')}`);
 const auraStrengthField = z.number().describe('오라 세기 1~3 (none이면 0)');
 
-function effectSchema<A extends z.ZodTypeAny, B extends z.ZodTypeAny>(aura: A, auraStrength: B) {
+const clashField = z.number().describe('합 배율 1.2~2.0 (검술처럼 싸움 실력을 주는 태그). 없으면 0');
+const propField = GmPropSchema.describe('조형물: 태그나 지형의 모습. 필요 없으면 preset "none"에 parts 빈 목록');
+
+function effectSchema<A extends z.ZodTypeAny, B extends z.ZodTypeAny, C extends z.ZodTypeAny, P extends z.ZodTypeAny>(aura: A, auraStrength: B, clash: C, prop: P) {
   return z.discriminatedUnion('type', [
     z.object({ type: z.literal('move'), from: square('기물이 있는 칸'), to: square('도착 칸') }),
     z.object({ type: z.literal('remove'), at: square('제거할 기물이 있는 칸') }),
@@ -27,6 +31,8 @@ function effectSchema<A extends z.ZodTypeAny, B extends z.ZodTypeAny>(aura: A, a
       turns: z.number().int().describe('지속 턴 수 (그 기물 주인의 턴 기준). 0이면 영구'),
       aura,
       auraStrength,
+      clash,
+      prop,
     }),
     z.object({ type: z.literal('untag'), at: square('태그를 뗄 기물의 칸'), tag: z.string().describe('뗄 태그 이름') }),
     z.object({ type: z.literal('board'), rider: square('올라탈 기물의 칸'), carrier: square('태울 같은 편 기물의 칸') }),
@@ -55,8 +61,17 @@ function effectSchema<A extends z.ZodTypeAny, B extends z.ZodTypeAny>(aura: A, a
       at: square('지형을 만들 칸 (벽은 빈 칸만, 구덩이는 그 칸의 기물을 삼킴)'),
       kind: z.enum(['wall', 'pit']).describe('wall(벽) 또는 pit(구덩이)'),
       turns: z.number().int().describe('지속 턴 수 (만든 쪽의 턴 기준). 0이면 영구'),
+      prop,
     }),
     z.object({ type: z.literal('clearTerrain'), at: square('벽이나 구덩이를 없앨 칸') }),
+    z.object({
+      type: z.literal('cover'),
+      at: square('구덩이(다리) 또는 벽(사다리)이 있는 칸'),
+      kind: z.enum(['bridge', 'ladder']).describe('bridge(구덩이 위 다리: 지나가고 설 수 있음) 또는 ladder(벽의 사다리: 지나가기만)'),
+      turns: z.number().int().describe('지속 턴 수 (만든 쪽의 턴 기준). 0이면 영구'),
+      prop,
+    }),
+    z.object({ type: z.literal('clearCover'), at: square('다리를 끊거나 사다리를 치울 칸') }),
   ]);
 }
 
@@ -98,8 +113,8 @@ function chaosSchema<E extends z.ZodTypeAny, S extends z.ZodTypeAny>(effect: E, 
   });
 }
 
-export const GmEffectSchema = effectSchema(auraField, auraStrengthField);
-export const GmEffectReplySchema = effectSchema(auraField.optional(), auraStrengthField.optional());
+export const GmEffectSchema = effectSchema(auraField, auraStrengthField, clashField, propField);
+export const GmEffectReplySchema = effectSchema(auraField.optional(), auraStrengthField.optional(), clashField.optional(), z.unknown().optional());
 
 export const GmRulingSchema = rulingSchema(
   GmEffectSchema,

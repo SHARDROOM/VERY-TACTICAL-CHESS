@@ -11,6 +11,10 @@ describe('turn badges over a piece', () => {
     ]);
   });
 
+  it('a clash multiplier shows with the name', () => {
+    expect(tagChips({ ...piece([{ name: '검술', turnsLeft: null }]), tags: [{ name: '검술', turnsLeft: null, appliedOnTurn: 1, clash: 1.5 }] })).toEqual([{ text: '검술 ×1.5', tone: 'free' }]);
+  });
+
   it('a burning piece turns red on its last turn to move; long names are cut short', () => {
     expect(tagChips(piece([{ name: '화상', turnsLeft: 2 }]))).toEqual([{ text: '화상 2', tone: 'burn' }]);
     expect(tagChips(piece([{ name: '화상', turnsLeft: 1 }]))).toEqual([{ text: '화상 1', tone: 'burnLast' }]);

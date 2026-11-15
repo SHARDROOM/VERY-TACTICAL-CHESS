@@ -78,3 +78,29 @@ describe('who does it and how far (주체와 거리)', () => {
     expect(buildUserMessage('x', s, '주체가 없음')).toContain('## 방금 낸 판정이 거부된 이유\n주체가 없음');
   });
 });
+
+describe('clashes, props, bridges and ladders in the GM prompts', () => {
+  it('the ruling prompt explains clashes with their prices, props, bridges and ladders; chaos lists them too', () => {
+    const ruling = buildSystemPrompt(rules);
+    for (const word of ['## 합 (clash)', '## 조형물 (prop)', 'DC 15~20·AP 3', 'DC +2', '"cover"', '"clearCover"', 'rightHand', 'barricade', 'torus', '1.5배']) expect(ruling).toContain(word);
+    const chaos = buildChaosSystemPrompt(rules);
+    for (const word of ['"cover"', '"clearCover"', 'clash', 'prop']) expect(chaos).toContain(word);
+  });
+
+  it('the board message shows multipliers, props, bridges and ladders', () => {
+    const s = createStateFrom({ e1: { color: 'white', type: 'king' }, e2: { color: 'white', type: 'pawn' }, e8: { color: 'black', type: 'king' } }, 'white', {
+      terrain: [
+        { at: parseSquare('d4')!, kind: 'wall', turnsLeft: 2, owner: 'white', appliedOnTurn: 1, cover: { kind: 'ladder', turnsLeft: 1, owner: 'black', appliedOnTurn: 2 } },
+        { at: parseSquare('e5')!, kind: 'pit', turnsLeft: null, owner: 'black', appliedOnTurn: 1, cover: { kind: 'bridge', turnsLeft: null, owner: 'white', appliedOnTurn: 1 } },
+      ],
+    });
+    const b = [...s.board];
+    b[parseSquare('e2')!] = { ...b[parseSquare('e2')!]!, tags: [{ name: '검술', turnsLeft: null, appliedOnTurn: 1, clash: 1.5, prop: { preset: 'sword', parts: [], attach: 'rightHand', scale: 1 } }] };
+    const msg = buildUserMessage('x', { ...s, board: b });
+    expect(msg).toContain('폰 e2 [검술(영구, 합 ×1.5, 검)]');
+    expect(msg).toContain('벽 d4 (백의 턴으로 2턴 남음, 사다리 흑의 턴으로 1턴 남음)');
+    expect(msg).toContain('구덩이 e5 (영구, 다리 영구)');
+    expect(msg).toMatch(/^5 \. \. \. \. = \. \. \.$/m);
+    expect(msg).toMatch(/^4 \. \. \. H \. \. \. \.$/m);
+  });
+});

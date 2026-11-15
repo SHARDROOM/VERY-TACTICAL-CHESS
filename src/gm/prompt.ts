@@ -1,4 +1,4 @@
-import { MAX_TERRAIN, RIDE, TERRAIN_NAME, distance, parseSquare, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig } from '../engine';
+import { COVER_NAME, MAX_TERRAIN, PROP_PRESET_NAME, RIDE, TERRAIN_NAME, distance, parseSquare, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig } from '../engine';
 
 const COLOR: Record<Color, string> = { white: '백', black: '흑' };
 const PIECE: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
@@ -49,7 +49,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 ## 효과 (이것만 쓸 수 있습니다)
 - {"type": "move", "from": "b1", "to": "e5"}: from 칸의 기물을 to 칸으로 옮긴다. to에 상대 기물이 있으면 그 기물을 잡는다.
 - {"type": "remove", "at": "d7"}: at 칸의 기물을 보드에서 없앤다.
-- {"type": "tag", "at": "g8", "tag": "기절", "turns": 1}: 기물에 태그를 붙인다. turns는 그 기물 주인의 턴 기준 지속 턴 수이고, 0이면 영구다.
+- {"type": "tag", "at": "g8", "tag": "기절", "turns": 1}: 기물에 태그를 붙인다. turns는 그 기물 주인의 턴 기준 지속 턴 수이고, 0이면 영구다. clash에 합 배율(1.2~2.0, 없으면 0)을, prop에 태그의 모습(조형물, 없으면 preset "none")을 줄 수 있다.
 - {"type": "untag", "at": "g8", "tag": "기절"}: 기물에서 태그를 뗀다.
 - {"type": "board", "rider": "a2", "carrier": "b1"}: rider 칸의 기물이 같은 편 carrier 기물에 올라탄다.
 - {"type": "unboard", "at": "b1", "to": "a3"}: at 칸 기물에 타고 있던 기물이 빈 칸 to로 내린다.
@@ -58,8 +58,10 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - {"type": "convert", "at": "e2", "color": "black"}: 기물(과 그 기물에 탄 기물)이 상대 편으로 넘어간다. 매수, 배신, 정체는 스파이 같은 행동에 쓴다.
 - {"type": "swap", "a": "b1", "b": "g8"}: 두 칸의 기물이 자리를 맞바꾼다. 편은 상관없고, 탄 기물은 태운 기물과 함께 간다.
 - {"type": "revive", "at": "c3", "color": "white", "piece": "knight"}: 잡혀서 보드 옆에 있는 그 편, 그 종류의 기물(가장 최근에 잡힌 것)을 빈 칸 at으로 되살린다. 보드 상태의 "잡힌 기물" 목록에 있어야 한다.
-- {"type": "terrain", "at": "d4", "kind": "wall", "turns": 2}: 칸에 벽(wall)이나 구덩이(pit)를 만든다. turns는 만든 쪽(지금 차례인 편)의 턴 기준이고 0이면 영구다. 벽은 빈 칸에만 세운다. 구덩이를 기물이 있는 칸에 파면 그 기물이 빠져서 없어진다.
+- {"type": "terrain", "at": "d4", "kind": "wall", "turns": 2}: 칸에 벽(wall)이나 구덩이(pit)를 만든다. turns는 만든 쪽(지금 차례인 편)의 턴 기준이고 0이면 영구다. 벽은 빈 칸에만 세운다. 구덩이를 기물이 있는 칸에 파면 그 기물이 빠져서 없어진다. prop으로 모양(바리케이드, 동상, 나무 등)을 줄 수 있다.
 - {"type": "clearTerrain", "at": "d4"}: 그 칸의 벽이나 구덩이를 없앤다.
+- {"type": "cover", "at": "d4", "kind": "bridge", "turns": 2}: 구덩이 위에 다리(bridge)를 놓거나 벽에 사다리(ladder)를 건다. prop으로 모양을 바꿀 수 있다.
+- {"type": "clearCover", "at": "d4"}: 다리를 끊거나 사다리를 치운다. 다리 위에 있던 기물은 구덩이에 빠진다(킹은 옆 칸으로 비켜남).
 효과는 목록 순서대로 적용되고, 각 효과는 앞 효과가 적용된 뒤의 보드를 기준으로 합니다. 칸 이름은 a1~h8 형식입니다.
 
 ## 태그의 의미
@@ -76,6 +78,22 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - 지형도 남은 턴을 시스템이 세고(만든 쪽의 턴이 끝날 때만), 다하면 사라집니다.
 - move 효과로 기물을 구덩이 칸에 보내면 그 기물이 빠져서 없어집니다(밀어 떨어뜨리기). 벽 칸으로는 move할 수 없습니다.
 - 지형은 한꺼번에 최대 ${MAX_TERRAIN}칸입니다.
+- 다리(bridge)를 놓은 구덩이는 평범한 칸처럼 지나가고 설 수 있습니다(양편 모두). 다리가 끝나거나 끊기면 그 위의 기물이 빠집니다.
+- 사다리(ladder)를 건 벽은 지나갈 수만 있고 그 위에 멈출 수는 없습니다(양편 모두, 체크도 넘어감).
+- 다리와 사다리도 만든 쪽의 턴 기준으로 남은 턴을 세고, 1~3턴이 보통입니다. 지형 자체보다 쉽게(DC 8~12, AP 1) 정하세요.
+
+## 합 (clash)
+- 태그에 합 배율(clash, 1.2~2.0)을 주면 그 기물은 싸움 실력이 생깁니다. 예: "검술" ×1.5, 대가의 검술 ×2.0.
+- 배율 태그나 보호막이 있는 기물을 손으로 잡으려 하면(일반 수, 또는 move 효과로 그 칸에 들어갈 때) 합이 일어납니다: 양쪽이 d20 × 배율을 굴려 큰 쪽이 이기고, 공격 쪽이 지면 공격 기물이 잡힙니다. 보호막은 지면 보호막만 깨지고 기물은 살아남습니다. remove 같은 원거리·주문 효과와 혼돈에는 합이 없습니다.
+- 그러니 배율 태그와 보호막은 강합니다. 기준: 배율 ×1.2~1.4는 DC 11~14·AP 2, ×1.5~2.0은 DC 15~20·AP 3, 영구면 DC +3. 보호막은 위 기준보다 DC +2.
+- move 효과로 배율 태그나 보호막이 있는 상대 기물을 잡게 하면, 그 행동은 합의 결과에 따라 실패할 수 있습니다(지면 남은 효과는 취소). 판정할 때 이 위험을 감안하세요.
+
+## 조형물 (prop)
+- 조형물은 언제나 태그나 지형의 모습입니다(검은 "검술" 태그의 모습, 바리케이드는 벽의 모습). 태그나 지형이 사라지면 함께 사라지니, 보이는 것과 규칙이 같도록 쓰세요. 조형물이 필요 없으면 preset "none"에 parts 빈 목록.
+- 먼저 미리 만든 모양을 쓰세요: sword(검), spear(창), shield(방패), ladder(사다리), bridge(다리), flag(깃발, color로 천 색), crown(왕관), barricade(바리케이드). scale(0.5~2)로 크기를 바꿀 수 있습니다.
+- 없는 것은 parts에 직접 조합합니다(최대 20개). 한 줄에 부품 하나(또는 ;로 구분): "도형 재질 x y z 폭 높이 깊이 [x회전 y회전 z회전] [#색]". 도형은 box, cylinder, cone, sphere, wedge, torus(원기둥·원뿔·공·고리의 폭은 지름, 고리는 눕힌 링). 재질은 wood, stone, iron, gold, cloth, rope, glass, glow(천·유리·빛남은 #rrggbb 색). 위치와 크기는 칸 단위(한 칸 = 1, 기물 높이는 0.8~1.6), 회전은 도. 예: 꽃 화관 = "torus rope 0 0.03 0 0.24 0.04 0.24; sphere cloth 0.1 0.05 0 0.06 0.06 0.06 #e05a8a; sphere cloth -0.1 0.05 0 0.06 0.06 0.06 #f2c14e".
+- 기물에 붙일 때 attach는 rightHand, leftHand, head, back, feet. 좌표의 원점은 그 붙는 곳이고(head면 머리 꼭대기, feet면 발밑 바닥, 손이면 쥐는 자리), x는 기물의 오른쪽, y는 위, z는 앞(상대 쪽)입니다. 그래서 모자나 화관은 y 0 근처에 두세요. 기물 키의 1.5배 안에 들어가게 작게 만드세요.
+- 칸에 놓일 때(벽, 구덩이, 다리, 사다리) 원점은 칸 가운데 바닥이고, x는 h열 쪽, z는 8줄 쪽입니다. 한 칸 안에 들어가게 만드세요.
 
 ## 절대 규칙 (어기면 판정 전체가 거부됩니다)
 - 킹은 어떤 효과로도 제거하거나 잡거나 변환하거나 편을 바꿀 수 없고, 킹을 새로 만들 수도 없습니다. 킹은 일반 체스 수로만 잡힙니다. 킹에 태그를 붙이는 것은 됩니다.
@@ -92,7 +110,8 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - 그럴듯하고 영향이 작은 행동(가까운 칸으로의 기발한 이동 등): DC ${rules.dcMin}~10, AP ${rules.costMin}.
 - 대담하거나 판을 크게 바꾸는 행동(먼 거리 이동, 중요 기물 위협, 폰이나 마이너 기물 제거): DC 11~17, AP ${Math.min(rules.costMax, rules.costMin + 1)}.
 - 터무니없거나 결정적인 행동(퀸이나 룩 제거, 폰을 퀸으로 변환, 강한 기물 생성, 상대 기물 매수, 여러 기물에 한꺼번에 영향): DC 18~${rules.dcMax}, AP ${rules.costMax}.
-- 기절과 보호막은 지속 턴이 길수록, 영구일수록 DC와 비용을 높이세요. 대부분은 1~2턴이면 충분합니다.
+- 기절과 보호막은 지속 턴이 길수록, 영구일수록 DC와 비용을 높이세요. 대부분은 1~2턴이면 충분합니다. 보호막은 합 덕분에 강하니 DC를 +2 더 높이세요.
+- 합 배율(clash) 태그는 강합니다. ×1.2~1.4는 DC 11~14·AP 2, ×1.5~2.0은 DC 15~20·AP 3이 기준이고, 영구(turns 0)면 DC를 +3 더 높이세요. 예: 영구 검술 ×1.5 → DC 18, AP 3. 3턴 창술 ×1.3 → DC 13, AP 2.
 - 화상은 짧을수록(상대가 피할 시간이 적을수록) 강합니다. 보통 2~3턴, 중요한 기물일수록 DC를 높이세요.
 - 되살리기는 기물을 새로 만드는 것과 같은 무게로, 되살리는 기물이 강할수록 어렵게 하세요.
 - 벽과 구덩이는 1~3턴이 보통입니다. 오래가거나 영구인 지형, 여러 칸, 킹을 가두는 지형은 어렵게 하세요. 기물을 삼키는 구덩이는 제거와 같은 무게입니다.
@@ -125,13 +144,13 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 /** Text board, uppercase = white, rank 8 at the top. */
 function boardGrid(state: GameState): string {
   const rows: string[] = [];
-  const ground = new Map((state.terrain ?? []).map((c) => [c.at, c.kind]));
+  const ground = new Map((state.terrain ?? []).map((c) => [c.at, c.cover ? (c.kind === 'wall' ? 'H' : '=') : c.kind === 'wall' ? '#' : 'O']));
   for (let rank = 7; rank >= 0; rank--) {
     const cells: string[] = [];
     for (let file = 0; file < 8; file++) {
       const p = state.board[rank * 8 + file];
       const g = ground.get(rank * 8 + file);
-      cells.push(p ? (p.color === 'white' ? LETTER[p.type].toUpperCase() : LETTER[p.type]) : g === 'wall' ? '#' : g === 'pit' ? 'O' : '.');
+      cells.push(p ? (p.color === 'white' ? LETTER[p.type].toUpperCase() : LETTER[p.type]) : (g ?? '.'));
     }
     rows.push(`${rank + 1} ${cells.join(' ')}`);
   }
@@ -142,7 +161,13 @@ function boardGrid(state: GameState): string {
 function describeTags(p: Piece): string {
   const tags = (p.tags ?? []).filter((t) => t.name !== RIDE);
   if (!tags.length) return '';
-  return ` [${tags.map((t) => (t.turnsLeft === null ? `${t.name}(영구)` : `${t.name}(${t.turnsLeft}턴 남음)`)).join(', ')}]`;
+  const one = (t: (typeof tags)[number]) => {
+    const notes = [t.turnsLeft === null ? '영구' : `${t.turnsLeft}턴 남음`];
+    if (t.clash) notes.push(`합 ×${t.clash}`);
+    if (t.prop) notes.push(t.prop.preset ? PROP_PRESET_NAME[t.prop.preset] : '조형물');
+    return `${t.name}(${notes.join(', ')})`;
+  };
+  return ` [${tags.map(one).join(', ')}]`;
 }
 
 function pieceList(state: GameState, color: Color): string {
@@ -169,7 +194,11 @@ function terrainList(state: GameState): string {
   const cells = state.terrain ?? [];
   if (!cells.length) return '(없음)';
   return cells
-    .map((c) => `${TERRAIN_NAME[c.kind]} ${squareName(c.at)} (${c.turnsLeft === null ? '영구' : `${COLOR[c.owner]}의 턴으로 ${c.turnsLeft}턴 남음`})`)
+    .map((c) => {
+      const own = c.turnsLeft === null ? '영구' : `${COLOR[c.owner]}의 턴으로 ${c.turnsLeft}턴 남음`;
+      const cover = c.cover ? `, ${COVER_NAME[c.cover.kind]} ${c.cover.turnsLeft === null ? '영구' : `${COLOR[c.cover.owner]}의 턴으로 ${c.cover.turnsLeft}턴 남음`}` : '';
+      return `${TERRAIN_NAME[c.kind]} ${squareName(c.at)} (${own}${cover})`;
+    })
     .join(', ');
 }
 
@@ -228,7 +257,7 @@ export function buildUserMessage(action: string, state: GameState, problem?: str
 ## 지형
 ${terrainList(state)}
 
-## 보드 (대문자 = 백, 소문자 = 흑, . = 빈 칸, # = 벽, O = 구덩이; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰; 태그와 탑승은 위 목록 참고)
+## 보드 (대문자 = 백, 소문자 = 흑, . = 빈 칸, # = 벽, H = 사다리 걸린 벽, O = 구덩이, = = 다리 놓인 구덩이; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰; 태그와 탑승은 위 목록 참고)
 ${boardGrid(state)}
 
 ## 이번 게임의 판례 (최근 ${MAX_PRECEDENTS}개까지, 오래된 순)
@@ -283,6 +312,8 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 - {"type": "revive", "at": "c3", "color": "white", "piece": "knight"}: 잡힌 기물 목록에 있는 기물을 빈 칸에 되살린다.
 - {"type": "terrain", "at": "d4", "kind": "wall", "turns": 2}: 벽(wall, 빈 칸만)이나 구덩이(pit, 그 칸의 기물을 삼킴)를 만든다. 아무도 들어가거나 지나가지 못하고(나이트는 뛰어넘음), turns는 지금 차례인 편의 턴 기준.
 - {"type": "clearTerrain", "at": "d4"}: 벽이나 구덩이를 없앤다.
+- {"type": "cover", "at": "d4", "kind": "bridge", "turns": 2}: 구덩이에 다리(bridge, 건너고 설 수 있음)나 벽에 사다리(ladder, 넘어가기만)를 놓는다. {"type": "clearCover", "at": "d4"}로 치운다(다리 위 기물은 빠짐).
+- tag에는 합 배율(clash 1.2~2.0, 싸움 실력)을, tag·terrain·cover에는 prop(모습: 미리 만든 모양 sword, spear, shield, ladder, bridge, flag, crown, barricade 또는 직접 조합)을 줄 수 있다. 필요 없으면 clash 0, prop의 preset "none".
 칸 이름은 a1~h8 형식이고, 효과는 순서대로 앞 효과가 적용된 보드를 기준으로 합니다.
 
 ## 절대 규칙 (어기면 사건 전체가 취소됩니다)
@@ -293,6 +324,22 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 - 폰을 그 편의 마지막 줄(백은 8번 줄, 흑은 1번 줄)에 만들지 마세요.
 - 벽이나 구덩이 칸에는 기물을 옮기거나 만들 수 없습니다(구덩이로 move하면 그 기물이 빠져서 없어짐). 킹 밑에 구덩이를 팔 수 없습니다.
 - 지형은 한꺼번에 최대 ${MAX_TERRAIN}칸입니다.
+- 다리(bridge)를 놓은 구덩이는 평범한 칸처럼 지나가고 설 수 있습니다(양편 모두). 다리가 끝나거나 끊기면 그 위의 기물이 빠집니다.
+- 사다리(ladder)를 건 벽은 지나갈 수만 있고 그 위에 멈출 수는 없습니다(양편 모두, 체크도 넘어감).
+- 다리와 사다리도 만든 쪽의 턴 기준으로 남은 턴을 세고, 1~3턴이 보통입니다. 지형 자체보다 쉽게(DC 8~12, AP 1) 정하세요.
+
+## 합 (clash)
+- 태그에 합 배율(clash, 1.2~2.0)을 주면 그 기물은 싸움 실력이 생깁니다. 예: "검술" ×1.5, 대가의 검술 ×2.0.
+- 배율 태그나 보호막이 있는 기물을 손으로 잡으려 하면(일반 수, 또는 move 효과로 그 칸에 들어갈 때) 합이 일어납니다: 양쪽이 d20 × 배율을 굴려 큰 쪽이 이기고, 공격 쪽이 지면 공격 기물이 잡힙니다. 보호막은 지면 보호막만 깨지고 기물은 살아남습니다. remove 같은 원거리·주문 효과와 혼돈에는 합이 없습니다.
+- 그러니 배율 태그와 보호막은 강합니다. 기준: 배율 ×1.2~1.4는 DC 11~14·AP 2, ×1.5~2.0은 DC 15~20·AP 3, 영구면 DC +3. 보호막은 위 기준보다 DC +2.
+- move 효과로 배율 태그나 보호막이 있는 상대 기물을 잡게 하면, 그 행동은 합의 결과에 따라 실패할 수 있습니다(지면 남은 효과는 취소). 판정할 때 이 위험을 감안하세요.
+
+## 조형물 (prop)
+- 조형물은 언제나 태그나 지형의 모습입니다(검은 "검술" 태그의 모습, 바리케이드는 벽의 모습). 태그나 지형이 사라지면 함께 사라지니, 보이는 것과 규칙이 같도록 쓰세요. 조형물이 필요 없으면 preset "none"에 parts 빈 목록.
+- 먼저 미리 만든 모양을 쓰세요: sword(검), spear(창), shield(방패), ladder(사다리), bridge(다리), flag(깃발, color로 천 색), crown(왕관), barricade(바리케이드). scale(0.5~2)로 크기를 바꿀 수 있습니다.
+- 없는 것은 parts에 직접 조합합니다(최대 20개). 한 줄에 부품 하나(또는 ;로 구분): "도형 재질 x y z 폭 높이 깊이 [x회전 y회전 z회전] [#색]". 도형은 box, cylinder, cone, sphere, wedge, torus(원기둥·원뿔·공·고리의 폭은 지름, 고리는 눕힌 링). 재질은 wood, stone, iron, gold, cloth, rope, glass, glow(천·유리·빛남은 #rrggbb 색). 위치와 크기는 칸 단위(한 칸 = 1, 기물 높이는 0.8~1.6), 회전은 도. 예: 꽃 화관 = "torus rope 0 0.03 0 0.24 0.04 0.24; sphere cloth 0.1 0.05 0 0.06 0.06 0.06 #e05a8a; sphere cloth -0.1 0.05 0 0.06 0.06 0.06 #f2c14e".
+- 기물에 붙일 때 attach는 rightHand, leftHand, head, back, feet. 좌표의 원점은 그 붙는 곳이고(head면 머리 꼭대기, feet면 발밑 바닥, 손이면 쥐는 자리), x는 기물의 오른쪽, y는 위, z는 앞(상대 쪽)입니다. 그래서 모자나 화관은 y 0 근처에 두세요. 기물 키의 1.5배 안에 들어가게 작게 만드세요.
+- 칸에 놓일 때(벽, 구덩이, 다리, 사다리) 원점은 칸 가운데 바닥이고, x는 h열 쪽, z는 8줄 쪽입니다. 한 칸 안에 들어가게 만드세요.
 
 ## 연출 (staging, 보기용)
 사건이 화면에서 어떻게 보일지 staging에 정합니다. 규칙에는 영향이 없습니다. 서술과 맞게, 사건의 크기에 맞게 쓰세요. fx(element: fire, light, water, nature, darkness, lightning, ice, wind, poison, arcane, earth, impact / shape: burst, beam, area, trail / strength 1~5, duration 0.5~5초, withEffect와 delay로 시점), shake 0~3, beats(효과별 wait, motion, speed, entrance, exit), acts(제자리 연기)를 쓸 수 있고, tag 효과에는 aura(원소와 세기 1~3)를 붙일 수 있습니다. 넓은 사건(모래폭풍, 비)은 area로 보드를 덮어도 좋습니다. 전체 6초 이내.
@@ -340,7 +387,7 @@ export function buildChaosUserMessage(state: GameState, inspiration: string[] = 
 ## 지형
 ${terrainList(state)}
 
-## 보드 (대문자 = 백, 소문자 = 흑, . = 빈 칸, # = 벽, O = 구덩이; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰)
+## 보드 (대문자 = 백, 소문자 = 흑, . = 빈 칸, # = 벽, H = 사다리 걸린 벽, O = 구덩이, = = 다리 놓인 구덩이; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰)
 ${boardGrid(state)}
 
 ## 이번 게임의 판례 (최근 ${MAX_PRECEDENTS}개까지, 오래된 순)

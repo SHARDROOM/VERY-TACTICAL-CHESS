@@ -82,9 +82,11 @@ const short = (name: string) => (name.length > 6 ? `${name.slice(0, 5)}…` : na
 export function tagChips(piece: Piece): Chip[] {
   return (piece.tags ?? []).flatMap((t): Chip[] => {
     if (t.name === RIDE) return [];
-    if (t.turnsLeft === null) return CORE_TAGS.includes(t.name) ? [] : [{ text: short(t.name), tone: 'free' }];
+    // A clash multiplier shows with the name: "검술 ×1.5".
+    const name = t.clash ? `${short(t.name)} ×${t.clash}` : short(t.name);
+    if (t.turnsLeft === null) return CORE_TAGS.includes(t.name) && !t.clash ? [] : [{ text: name, tone: 'free' }];
     const tone = t.name === STUN ? 'stun' : t.name === SHIELD ? 'shield' : t.name === BURN ? (t.turnsLeft <= 1 ? 'burnLast' : 'burn') : 'free';
-    return [{ text: `${short(t.name)} ${t.turnsLeft}`, tone }];
+    return [{ text: `${name} ${t.turnsLeft}`, tone }];
   });
 }
 

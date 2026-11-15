@@ -111,6 +111,8 @@ let nextLogId = 1;
 
 /** Seconds between the dice result and the show, while the camera swings back to the board. */
 const SHOW_LEAD_IN = 0.6;
+/** How long the camera stays close after a duel, for the loser's end. */
+const DUEL_AFTERMATH_MS = 1300;
 
 
 
@@ -334,13 +336,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       const plan = planDuel(clash, board, lightRef.current ? 2 : 6);
       if (!plan) return done();
       const still = prefersReducedMotion();
-      let cameraBefore: CameraRequest | null = null;
-      if (!still) {
-        setCamera((c) => {
-          cameraBefore = c;
-          return { ...c, custom: duelCamera(plan, c.side), nonce: c.nonce + 1 };
-        });
-      }
+      if (!still) setCamera((c) => ({ ...c, custom: duelCamera(plan, c.side), nonce: c.nonce + 1 }));
       void simulateDuel(plan).then((run) => {
         const startedAt = performance.now() + (still ? 0 : DUEL_TIMING.camera) * 1000;
         setDuel({ clash, plan, run, startedAt });
@@ -351,11 +347,10 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
           clearTimeout(timer);
           endDuel.current = null;
           setDuel(null);
-          if (cameraBefore) {
-            const back = cameraBefore;
-            setCamera((c) => ({ ...back, custom: undefined, nonce: c.nonce + 1 }));
-          }
+          // The result plays out while the camera is still close (the loser shatters or flies off),
+          // then it pulls back to the player's view (whatever side that is by now).
           done();
+          if (!still) setTimeout(() => setCamera((c) => (c.custom ? { ...c, custom: undefined, nonce: c.nonce + 1 } : c)), DUEL_AFTERMATH_MS);
         };
         // A moment after the last blow so the pieces can stand up; skipping jumps to the end of the fight first.
         const timer = setTimeout(end, startedAt - performance.now() + duelLength(run) * 1000 + 350);

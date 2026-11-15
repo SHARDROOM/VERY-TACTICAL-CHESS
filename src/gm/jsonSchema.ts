@@ -1,5 +1,8 @@
 import { ELEMENTS, MEANS } from '../engine';
 import { GM_RULING_STAGING_JSON_SCHEMA, GM_STAGING_JSON_SCHEMA } from './staging';
+import { GM_PROP_JSON_SCHEMA } from './props';
+
+const prop = { ...GM_PROP_JSON_SCHEMA, description: '조형물: 태그나 지형의 모습. 필요 없으면 preset "none"에 parts 빈 목록' };
 
 /**
  * Hand-written JSON Schema for the GM ruling, for providers whose structured
@@ -29,6 +32,8 @@ export const GM_EFFECT_JSON_SCHEMAS = [
     turns: { type: 'integer', description: '지속 턴 수 (그 기물 주인의 턴 기준). 0이면 영구' },
     aura: { type: 'string', enum: ['none', ...ELEMENTS], description: '태그가 남아 있는 동안 기물에 두를 원소 오라' },
     auraStrength: { type: 'number', description: '오라 세기 1~3 (none이면 0)' },
+    clash: { type: 'number', description: '합 배율 1.2~2.0 (검술처럼 싸움 실력을 주는 태그). 없으면 0' },
+    prop,
   }),
   effect('untag', { at: sq('태그를 뗄 기물의 칸'), tag: { type: 'string', description: '뗄 태그 이름' } }),
   effect('board', { rider: sq('올라탈 기물의 칸'), carrier: sq('태울 같은 편 기물의 칸') }),
@@ -53,8 +58,16 @@ export const GM_EFFECT_JSON_SCHEMAS = [
     at: sq('지형을 만들 칸 (벽은 빈 칸만, 구덩이는 그 칸의 기물을 삼킴)'),
     kind: { type: 'string', enum: ['wall', 'pit'], description: 'wall(벽) 또는 pit(구덩이)' },
     turns: { type: 'integer', description: '지속 턴 수 (만든 쪽의 턴 기준). 0이면 영구' },
+    prop,
   }),
   effect('clearTerrain', { at: sq('벽이나 구덩이를 없앨 칸') }),
+  effect('cover', {
+    at: sq('구덩이(다리) 또는 벽(사다리)이 있는 칸'),
+    kind: { type: 'string', enum: ['bridge', 'ladder'], description: 'bridge(구덩이 위 다리: 지나가고 설 수 있음) 또는 ladder(벽의 사다리: 지나가기만)' },
+    turns: { type: 'integer', description: '지속 턴 수 (만든 쪽의 턴 기준). 0이면 영구' },
+    prop,
+  }),
+  effect('clearCover', { at: sq('다리를 끊거나 사다리를 치울 칸') }),
 ];
 
 /** Mirrors GmChaosSchema. */
