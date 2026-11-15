@@ -1,5 +1,5 @@
-import { applyCommand, fileOf, parseSquare, rankOf, squareName, type Color, type GameState, type PieceType, type Square } from '../engine';
-import type { GameMaster, GmChaosJson, GmEffectJson, GmRequest, GmRulingJson } from './types';
+import { fileOf, parseSquare, rankOf, type Color, type PieceType, type Square } from '../engine';
+import type { GameMaster, GmRequest, GmRulingJson } from './types';
 import { josa } from '../ui/josa';
 
 const REMOVE_WORDS = /제거|파괴|없애|날려\s*버|암살|처치|저격|죽이|부숴|부순/;
@@ -33,6 +33,8 @@ function lastPieceWord(text: string): Exclude<PieceType, 'king'> | null {
  * - a square + a piece name + a changing word ("a2 폰을 퀸으로 바꾼다") → transform
  * - two or more squares ("b1 나이트를 투석기로 e5까지") → move first → second
  * Anything else is ruled infeasible.
+ *
+ * It never makes up chaos events: those are always the real (API) GM's job.
  */
 export class FakeGameMaster implements GameMaster {
   readonly name = '가짜 GM (개발용)';
@@ -43,108 +45,6 @@ export class FakeGameMaster implements GameMaster {
     if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs));
     return fakeRuling(action, state.turn);
   }
-
-  async chaos({ state }: { state: GameState }): Promise<GmChaosJson> {
-    if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs));
-    return fakeChaos(state);
-  }
-}
-
-const SIDE: Record<Color, string> = { white: '백', black: '흑' };
-
-/**
- * A random chaos event that the engine accepts for this board: a spy, a sandstorm,
- * lightning, a supply drop or a blessing. Each idea is tried on the board first.
- */
-export function fakeChaos(state: GameState, random: () => number = Math.random): GmChaosJson {
-  const pick = <T,>(xs: T[]): T | undefined => xs[Math.floor(random() * xs.length)];
-  const squaresWhere = (f: (sq: Square) => boolean) => Array.from({ length: 64 }, (_, i) => i).filter(f);
-  const pieceAt = (sq: Square) => state.board[sq];
-  const nonKing = (color?: Color) => squaresWhere((sq) => !!pieceAt(sq) && pieceAt(sq)!.type !== 'king' && (!color || pieceAt(sq)!.color === color));
-  const empty = squaresWhere((sq) => !pieceAt(sq) && rankOf(sq) > 0 && rankOf(sq) < 7);
-  const name = (sq: Square) => squareName(sq);
-  const KO: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
-
-  const ideas: (() => GmChaosJson | null)[] = [
-    () => {
-      const color = pick<Color>(['white', 'black'])!;
-      const sq = pick(squaresWhere((s) => pieceAt(s)?.color === color && pieceAt(s)?.type === 'pawn'));
-      if (sq === undefined) return null;
-      const other: Color = color === 'white' ? 'black' : 'white';
-      return {
-        title: '스파이 발각',
-        narration: `${SIDE[color]}의 ${name(sq)} 폰은 사실 ${SIDE[other]}의 스파이였습니다! 가면을 벗어 던지고 편을 바꿉니다.`,
-        effects: [{ type: 'convert', at: name(sq), color: other }],
-      };
-    },
-    () => {
-      const from = pick(nonKing().filter((s) => pieceAt(s)!.type !== 'queen'));
-      const to = pick(empty);
-      if (from === undefined || to === undefined) return null;
-      const p = pieceAt(from)!;
-      return {
-        title: '모래바람',
-        narration: `거센 모래바람이 ${SIDE[p.color]}의 ${KO[p.type]}을(를) ${name(from)}에서 ${name(to)}까지 날려 보냈습니다!`,
-        effects: [{ type: 'move', from: name(from), to: name(to) }],
-      };
-    },
-    () => {
-      const at = pick(nonKing());
-      if (at === undefined) return null;
-      const p = pieceAt(at)!;
-      return {
-        title: '마른하늘에 벼락',
-        narration: `맑은 하늘에서 벼락이 떨어져 ${name(at)}의 ${SIDE[p.color]} ${KO[p.type]}이(가) 정신을 잃었습니다.`,
-        effects: [{ type: 'tag', at: name(at), tag: '기절', turns: 1 }],
-      };
-    },
-    () => {
-      const w = pick(empty.filter((s) => rankOf(s) <= 3));
-      const b = pick(empty.filter((s) => rankOf(s) >= 4));
-      if (w === undefined || b === undefined) return null;
-      return {
-        title: '보급품 투하',
-        narration: `하늘에서 보급 상자가 떨어지더니, 양쪽 진영에 새 병사가 한 명씩 나타났습니다.`,
-        effects: [
-          { type: 'spawn', at: name(w), color: 'white', piece: 'pawn' },
-          { type: 'spawn', at: name(b), color: 'black', piece: 'pawn' },
-        ],
-      };
-    },
-    () => {
-      const w = pick(nonKing('white'));
-      const b = pick(nonKing('black'));
-      if (w === undefined || b === undefined) return null;
-      return {
-        title: '수호 정령의 축복',
-        narration: `떠돌던 수호 정령이 ${name(w)}의 백 기물과 ${name(b)}의 흑 기물에 축복을 내렸습니다.`,
-        effects: [
-          { type: 'tag', at: name(w), tag: '보호막', turns: 0 },
-          { type: 'tag', at: name(b), tag: '보호막', turns: 0 },
-        ],
-      };
-    },
-  ];
-
-  // Try ideas in a random order until the engine accepts one.
-  const order = ideas.map((idea) => ({ idea, key: random() })).sort((a, b) => a.key - b.key);
-  for (const { idea } of order) {
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const event = idea();
-      if (!event) break;
-      const effects = event.effects.map(toEngineEffect);
-      if (applyCommand(state, { type: 'chaos', chaos: { ...event, effects } }).ok) return event;
-    }
-  }
-  return { title: '고요', narration: '바람 한 점 없이 고요합니다. 폭풍 전의 고요일까요?', effects: [] };
-}
-
-function toEngineEffect(e: GmEffectJson): never {
-  const out: Record<string, unknown> = { ...e };
-  for (const key of ['from', 'to', 'at', 'rider', 'carrier'] as const) {
-    if (typeof out[key] === 'string') out[key] = parseSquare(out[key] as string);
-  }
-  return out as never;
 }
 
 export function fakeRuling(action: string, color: Color = 'white'): GmRulingJson {

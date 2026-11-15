@@ -1,3 +1,4 @@
+import type { GameMaster } from './types';
 import { describe, expect, it } from 'vitest';
 import { applyCommand, createInitialState, parseSquare } from '../engine';
 import { parseGmRuling } from './parse';
@@ -171,22 +172,11 @@ describe('fake GM crits', () => {
 });
 
 describe('chaos', () => {
-  const seeded = (seed: number) => () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
-
-  it('the fake GM always makes up an event the engine accepts', async () => {
-    const { createInitialState, applyCommand } = await import('../engine');
-    const { fakeChaos } = await import('./fakeGm');
-    const { parseGmChaos } = await import('./parse');
-    const titles = new Set<string>();
-    for (let i = 0; i < 40; i++) {
-      const state = createInitialState();
-      const parsed = parseGmChaos(fakeChaos(state, seeded(i * 7 + 1)));
-      expect(parsed.ok).toBe(true);
-      if (!parsed.ok) continue;
-      titles.add(parsed.chaos.title);
-      expect(applyCommand(state, { type: 'chaos', chaos: parsed.chaos }).ok).toBe(true);
-    }
-    expect(titles.size).toBeGreaterThanOrEqual(4);
+  it('the fake GM never makes up chaos: only a real (API) GM does', async () => {
+    const { FakeGameMaster } = await import('./fakeGm');
+    const { MissingKeyGameMaster } = await import('./missingKeyGm');
+    const gms: GameMaster[] = [new FakeGameMaster(0), new MissingKeyGameMaster('Claude GM')];
+    for (const gm of gms) expect(gm.chaos).toBeUndefined();
   });
 
   it('parses squares in chaos effects and rejects bad ones', async () => {

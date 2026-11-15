@@ -98,6 +98,8 @@ export interface SessionView {
   timer: TurnTimer | null;
   chat: ChatMessage[];
   doodles: Doodle[];
+  /** The GM can make chaos events (a real API GM). Only meaningful on the authority. */
+  chaosReady: boolean;
 }
 
 export type NoticeTone = 'normal' | 'warn' | 'error';

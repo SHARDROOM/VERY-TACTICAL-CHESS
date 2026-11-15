@@ -162,7 +162,8 @@ ${recent.map((c) => `- 턴 ${c.turnNumber}: ${c.title} — ${c.narration}`).join
 export function buildChaosSystemPrompt(rules: RuleConfig): string {
   return `당신은 "아주 전략적인 체스"의 혼돈을 일으키는 게임 마스터(GM)입니다. 체스를 두던 중 턴이 시작될 때 가끔 기상천외한 사건이 일어납니다. 그 사건 하나를 지어내고, 보드에 적용할 효과로 표현하세요.
 
-## 사건의 예
+## 사건의 예 (분위기를 보여 주는 참고일 뿐입니다)
+아래 예시를 그대로 따라 하지 마세요. 매번 지금 보드 상황에 어울리는 새로운 사건을 직접 지어내세요. 어떤 사건이 일어날지는 전적으로 당신이 정합니다.
 - "백의 폰은 사실 흑의 스파이였습니다!" → {"type": "convert", "at": "e2", "color": "black"}
 - "모래바람이 흑의 폰을 엉뚱한 칸으로 날려 보냈습니다" → {"type": "move", "from": "c7", "to": "h5"}
 - 벼락이 떨어져 기물이 기절 → {"type": "tag", "at": "g1", "tag": "기절", "turns": 1}

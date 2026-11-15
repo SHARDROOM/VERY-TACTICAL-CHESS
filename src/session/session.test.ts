@@ -381,6 +381,22 @@ describe('chaos', () => {
     expect(o.guest.view().state.chaosLog?.[0].title).toBe('지진');
   });
 
+  it('only a real (API) GM makes chaos: with the fake GM nothing happens, and the host is told', async () => {
+    const { FakeGameMaster } = await import('../gm/fakeGm');
+    const s = new LocalSession(new FakeGameMaster(0), { roll: () => 20, chance: () => 0 });
+    s.setRules({ chaosChance: 0.5 });
+    expect(s.view().chaosReady).toBe(false);
+    s.start();
+    const before = s.view().state.board;
+    s.request({ type: 'move', from: sq('e2'), to: sq('e4') });
+    await settle();
+    expect(s.view().state.chaosLog ?? []).toEqual([]);
+    expect(s.view().state.board.filter(Boolean)).toHaveLength(before.filter(Boolean).length);
+    // With an API GM it is ready.
+    s.setGm(new TestGm());
+    expect(s.view().chaosReady).toBe(true);
+  });
+
   it('a chaos event that breaks the rules is skipped with a notice', async () => {
     const gm = new TestGm();
     gm.chaosReply = { title: '반칙', narration: '킹을 없앤다', effects: [{ type: 'remove', at: 'e8' }] };

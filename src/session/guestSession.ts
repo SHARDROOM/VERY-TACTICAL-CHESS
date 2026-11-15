@@ -79,6 +79,7 @@ export class GuestSession implements Session {
       timer: this.timer,
       chat: this.chat,
       doodles: this.doodles,
+      chaosReady: true,
     };
   }
 

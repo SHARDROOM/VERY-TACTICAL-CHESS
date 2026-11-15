@@ -460,6 +460,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
                   {view.isAuthority
                     ? '진짜 GM은 ⚙ 버튼에서 Claude, OpenAI, Gemini 중 하나의 API 키를 넣으면 켜집니다.'
                     : 'GM은 방장이 설정합니다.'}
+                  {view.isAuthority && game.rules.chaosChance > 0 && !view.chaosReady && (
+                    <>
+                      <br />⚠ 혼돈이 켜져 있지만 지금 GM은 API를 쓰지 않아서 혼돈이 일어나지 않습니다.
+                    </>
+                  )}
                 </li>
               )}
               {log.map((l) => (
