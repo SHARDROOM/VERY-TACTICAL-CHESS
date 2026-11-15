@@ -16,12 +16,15 @@ export function PrecedentList({ precedents, onClose }: { precedents: Precedent[]
             {newestFirst.map((p, i) => (
               <li key={i}>
                 <div className="precedent-head">
-                  <span>턴 {p.turnNumber} · {COLOR_NAME[p.color]}</span>
+                  <span>
+                    {p.turnNumber}턴, {COLOR_NAME[p.color]}
+                  </span>
                   <span className={`outcome ${p.outcome}`}>🎲 {p.roll} {OUTCOME_LABEL[p.outcome]}</span>
                 </div>
-                <div className="precedent-action">"{p.action}"</div>
+                <div className="precedent-action">“{p.action}”</div>
+                <div className="muted">{p.interpretation}</div>
                 <div className="muted">
-                  {p.interpretation} · DC {p.dc} · AP {p.cost}
+                  DC {p.dc}, AP {p.cost}
                 </div>
               </li>
             ))}

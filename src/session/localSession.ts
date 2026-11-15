@@ -37,8 +37,8 @@ export class LocalSession implements Session {
 
   view(): SessionView {
     const members: Member[] = [
-      { key: 'white', name: '백', role: 'white', online: true, host: true },
-      { key: 'black', name: '흑', role: 'black', online: true, host: false },
+      { key: 'white', name: '이 기기', role: 'white', online: true, host: true },
+      { key: 'black', name: '이 기기', role: 'black', online: true, host: false },
     ];
     return {
       state: this.authority.state,

@@ -19,7 +19,7 @@ function Line({ piece }: { piece: Piece }) {
           ))}
         </ul>
       ) : (
-        <span className="muted"> · 태그 없음</span>
+        <span className="muted">태그 없음</span>
       )}
     </>
   );

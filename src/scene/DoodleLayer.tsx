@@ -77,13 +77,20 @@ function LineMesh({ points, width, color, opacity = 1 }: { points: number[]; wid
 }
 
 const noteCache = new Map<string, { texture: CanvasTexture; aspect: number }>();
+/** The handwriting face for notes; canvases only use a font once it has loaded. */
+const NOTE_FONT = '64px "Nanum Pen Script"';
+const noteFontReady: Promise<unknown> =
+  typeof document !== 'undefined' && document.fonts ? document.fonts.load(NOTE_FONT, '가나다abc').catch(() => null) : Promise.resolve();
+let noteFontLoaded = false;
+void noteFontReady.then(() => (noteFontLoaded = true));
+
 function noteTexture(text: string, color: string) {
-  const key = `${color}|${text}`;
+  const key = `${color}|${text}|${noteFontLoaded}`;
   let hit = noteCache.get(key);
   if (!hit) {
     const c = document.createElement('canvas');
     const ctx = c.getContext('2d')!;
-    const font = '700 64px "Nanum Pen Script", "Comic Sans MS", system-ui, sans-serif';
+    const font = `${NOTE_FONT}, system-ui, sans-serif`;
     ctx.font = font;
     const w = Math.ceil(ctx.measureText(text).width) + 24;
     c.width = Math.min(2048, w);
@@ -106,6 +113,11 @@ function noteTexture(text: string, color: string) {
 }
 
 function NoteMesh({ doodle }: { doodle: Extract<Doodle, { kind: 'note' }> }) {
+  // Redraw once the handwriting font arrives.
+  const [, setReady] = useState(noteFontLoaded);
+  useEffect(() => {
+    if (!noteFontLoaded) void noteFontReady.then(() => setReady(true));
+  }, []);
   const { texture, aspect } = noteTexture(doodle.text, doodle.color);
   const h = 0.5;
   return (

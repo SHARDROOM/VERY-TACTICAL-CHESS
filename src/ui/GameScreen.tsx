@@ -33,6 +33,7 @@ import { DoodleToolbar } from './DoodleToolbar';
 import type { DoodleTool } from '../scene/DoodleLayer';
 import { DOODLE_COLORS, type DoodleOp } from '../session/doodle';
 import { clockText, rulesSummary } from './rules';
+import { Icon } from './Icon';
 
 interface LogLine extends LogEntry {
   id: number;
@@ -379,43 +380,54 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
 
       <div className="hud topbar">
       <header className="top">
-        <div className={`turn turn-${sideToMove}`}>
-          {winner ? `${COLOR_NAME[winner]} 승리!` : `${COLOR_NAME[sideToMove]}의 차례`}
+        <div className={`turn turn-${winner ?? sideToMove}`}>
+          <span className="turn-token" aria-hidden />
+          <span className="turn-text">{winner ? `${COLOR_NAME[winner]} 승리` : `${COLOR_NAME[sideToMove]}의 차례`}</span>
           {online && !winner && nameOf(sideToMove) && <span className="turn-name">{nameOf(sideToMove)}</span>}
-          <span className="turn-number">턴 {game.turnNumber}</span>
+          <span className="turn-number">{game.turnNumber}턴</span>
         </div>
         {view.timer && playing && !frozen && <TimerBadge timer={view.timer} mine={myTurn && !spectator} />}
         {(seat === 'white' || seat === 'black') && online && <div className={`badge me me-${seat}`}>나: {COLOR_NAME[seat]}</div>}
-        {spectator && <div className="badge me">👁 관전 중</div>}
+        {spectator && <div className="badge me">관전 중</div>}
         {online && watchers > 0 && <div className="badge muted-badge">관전 {watchers}명</div>}
         {inCheck && <div className="badge check">체크!</div>}
         {view.gmBusy && <div className="badge busy">GM 판정 중…</div>}
         {warning && !winner && <div className="badge warn">⚠ {warning}</div>}
-        {absent && playing && <div className="badge warn">{absent.name} 연결 끊김 · 재접속 대기 중</div>}
+        {absent && playing && <div className="badge warn">{absent.name}님 연결 끊김, 다시 들어오기를 기다리는 중</div>}
       </header>
 
 
-      <div className="camera-buttons">
-        <button onClick={resetView} title="내 쪽에서 비스듬히 보는 시점으로">
-          시점 초기화
+      <nav className="tools" aria-label="테이블 도구">
+        <button onClick={resetView} title="내 쪽에서 비스듬히 보는 시점으로" aria-label="시점 초기화">
+          <Icon name="reset" />
+          <span className="tool-label">시점 초기화</span>
         </button>
-        <button onClick={toggleTopView}>{camera.mode === 'top' ? '비스듬히 보기' : '위에서 보기'}</button>
+        <button onClick={toggleTopView} aria-label={camera.mode === 'top' ? '비스듬히 보기' : '위에서 보기'} title={camera.mode === 'top' ? '비스듬히 보기' : '위에서 보기'}>
+          <Icon name={camera.mode === 'top' ? 'side' : 'top'} />
+          <span className="tool-label">{camera.mode === 'top' ? '비스듬히 보기' : '위에서 보기'}</span>
+        </button>
         {game.rules.doodle && (
           <button
             className={doodleTool ? 'active' : ''}
             onClick={() => setDoodleTool((t) => (t ? null : lastTool.current))}
             title="테이블과 보드에 그리거나 메모하기"
+            aria-label="낙서"
+            aria-pressed={!!doodleTool}
           >
-            ✏️ 낙서
+            <Icon name="pencil" />
+            <span className="tool-label">낙서</span>
           </button>
         )}
-        <button onClick={() => setShowPrecedents(true)} title="지금까지의 GM 판정 기록">
-          📜 판례 ({game.precedents.length})
+        <button onClick={() => setShowPrecedents(true)} title="지금까지의 GM 판정 기록" aria-label={`판례 ${game.precedents.length}개`}>
+          <Icon name="scroll" />
+          <span className="tool-label">판례</span>
+          <span className="tool-count">{game.precedents.length}</span>
         </button>
-        <button className="menu-button" onClick={() => setShowMenu(true)} aria-haspopup="menu" title="설정">
-          ⚙ 설정
+        <button className="menu-button" onClick={() => setShowMenu(true)} aria-haspopup="menu" title="설정" aria-label="설정">
+          <Icon name="gear" />
+          <span className="tool-label">설정</span>
         </button>
-      </div>
+      </nav>
       </div>
 
       {(() => {
@@ -539,53 +551,57 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
 
       {pending && !dice && (
         <div className="overlay">
-          <div className="dialog ruling">
-            <div className="ruling-who">{COLOR_NAME[pending.color]}의 특수 행동</div>
-            <blockquote>"{pending.action}"</blockquote>
-            <h2>GM 판정</h2>
-            <p>{pending.ruling.interpretation}</p>
+          <article className="ruling-sheet" aria-labelledby="ruling-title">
+            <div className="ruling-who">{COLOR_NAME[pending.color]}{online && nameOf(pending.color) ? `(${nameOf(pending.color)})` : ''}의 선언</div>
+            <blockquote>“{pending.action}”</blockquote>
+            <div className="ruling-body">
+              <h2 id="ruling-title">GM 판정</h2>
+              <p className="ruling-text">{pending.ruling.interpretation}</p>
+              {pending.ruling.feasible && (
+                <div className="seal" role="img" aria-label={`난이도 DC ${pending.ruling.dc}`}>
+                  <span className="seal-label">DC</span>
+                  <span className="seal-number">{pending.ruling.dc}</span>
+                </div>
+              )}
+            </div>
             {pending.ruling.feasible ? (
-              <dl className="ruling-stats">
-                <div>
-                  <dt>난이도</dt>
-                  <dd>DC {pending.ruling.dc}</dd>
-                </div>
-                <div>
-                  <dt>비용</dt>
-                  <dd>
-                    AP {pending.ruling.cost}
-                  </dd>
-                </div>
-                <div>
-                  <dt>성공 확률</dt>
-                  <dd>{Math.round(successChance(pending.ruling.dc) * 100)}%</dd>
-                </div>
-              </dl>
+              <>
+                <D20Odds dc={pending.ruling.dc} />
+                <dl className="ruling-facts">
+                  <div>
+                    <dt>비용</dt>
+                    <dd>
+                      {Array.from({ length: pending.ruling.cost }, (_, i) => (
+                        <span key={i} className="coin" aria-hidden />
+                      ))}
+                      AP {pending.ruling.cost}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>성공 확률</dt>
+                    <dd>{Math.round(successChance(pending.ruling.dc) * 100)}%</dd>
+                  </div>
+                </dl>
+                <ul className="crit-notes">
+                  <li>20이 나오면 대성공: {pending.ruling.critSuccessEffects?.length ? '성공보다 더 좋은 결과가 납니다.' : '성공과 같은 결과입니다.'}</li>
+                  <li>1이 나오면 대실패: {pending.ruling.critFailureEffects?.length ? '역효과가 있습니다.' : '아무 일도 일어나지 않습니다.'}</li>
+                </ul>
+                {!canAfford && <p className="infeasible">AP가 부족해서 시도할 수 없습니다.</p>}
+              </>
             ) : (
               <p className="infeasible">GM이 불가능한 행동으로 판정했습니다.</p>
             )}
-            {pending.ruling.feasible && (
-              <ul className="crit-notes">
-                <li>
-                  🎲 20: 대성공{pending.ruling.critSuccessEffects?.length ? ' — 더 좋은 결과' : ' — 성공과 같은 결과'} (DC와 상관없이 성공)
-                </li>
-                <li>
-                  🎲 1: 대실패{pending.ruling.critFailureEffects?.length ? ' — ⚠ 역효과가 있습니다' : ''} (DC와 상관없이 실패)
-                </li>
-              </ul>
-            )}
-            {pending.ruling.feasible && !canAfford && <p className="infeasible">AP가 부족해서 시도할 수 없습니다.</p>}
             {canActOnPending ? (
               <div className="choice-row">
                 <button className="primary" onClick={() => session.request({ type: 'attempt' })} disabled={!pending.ruling.feasible || !canAfford}>
-                  🎲 시도
+                  주사위 굴리기
                 </button>
-                <button onClick={() => session.request({ type: 'cancel' })}>취소 (AP 사용 안 함)</button>
+                <button onClick={() => session.request({ type: 'cancel' })}>취소 (AP는 그대로)</button>
               </div>
             ) : (
-              <p className="muted-line">{spectator ? `${COLOR_NAME[pending.color]}이(가) 시도할지 정하는 중입니다…` : '상대가 시도할지 정하는 중입니다…'}</p>
+              <p className="muted-line">{spectator ? `${COLOR_NAME[pending.color]}이(가) 굴릴지 정하는 중입니다…` : '상대가 굴릴지 정하는 중입니다…'}</p>
             )}
-          </div>
+          </article>
         </div>
       )}
 
@@ -713,6 +729,24 @@ function TimerBadge({ timer, mine }: { timer: TurnTimer; mine: boolean }) {
     <div className={`badge timer ${urgent ? 'urgent' : ''} ${timer.running ? '' : 'paused'}`} title={timer.running ? '이번 턴에 남은 시간' : 'GM이 판정하는 동안 시간이 멈춥니다'}>
       ⏱ {clockText(left)}
       {!timer.running && ' ⏸'}
+    </div>
+  );
+}
+
+/** The twenty faces of the die, marking which of them succeed against this DC. */
+function D20Odds({ dc }: { dc: number }) {
+  const faces = Array.from({ length: 20 }, (_, i) => i + 1);
+  const kind = (n: number) => (n === 20 ? 'crit' : n === 1 ? 'fumble' : n >= dc ? 'win' : '');
+  return (
+    <div className="odds">
+      <div className="odds-faces" aria-hidden>
+        {faces.map((n) => (
+          <span key={n} className={`odds-face ${kind(n)}`}>
+            {n}
+          </span>
+        ))}
+      </div>
+      <div className="odds-caption">d20에서 {Math.min(dc, 20)} 이상이면 성공{dc > 20 ? ' (20만 성공)' : ''}</div>
     </div>
   );
 }

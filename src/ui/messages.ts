@@ -34,7 +34,7 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   critFailure: '대실패!!',
 };
 
-export type LogTone = 'normal' | 'warn' | 'error' | 'gm' | 'roll' | 'chaos';
+export type LogTone = 'normal' | 'warn' | 'error' | 'gm' | 'roll' | 'chaos' | 'turnbreak';
 export interface LogEntry {
   text: string;
   tone: LogTone;
@@ -113,7 +113,7 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         add(`👑 킹을 잡았습니다! ${COLOR_NAME[e.winner]} 승리.`);
         break;
       case 'turnPassed':
-        add(`— ${COLOR_NAME[e.turn]}의 차례 (AP +${e.apGained}) —`);
+        add(`${COLOR_NAME[e.turn]}의 차례 (AP +${e.apGained})`, 'turnbreak');
         break;
       case 'specialProposed':
         add(`📜 ${COLOR_NAME[e.color]}: "${e.action}"`);

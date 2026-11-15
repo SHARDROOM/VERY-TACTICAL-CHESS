@@ -18,7 +18,7 @@ import { SettingsMenu, useFullscreen } from './SettingsMenu';
 import { chaosLabel, rulesSummary, secondsLabel } from './rules';
 import { playSfx } from '../audio/sfx';
 
-const ROLE_BADGE: Record<Member['role'], string> = { white: '♔ 백', black: '♚ 흑', spectator: '👁 관전' };
+const ROLE_BADGE: Record<Member['role'], string> = { white: '백', black: '흑', spectator: '관전' };
 
 interface Props {
   session: Session;
@@ -114,9 +114,9 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
                     <span className={`role-badge role-${m.role}`}>{ROLE_BADGE[m.role]}</span>
                     <span className="member-name">
                       {m.name}
-                      {m.key === view.myKey && online && <span className="muted"> (나)</span>}
-                      {m.host && online && <span className="muted"> · 방장</span>}
-                      {!m.online && <span className="muted"> · 연결 끊김</span>}
+                      {m.key === view.myKey && online && <span className="member-tag">나</span>}
+                      {m.host && online && <span className="member-tag">방장</span>}
+                      {!m.online && <span className="member-tag off">연결 끊김</span>}
                     </span>
                     {host && online && !m.host && (
                       <span className="member-actions">
@@ -129,7 +129,12 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
                     )}
                   </li>
                 ))}
-                {online && !black && <li className="member empty">♚ 흑 자리가 비어 있습니다</li>}
+                {online && !black && (
+                  <li className="member empty">
+                    <span className="role-badge role-black">흑</span>
+                    <span className="member-name">빈 자리, 들어오는 사람이 앉습니다</span>
+                  </li>
+                )}
               </ul>
               {online && me && (
                 <label className="field name-field">
