@@ -127,7 +127,7 @@ function AirLayer({ board, selected, targets, checkedKing, marks, clashOdds, onC
         const [x, , z] = squareToWorld(sq);
         const dark = (fileOf(g) + rankOf(g)) % 2 === 0;
         let color = dark ? '#9fc4e8' : '#e6f1fb';
-        let opacity = dark ? 0.2 : 0.12;
+        let opacity = dark ? 0.26 : 0.15;
         if (sq === selected) [color, opacity] = ['#c9a227', 0.55];
         else if (sq === checkedKing) [color, opacity] = ['#b23b3b', 0.55];
         else if (sq === marks?.actor) [color, opacity] = ['#d9b24c', 0.5];
@@ -150,7 +150,7 @@ function AirLayer({ board, selected, targets, checkedKing, marks, clashOdds, onC
       {/* A faint rim so the layer reads as a board. */}
       <mesh position={[0, AIR_Y - 0.014, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[5.66, 5.8, 4, 1, Math.PI / 4]} />
-        <meshBasicMaterial color="#cfe4f7" transparent opacity={0.35} depthWrite={false} side={2} />
+        <meshBasicMaterial color="#cfe4f7" transparent opacity={0.55} depthWrite={false} side={2} />
       </mesh>
     </group>
   );
