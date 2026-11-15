@@ -28,6 +28,7 @@ function lastPieceWord(text: string): Exclude<PieceType, 'king'> | null {
  * that mention squares:
  * - two squares + a riding word ("a2 폰을 b1 나이트에 태운다") → first boards second
  * - a square + 기절 → 1-turn stun; a square + 보호막 → permanent shield
+ * - a square + a burning word ("g8 나이트에 불을 붙인다") → "불타는 중" for 2 turns, with a fire aura
  * - one or more squares + a removal word ("d7 폰을 저격한다") → remove the last square
  * - a square + a piece name + a summoning word ("e4에 나이트를 소환한다") → spawn one for the player
  * - a square + a piece name + a changing word ("a2 폰을 퀸으로 바꾼다") → transform
@@ -161,6 +162,19 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
     };
   }
 
+  if (squares.length >= 1 && /불태|불붙|불을 붙|불을 질|화염|점화/.test(action)) {
+    const at = names[names.length - 1];
+    return {
+      interpretation: `${at}의 기물에 불을 붙여 두 턴 동안 타오르게 한다.`,
+      feasible: true,
+      dc: 11,
+      cost: 1,
+      effects: [{ type: 'tag', at, tag: '불타는 중', turns: 2, aura: 'fire', auraStrength: 2 }],
+      look: look({ fx: [fx('fire', 'burst', at, { strength: 3, radius: 0.8, withEffect: 1 })], acts: [{ at, act: 'shiver', delay: 0.4 }] }),
+      narration: { success: `${at}의 기물에 불길이 옮겨붙었다!`, failure: '불씨가 피식 꺼져 버렸다.' },
+    };
+  }
+
   const named = lastPieceWord(action);
   if (squares.length >= 1 && named && SPAWN_WORDS.test(action)) {
     const at = names[names.length - 1];
@@ -173,7 +187,7 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
       effects: [{ type: 'spawn', at, color, piece: named }],
       look: look({
         shake: strong ? 1 : 0,
-        beats: [beat(1, { entrance: strong ? 'materialize' : 'rise' })],
+        beats: [beat(1, { entrance: 'rise' })],
         fx: [fx('light', 'burst', at, { strength: strong ? 5 : 3, radius: 1, withEffect: 1 })],
       }),
       narration: { success: `하늘이 갈라지며 ${at}에 ${josa(PIECE_KO[named], '이/가')} 내려앉았다!`, failure: '소환진이 반짝이다 꺼져 버렸다.' },
@@ -196,6 +210,8 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
 
   if (squares.length >= 1 && REMOVE_WORDS.test(action)) {
     const at = names[names.length - 1];
+    // The shot comes from the shooter's own back rank, straight down the file.
+    const from = `${at[0]}${color === 'white' ? 1 : 8}`;
     return {
       interpretation: `${at}의 기물을 전장에서 제거하려 한다.`,
       feasible: true,
@@ -205,7 +221,7 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
       look: look({
         shake: 2,
         beats: [beat(1, { wait: 0.4, exit: 'shatter' })],
-        fx: [fx('lightning', 'burst', at, { strength: 4, duration: 0.8 }), fx('impact', 'burst', at, { strength: 4, withEffect: 1 })],
+        fx: [fx('lightning', 'beam', from, { to: at, strength: 4, duration: 0.8 }), fx('impact', 'burst', at, { strength: 4, withEffect: 1 })],
       }),
       narration: {
         success: `번쩍이는 일격! ${at}의 기물이 전장에서 사라졌다.`,
@@ -225,7 +241,7 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
       cost: distance > 3 ? 2 : 1,
       effects: [{ type: 'move', from: names[0], to: names[1] }],
       look: look({
-        beats: [beat(1, { motion: distance > 3 ? 'fly' : 'hop' })],
+        beats: [beat(1, { motion: distance > 3 ? 'spin' : 'hop' })],
         fx: [fx('wind', 'trail', '', { withEffect: 1, strength: 3 }), fx('earth', 'burst', names[1], { withEffect: 1, delay: 0.9, strength: 2, radius: 0.6 })],
       }),
       narration: {

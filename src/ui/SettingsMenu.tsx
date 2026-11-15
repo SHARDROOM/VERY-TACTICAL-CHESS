@@ -1,5 +1,24 @@
 import { useEffect, useState } from 'react';
 import { getSoundSettings, onSoundSettings, playSfx, setSoundSettings } from '../audio/sfx';
+import { setStagingLook, useStagingLook } from './stagingLook';
+
+/** "연출: 풍부하게 / 가볍게": how much of the GM's staging this device draws. */
+function StagingControls() {
+  const look = useStagingLook();
+  return (
+    <>
+      <div className="segmented" role="radiogroup" aria-label="연출">
+        <button role="radio" aria-checked={look === 'rich'} className={look === 'rich' ? 'active' : ''} onClick={() => setStagingLook('rich')}>
+          풍부하게
+        </button>
+        <button role="radio" aria-checked={look === 'light'} className={look === 'light' ? 'active' : ''} onClick={() => setStagingLook('light')}>
+          가볍게
+        </button>
+      </div>
+      <div className="menu-note">{look === 'rich' ? '입자와 화면 흔들림을 모두 보여 줍니다.' : '입자를 줄이고 화면 흔들림을 끕니다. 느린 기기에 맞습니다.'}</div>
+    </>
+  );
+}
 
 function SoundControls() {
   const [sound, setSound] = useState(getSoundSettings);
@@ -80,6 +99,10 @@ export function SettingsMenu({ onClose, gm, fullscreen, game, rules }: Props) {
             <button onClick={act(fullscreen.toggle)}>{fullscreen.active ? '전체화면 끝내기' : '전체화면'}</button>
           </section>
         )}
+        <section>
+          <h3>연출</h3>
+          <StagingControls />
+        </section>
         <section>
           <h3>소리</h3>
           <SoundControls />

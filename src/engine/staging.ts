@@ -1,4 +1,4 @@
-import type { Square } from './types';
+import { SHIELD, STUN, type Effect, type Square } from './types';
 
 /**
  * GM staging: how a ruling's outcome or a chaos event looks on the table. Purely visual:
@@ -101,3 +101,46 @@ export const STAGING_LIMITS = { fx: 6, seconds: 6, beatWait: 2, fxDelay: 5, minD
 export const EMPTY_STAGING: Staging = { fx: [], shake: 0, beats: [], acts: [] };
 
 export const isElement = (v: unknown): v is Element => ELEMENTS.includes(v as Element);
+
+/** True if the GM gave nothing to look at: no fx, beats, acts or shake. */
+export function isEmptyStaging(s: Staging | undefined): boolean {
+  return !s || (!s.fx.length && !s.beats.length && !s.acts.length && !s.shake);
+}
+
+const quiet = (element: Element, at: Square, withEffect: number, strength = 2): Fx => ({
+  element,
+  shape: 'burst',
+  at,
+  to: null,
+  radius: 0.6,
+  strength,
+  duration: 1,
+  withEffect,
+  delay: 0,
+});
+
+/**
+ * A plain look for effects the GM staged nothing for: a sparkle where a piece appears, dust
+ * where one is removed, a flash for a stun, smoke for a change of sides. Moves, boarding and
+ * transforms already have their own built-in motion. docs/SPEC.md, "GM 연출" (기본 연출).
+ */
+export function defaultStaging(effects: readonly Effect[]): Staging {
+  const fx: Fx[] = [];
+  effects.forEach((e, i) => {
+    if (fx.length >= STAGING_LIMITS.fx) return;
+    if (e.type === 'spawn') fx.push(quiet('arcane', e.at, i));
+    else if (e.type === 'remove') fx.push(quiet('wind', e.at, i));
+    else if (e.type === 'convert') fx.push(quiet('darkness', e.at, i));
+    else if (e.type === 'transform') fx.push(quiet('arcane', e.at, i, 1));
+    else if (e.type === 'tag') {
+      const element: Element = e.aura?.element ?? (e.tag === STUN ? 'lightning' : e.tag === SHIELD ? 'light' : 'arcane');
+      fx.push(quiet(element, e.at, i, e.aura || e.tag === STUN || e.tag === SHIELD ? 2 : 1));
+    }
+  });
+  return { fx, shake: 0, beats: [], acts: [] };
+}
+
+/** The staging a show plays: the GM's, or the plain default if the GM gave nothing. */
+export function effectiveStaging(staging: Staging | undefined, effects: readonly Effect[]): Staging {
+  return isEmptyStaging(staging) ? defaultStaging(effects) : staging!;
+}

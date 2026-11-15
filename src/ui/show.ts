@@ -1,6 +1,7 @@
 import {
   applyEffects,
   buildTimeline,
+  effectiveStaging,
   exitsOf,
   takenPieces,
   type Effect,
@@ -72,7 +73,8 @@ export function buildShow(events: GameEvent[], before: GameState, outcomeLabel: 
   const head = resolved ?? chaos;
   if (!head) return null;
   const effects = head.effects ?? [];
-  const staging = head.staging;
+  // Nothing staged by the GM: a plain default look for the effects.
+  const staging = effectiveStaging(head.staging, effects);
   // On screen the AP is already spent and the ruling sheet put away when the show starts.
   const start: GameState =
     head.type === 'specialResolved'

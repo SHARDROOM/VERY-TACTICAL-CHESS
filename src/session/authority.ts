@@ -1,4 +1,4 @@
-import { applyCommand, buildTimeline, createInitialState, type Color, type Command, type Effect, type GameEvent, type GameState, type RuleConfig, type Staging } from '../engine';
+import { applyCommand, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type GameEvent, type GameState, type RuleConfig, type Staging } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
@@ -30,7 +30,7 @@ export const DICE_GRACE_MS = 4000;
 
 /** How long a staged show takes on screen, in ms (the clock does not run during it). */
 export function showMs(staging: Staging | undefined, effects: Effect[]): number {
-  return Math.round(buildTimeline(staging, effects).length * 1000);
+  return Math.round(buildTimeline(effectiveStaging(staging, effects), effects).length * 1000);
 }
 
 /**

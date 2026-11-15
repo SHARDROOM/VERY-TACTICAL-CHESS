@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCommand, buildTimeline, createInitialState, type Effect, type GameState, type Piece, type Ruling, type Staging } from './index';
+import { applyCommand, buildTimeline, createInitialState, effectiveStaging, type Effect, type GameState, type Piece, type Ruling, type Staging } from './index';
 import { cleanStaging } from '../gm/staging';
 import { parseGmRuling } from '../gm/parse';
 import { fakeRuling } from '../gm/fakeGm';
@@ -63,7 +63,7 @@ describe('cleaning GM staging', () => {
     if (!parsed.ok) throw new Error(parsed.error);
     expect(parsed.ruling.staging?.failure).toEqual({ fx: [], shake: 0, beats: [], acts: [] });
     expect(parsed.ruling.staging?.critSuccess?.fx).toEqual([]);
-    expect(parsed.ruling.staging?.success?.beats[0]).toMatchObject({ effect: 0, motion: 'fly' });
+    expect(parsed.ruling.staging?.success?.beats[0]).toMatchObject({ effect: 0, motion: 'spin' });
     // And without any staging at all.
     const { staging: _gone, ...bare } = raw;
     void _gone;
@@ -178,5 +178,29 @@ describe('exits are stored with the captured pieces', () => {
     const s = createInitialState();
     const r = ok(applyCommand(s, { type: 'chaos', chaos: { title: 't', narration: 'n', effects: [{ type: 'remove', at: sq('h7') }], staging: { fx: [], shake: 0, acts: [], beats: [beat(0, 'vanish')] } } }));
     expect(r.state.captured).toEqual([{ id: expect.any(String), color: 'black', type: 'pawn', exit: 'vanish' }]);
+  });
+});
+
+describe('the plain default look', () => {
+  it('stands in only when the GM staged nothing at all', () => {
+    const effects: Effect[] = [
+      { type: 'spawn', at: sq('e4'), color: 'white', piece: 'rook' },
+      { type: 'remove', at: sq('d7') },
+      { type: 'tag', at: sq('g8'), tag: '기절', turns: 1 },
+      { type: 'convert', at: sq('a7'), color: 'white' },
+      { type: 'tag', at: sq('b8'), tag: '불타는 중', turns: 2, aura: { element: 'fire', strength: 3 } },
+      { type: 'move', from: sq('b1'), to: sq('c3') },
+    ];
+    const plain = effectiveStaging(undefined, effects);
+    expect(plain.fx.map((f) => [f.element, f.withEffect])).toEqual([
+      ['arcane', 0],
+      ['wind', 1],
+      ['lightning', 2],
+      ['darkness', 3],
+      ['fire', 4],
+    ]);
+    expect(effectiveStaging({ fx: [], shake: 0, beats: [], acts: [] }, effects)).toEqual(plain);
+    // Anything from the GM, even just a shake, replaces the default entirely.
+    expect(effectiveStaging({ fx: [], shake: 1, beats: [], acts: [] }, effects)).toEqual({ fx: [], shake: 1, beats: [], acts: [] });
   });
 });

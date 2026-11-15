@@ -36,6 +36,7 @@ import { clockText, rulesSummary } from './rules';
 import { Icon } from './Icon';
 import { PieceSilhouette } from './PieceSilhouette';
 import { buildShow, directionsFor, exitFx, type Show } from './show';
+import { prefersReducedMotion, useStagingLook } from './stagingLook';
 import type { FxShow } from '../scene/FxLayer';
 
 interface LogLine extends LogEntry {
@@ -72,7 +73,7 @@ let nextLogId = 1;
 /** Seconds between the dice result and the show, while the camera swings back to the board. */
 const SHOW_LEAD_IN = 0.6;
 
-const prefersReducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
 
 /** A piece on the board or riding on one. */
 function findPiece(board: GameState['board'], id: string): Piece | undefined {
@@ -335,6 +336,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   }, [dice?.landed]);
 
   const game = frozen ?? view.state;
+  // "Light" staging: fewer particles and no shake; a device asking for less motion never shakes.
+  const look = useStagingLook();
   const fxShow = useMemo<FxShow | null>(() => {
     if (!stage) return null;
     const { show, startedAt } = stage;
@@ -346,16 +349,17 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       ends: [...show.timeline.fxEnds, ...exits.map((x) => x.end)],
       startedAt,
       followers: [...fx.map((f) => (f.shape === 'trail' && f.withEffect !== null ? (show.movers[f.withEffect] ?? null) : null)), ...exits.map((x) => x.follower)],
+      light: look === 'light',
     };
-  }, [stage]);
+  }, [stage, look]);
   // What each piece does in the show (how it travels, appears, acts); hand moves have nothing.
   const directions = useMemo(() => (stage ? directionsFor(stage.show, stage.startedAt) : undefined), [stage]);
   const shake = useMemo(() => {
     const strength = stage?.show.staging?.shake ?? 0;
     const at = stage?.show.timeline.shakeAt ?? null;
-    if (!stage || !strength || at === null || prefersReducedMotion()) return null;
+    if (!stage || !strength || at === null || look === 'light' || prefersReducedMotion()) return null;
     return { at: stage.startedAt + at * 1000, strength };
-  }, [stage]);
+  }, [stage, look]);
   const targets = useMemo(() => (selected === null ? [] : legalTargets(game, selected).map((t) => t.to)), [game, selected]);
 
   const sideToMove = game.turn;
@@ -457,6 +461,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         directions={directions}
         fx={fxShow}
         shake={shake}
+        lightFx={look === 'light'}
         doodle={
           game.rules.doodle
             ? { doodles: view.doodles, tool: doodleTool, myKey: view.myKey, moderator: view.isAuthority, onDoodle }
