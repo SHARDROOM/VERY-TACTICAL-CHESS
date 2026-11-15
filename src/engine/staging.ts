@@ -1,4 +1,4 @@
-import { SHIELD, STUN, type Effect, type Square } from './types';
+import { BURN, SHIELD, STUN, type Effect, type Square } from './types';
 
 /**
  * GM staging: how a ruling's outcome or a chaos event looks on the table. Purely visual:
@@ -89,7 +89,7 @@ export interface Staging {
   acts: Act[];
 }
 
-/** A lasting look on a tagged piece (e.g. "불타는 중" burning until the tag ends). */
+/** A lasting look on a tagged piece (e.g. "화상" burning until the tag ends). */
 export interface Aura {
   element: Element;
   /** 1..3 */
@@ -133,9 +133,14 @@ export function defaultStaging(effects: readonly Effect[]): Staging {
     else if (e.type === 'convert') fx.push(quiet('darkness', e.at, i));
     else if (e.type === 'transform') fx.push(quiet('arcane', e.at, i, 1));
     else if (e.type === 'tag') {
-      const element: Element = e.aura?.element ?? (e.tag === STUN ? 'lightning' : e.tag === SHIELD ? 'light' : 'arcane');
-      fx.push(quiet(element, e.at, i, e.aura || e.tag === STUN || e.tag === SHIELD ? 2 : 1));
-    }
+      const element: Element = e.aura?.element ?? (e.tag === STUN ? 'lightning' : e.tag === SHIELD ? 'light' : e.tag === BURN ? 'fire' : 'arcane');
+      fx.push(quiet(element, e.at, i, e.aura || e.tag === STUN || e.tag === SHIELD || e.tag === BURN ? 2 : 1));
+    } else if (e.type === 'swap') {
+      fx.push(quiet('arcane', e.a, i));
+      if (fx.length < STAGING_LIMITS.fx) fx.push(quiet('arcane', e.b, i));
+    } else if (e.type === 'revive') fx.push(quiet('light', e.at, i, 3));
+    else if (e.type === 'terrain') fx.push(quiet(e.kind === 'pit' ? 'darkness' : 'earth', e.at, i, 2));
+    else if (e.type === 'clearTerrain') fx.push(quiet('wind', e.at, i));
   });
   return { fx, shake: 0, beats: [], acts: [] };
 }

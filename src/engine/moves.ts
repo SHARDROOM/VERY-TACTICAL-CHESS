@@ -1,7 +1,8 @@
-import type { Board, Color, GameState, MoveSpecial, Square } from './types';
+import type { Board, Color, GameState, MoveSpecial, Square, TerrainCell } from './types';
 import { fileOf, rankOf, squareAt } from './squares';
 import { KING_START, ROOK_START } from './castling';
 import { isStunned } from './tags';
+import { blockedSquares } from './terrain';
 
 const KNIGHT_STEPS = [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]];
 const KING_STEPS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
@@ -13,16 +14,18 @@ const BISHOP_DIRS = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
  * pattern (no castling, no en passant). This is also what "attacks" means.
  * Moves that leave the mover's own king attacked are included: this game
  * allows them (the king is captured, not mated).
+ * Walls and pits (`terrain`) can be neither entered nor passed; knights still jump over them.
  */
-export function movesFrom(board: Board, from: Square): Square[] {
+export function movesFrom(board: Board, from: Square, terrain?: readonly TerrainCell[]): Square[] {
   const piece = board[from];
   // A stunned piece cannot move, so it attacks nothing either.
   if (!piece || isStunned(piece)) return [];
   const f = fileOf(from);
   const r = rankOf(from);
   const out: Square[] = [];
+  const blocked = blockedSquares(terrain);
 
-  const canLand = (sq: Square) => board[sq]?.color !== piece.color;
+  const canLand = (sq: Square) => !blocked.has(sq) && board[sq]?.color !== piece.color;
 
   const steps = (deltas: number[][]) => {
     for (const [df, dr] of deltas) {
@@ -35,7 +38,7 @@ export function movesFrom(board: Board, from: Square): Square[] {
     for (const [df, dr] of dirs) {
       for (let i = 1; ; i++) {
         const sq = squareAt(f + df * i, r + dr * i);
-        if (sq === null) break;
+        if (sq === null || blocked.has(sq)) break;
         const occupant = board[sq];
         if (!occupant) {
           out.push(sq);
@@ -67,10 +70,10 @@ export function movesFrom(board: Board, from: Square): Square[] {
       const dir = piece.color === 'white' ? 1 : -1;
       const startRank = piece.color === 'white' ? 1 : 6;
       const one = squareAt(f, r + dir);
-      if (one !== null && !board[one]) {
+      if (one !== null && !board[one] && !blocked.has(one)) {
         out.push(one);
         const two = squareAt(f, r + 2 * dir);
-        if (r === startRank && two !== null && !board[two]) out.push(two);
+        if (r === startRank && two !== null && !board[two] && !blocked.has(two)) out.push(two);
       }
       for (const df of [-1, 1]) {
         const diag = squareAt(f + df, r + dir);
@@ -83,9 +86,9 @@ export function movesFrom(board: Board, from: Square): Square[] {
 }
 
 /** True if any piece of `by` could move onto `target`. */
-export function isAttacked(board: Board, target: Square, by: Color): boolean {
+export function isAttacked(board: Board, target: Square, by: Color, terrain?: readonly TerrainCell[]): boolean {
   for (let sq = 0; sq < 64; sq++) {
-    if (board[sq]?.color === by && movesFrom(board, sq).includes(target)) return true;
+    if (board[sq]?.color === by && movesFrom(board, sq, terrain).includes(target)) return true;
   }
   return false;
 }
@@ -95,11 +98,11 @@ export function findKing(board: Board, color: Color): Square | null {
   return idx === -1 ? null : idx;
 }
 
-/** True if `color`'s king is currently attacked by the opponent. */
-export function isInCheck(board: Board, color: Color): boolean {
+/** True if `color`'s king is currently attacked by the opponent (walls and pits block lines). */
+export function isInCheck(board: Board, color: Color, terrain?: readonly TerrainCell[]): boolean {
   const king = findKing(board, color);
   if (king === null) return false;
-  return isAttacked(board, king, color === 'white' ? 'black' : 'white');
+  return isAttacked(board, king, color === 'white' ? 'black' : 'white', terrain);
 }
 
 export interface Target {
@@ -109,10 +112,11 @@ export interface Target {
 
 /** All normal-move destinations for the piece on `from`, including castling and en passant. */
 export function legalTargets(state: GameState, from: Square): Target[] {
-  const { board } = state;
+  const { board, terrain } = state;
   const piece = board[from];
   if (!piece || isStunned(piece)) return [];
-  const out: Target[] = movesFrom(board, from).map((to) => ({ to }));
+  const out: Target[] = movesFrom(board, from, terrain).map((to) => ({ to }));
+  const blocked = blockedSquares(terrain);
 
   if (piece.type === 'pawn' && state.enPassant !== null) {
     const ep = state.enPassant;
@@ -123,6 +127,7 @@ export function legalTargets(state: GameState, from: Square): Target[] {
       rankOf(ep) === rankOf(from) + dir &&
       Math.abs(fileOf(ep) - fileOf(from)) === 1 &&
       !board[ep] &&
+      !blocked.has(ep) &&
       victimPiece?.type === 'pawn' &&
       victimPiece.color !== piece.color
     ) {
@@ -142,7 +147,7 @@ export function legalTargets(state: GameState, from: Square): Target[] {
     for (const s of sides) {
       const rook = board[s.rook];
       if (!s.allowed || rook?.type !== 'rook' || rook.color !== piece.color || isStunned(rook)) continue;
-      if (s.between.some((f) => board[squareAt(f, rank)!])) continue;
+      if (s.between.some((f) => board[squareAt(f, rank)!] || blocked.has(squareAt(f, rank)!))) continue;
       out.push({ to: squareAt(s.kingTo, rank)!, special: { kind: 'castle', side: s.side } });
     }
   }

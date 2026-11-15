@@ -23,7 +23,7 @@ function effectSchema<A extends z.ZodTypeAny, B extends z.ZodTypeAny>(aura: A, a
     z.object({
       type: z.literal('tag'),
       at: square('태그를 붙일 기물의 칸'),
-      tag: z.string().describe('태그 이름. 핵심 태그: "기절", "보호막". 그 밖의 이름은 서사용 자유 태그'),
+      tag: z.string().describe('태그 이름. 핵심 태그: "기절", "보호막", "화상". 그 밖의 이름은 서사용 자유 태그'),
       turns: z.number().int().describe('지속 턴 수 (그 기물 주인의 턴 기준). 0이면 영구'),
       aura,
       auraStrength,
@@ -43,6 +43,20 @@ function effectSchema<A extends z.ZodTypeAny, B extends z.ZodTypeAny>(aura: A, a
       at: square('편을 바꿀 기물의 칸 (킹 불가)'),
       color: z.enum(['white', 'black']).describe('새로 속할 편'),
     }),
+    z.object({ type: z.literal('swap'), a: square('자리를 바꿀 기물 하나의 칸'), b: square('자리를 바꿀 다른 기물의 칸') }),
+    z.object({
+      type: z.literal('revive'),
+      at: square('되살린 기물을 놓을 빈 칸'),
+      color: z.enum(['white', 'black']).describe('되살릴 잡힌 기물의 편'),
+      piece: pieceType.describe('되살릴 잡힌 기물의 종류'),
+    }),
+    z.object({
+      type: z.literal('terrain'),
+      at: square('지형을 만들 칸 (벽은 빈 칸만, 구덩이는 그 칸의 기물을 삼킴)'),
+      kind: z.enum(['wall', 'pit']).describe('wall(벽) 또는 pit(구덩이)'),
+      turns: z.number().int().describe('지속 턴 수 (만든 쪽의 턴 기준). 0이면 영구'),
+    }),
+    z.object({ type: z.literal('clearTerrain'), at: square('벽이나 구덩이를 없앨 칸') }),
   ]);
 }
 

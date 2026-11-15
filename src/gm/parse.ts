@@ -59,6 +59,10 @@ function convert(e: GmEffectReplyJson): Effect | string {
     transform: ['at'],
     spawn: ['at'],
     convert: ['at'],
+    swap: ['a', 'b'],
+    revive: ['at'],
+    terrain: ['at'],
+    clearTerrain: ['at'],
   };
   for (const f of fields[e.type]) {
     const name = (e as Record<string, unknown>)[f] as string;

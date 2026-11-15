@@ -1,19 +1,46 @@
-import { RIDE, type Board, type Color, type Effect, type GameEvent, type Piece, type PieceType, type Ruling, type Square } from './types';
+import {
+  BURN,
+  RIDE,
+  TERRAIN_KINDS,
+  TERRAIN_NAME,
+  type Board,
+  type CapturedPiece,
+  type Color,
+  type Effect,
+  type GameEvent,
+  type Piece,
+  type PieceType,
+  type Ruling,
+  type Square,
+  type TerrainCell,
+  type TerrainKind,
+} from './types';
 import type { RuleConfig } from './config';
 import { rankOf, squareName } from './squares';
-import { isShielded, isStunned, withTag, withoutTag } from './tags';
+import { extinguish, isShielded, isStunned, withTag, withoutTag } from './tags';
 import { SHIELD } from './types';
+import { MAX_TERRAIN } from './terrain';
+import { capturedAfter } from './captured';
+
+const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑' };
+const PIECE_NAME: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
 
 export interface EffectContext {
   /** Turn on which the effects happen (tags record it). */
   turnNumber: number;
   /** Next id number for spawned pieces. */
   nextSpawnId: number;
+  /** Whose turn it is: terrain made now lasts that side's turns. */
+  color?: Color;
+  /** Walls and pits before the effects. */
+  terrain?: readonly TerrainCell[];
+  /** Pieces beside the board before the effects (oldest first), for revive. */
+  captured?: readonly CapturedPiece[];
 }
 
 export type EffectResult =
   /** `sources[i]`: which effect (0-based) produced `events[i]`; -1 for the promotions at the end. */
-  | { ok: true; board: Board; events: GameEvent[]; sources: number[]; touched: Square[]; nextSpawnId: number }
+  | { ok: true; board: Board; terrain: TerrainCell[]; events: GameEvent[]; sources: number[]; touched: Square[]; nextSpawnId: number }
   | { ok: false; detail: string };
 
 const PIECE_TYPES: readonly PieceType[] = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'];
@@ -21,6 +48,7 @@ const isInt = (n: unknown): n is number => typeof n === 'number' && Number.isInt
 const onBoard = (sq: unknown): sq is Square => isInt(sq) && sq >= 0 && sq < 64;
 const isColor = (c: unknown): c is Color => c === 'white' || c === 'black';
 const isPieceType = (t: unknown): t is PieceType => PIECE_TYPES.includes(t as PieceType);
+const isTerrainKind = (k: unknown): k is TerrainKind => TERRAIN_KINDS.includes(k as TerrainKind);
 const MAX_TAG_LENGTH = 20;
 /** The rank a pawn of this colour promotes on. */
 const lastRank = (color: Color) => (color === 'white' ? 7 : 0);
@@ -40,9 +68,11 @@ function goneEvents(piece: Piece, at: Square): GameEvent[] {
  */
 export function applyEffects(start: Board, effects: readonly Effect[], ctx: EffectContext): EffectResult {
   const board: (Piece | null)[] = [...start];
+  let terrain: TerrainCell[] = [...(ctx.terrain ?? [])];
   const events: GameEvent[] = [];
   const touched: Square[] = [];
   let nextSpawnId = ctx.nextSpawnId;
+  const terrainOn = (sq: Square) => terrain.find((c) => c.at === sq) ?? null;
 
   const sources: number[] = [];
   for (const [i, e] of effects.entries()) {
@@ -51,6 +81,11 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
     const where = `효과 ${i + 1}`;
     const fail = (why: string): EffectResult => ({ ok: false, detail: `${where}: ${why}` });
     const pieceAt = (sq: unknown): Piece | null => (onBoard(sq) ? board[sq] : null);
+    /** Why a piece cannot land on `sq` because of a wall or pit there, or null. */
+    const blockedLanding = (sq: Square): string | null => {
+      const c = terrainOn(sq);
+      return c ? `${squareName(sq)}에 ${TERRAIN_NAME[c.kind]}이(가) 있음` : null;
+    };
 
     switch (e.type) {
       case 'move': {
@@ -59,6 +94,23 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (!piece) return fail(`${squareName(e.from)}에 기물이 없음`);
         if (isStunned(piece)) return fail(`${squareName(e.from)}의 기물은 기절해서 움직일 수 없음`);
         if (e.from === e.to) return fail('같은 칸으로 이동');
+        const ground = terrainOn(e.to);
+        if (ground?.kind === 'wall') return fail(`${squareName(e.to)}에 벽이 있음`);
+        if (ground?.kind === 'pit') {
+          // Thrown into a pit: it falls in and is gone (a shield saves it, and it stays put).
+          if (piece.type === 'king') return fail('킹은 구덩이에 빠뜨릴 수 없음');
+          if (isShielded(piece)) {
+            board[e.from] = withoutTag(piece, SHIELD);
+            touched.push(e.from);
+            events.push({ type: 'shieldBroken', pieceId: piece.id, at: e.from, attackerId: null });
+            break;
+          }
+          board[e.from] = null;
+          touched.push(e.from, e.to);
+          events.push({ type: 'moved', pieceId: piece.id, from: e.from, to: e.to, captured: null });
+          events.push({ type: 'removed', piece, at: e.to, cause: 'pit' }, ...goneEvents(piece, e.to));
+          break;
+        }
         const occupant = board[e.to];
         if (occupant?.color === piece.color) return fail(`${squareName(e.to)}에 같은 편 기물이 있음`);
         if (occupant?.type === 'king') return fail('특수 행동으로는 킹을 잡을 수 없음');
@@ -68,11 +120,11 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           events.push({ type: 'shieldBroken', pieceId: occupant.id, at: e.to, attackerId: piece.id });
           break;
         }
-        board[e.to] = piece;
         board[e.from] = null;
         touched.push(e.from, e.to);
         events.push({ type: 'moved', pieceId: piece.id, from: e.from, to: e.to, captured: occupant });
         if (occupant) events.push(...goneEvents(occupant, e.to));
+        board[e.to] = extinguish(piece, e.to, events);
         break;
       }
       case 'remove': {
@@ -98,6 +150,8 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (!name || name.length > MAX_TAG_LENGTH) return fail(`태그 이름은 1~${MAX_TAG_LENGTH}자여야 함`);
         if (name === RIDE) return fail('탑승은 tag가 아니라 board 효과로 표현해야 함');
         if (!isInt(e.turns) || e.turns < 0) return fail('지속 턴은 0(영구) 이상의 정수여야 함');
+        if (name === BURN && piece.type === 'king') return fail('킹에는 화상을 입힐 수 없음');
+        if (name === BURN && e.turns === 0) return fail('화상은 1턴 이상이어야 함 (턴이 다하면 기물이 탄다)');
         const turnsLeft = e.turns === 0 ? null : e.turns;
         board[e.at as Square] = withTag(piece, { name, turnsLeft, appliedOnTurn: ctx.turnNumber, ...(e.aura && { aura: e.aura }) });
         events.push({ type: 'tagged', pieceId: piece.id, at: e.at as Square, tag: name, turns: turnsLeft });
@@ -127,9 +181,10 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (carrier.rider) return fail(`${squareName(e.carrier)}의 기물에는 이미 누군가 타고 있음`);
         if (rider.rider) return fail('누군가를 태운 기물은 다른 기물에 탈 수 없음');
         board[e.rider] = null;
-        board[e.carrier] = { ...carrier, rider: withTag(rider, { name: RIDE, turnsLeft: null, appliedOnTurn: ctx.turnNumber }) };
         touched.push(e.rider, e.carrier);
         events.push({ type: 'boarded', riderId: rider.id, carrierId: carrier.id, from: e.rider, at: e.carrier });
+        const climbed = extinguish(rider, e.carrier, events);
+        board[e.carrier] = { ...carrier, rider: withTag(climbed, { name: RIDE, turnsLeft: null, appliedOnTurn: ctx.turnNumber }) };
         break;
       }
       case 'unboard': {
@@ -137,11 +192,13 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         const carrier = board[e.at];
         if (!carrier?.rider) return fail(`${squareName(e.at)}의 기물에는 타고 있는 기물이 없음`);
         if (board[e.to]) return fail(`내릴 칸 ${squareName(e.to)}이(가) 비어 있지 않음`);
+        const wall = blockedLanding(e.to);
+        if (wall) return fail(wall);
         const rider = withoutTag(carrier.rider, RIDE);
         board[e.at] = { ...carrier, rider: undefined };
-        board[e.to] = rider;
         touched.push(e.at, e.to);
         events.push({ type: 'unboarded', riderId: rider.id, from: e.at, to: e.to, captured: null });
+        board[e.to] = extinguish(rider, e.to, events);
         break;
       }
       case 'transform': {
@@ -158,6 +215,8 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
       case 'spawn': {
         if (!onBoard(e.at)) return fail('보드 밖의 칸');
         if (board[e.at]) return fail(`${squareName(e.at)}이(가) 비어 있지 않음`);
+        const blocked = blockedLanding(e.at);
+        if (blocked) return fail(blocked);
         if (!isColor(e.color)) return fail('기물 색이 올바르지 않음');
         if (!isPieceType(e.piece) || e.piece === 'king') return fail('킹은 만들 수 없음');
         if (e.piece === 'pawn' && pawnStuckAt(e.at, e.color)) return fail('폰은 그 편의 마지막 줄에 만들 수 없음');
@@ -178,6 +237,73 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         events.push({ type: 'converted', pieceId: piece.id, at: e.at as Square, to: e.color });
         break;
       }
+      case 'swap': {
+        if (!onBoard(e.a) || !onBoard(e.b)) return fail('보드 밖의 칸');
+        const a = board[e.a];
+        const b = board[e.b];
+        if (!a) return fail(`${squareName(e.a)}에 기물이 없음`);
+        if (!b) return fail(`${squareName(e.b)}에 기물이 없음`);
+        if (e.a === e.b) return fail('같은 칸끼리는 맞바꿀 수 없음');
+        if (isStunned(a)) return fail(`${squareName(e.a)}의 기물은 기절해서 움직일 수 없음`);
+        if (isStunned(b)) return fail(`${squareName(e.b)}의 기물은 기절해서 움직일 수 없음`);
+        touched.push(e.a, e.b);
+        events.push({ type: 'swapped', aId: a.id, bId: b.id, a: e.a, b: e.b });
+        board[e.a] = extinguish(b, e.a, events);
+        board[e.b] = extinguish(a, e.b, events);
+        break;
+      }
+      case 'revive': {
+        if (!onBoard(e.at)) return fail('보드 밖의 칸');
+        if (board[e.at]) return fail(`${squareName(e.at)}이(가) 비어 있지 않음`);
+        const blocked = blockedLanding(e.at);
+        if (blocked) return fail(blocked);
+        if (!isColor(e.color)) return fail('기물 색이 올바르지 않음');
+        if (!isPieceType(e.piece) || e.piece === 'king') return fail('킹은 되살릴 수 없음');
+        if (e.piece === 'pawn' && pawnStuckAt(e.at, e.color)) return fail('폰은 그 편의 마지막 줄에 되살릴 수 없음');
+        // Whoever lies beside the board right now: before the effects, plus anything taken by the earlier ones.
+        const graveyard = capturedAfter(ctx.captured, events);
+        const found = graveyard.filter((p) => p.color === e.color && p.type === e.piece).pop();
+        if (!found) return fail(`잡힌 ${COLOR_NAME[e.color]} ${PIECE_NAME[e.piece]}이(가) 없음`);
+        const piece: Piece = { id: found.id, color: found.color, type: found.type };
+        board[e.at] = piece;
+        touched.push(e.at);
+        events.push({ type: 'revived', piece, at: e.at });
+        break;
+      }
+      case 'terrain': {
+        if (!onBoard(e.at)) return fail('보드 밖의 칸');
+        if (!isTerrainKind(e.kind)) return fail('지형은 wall(벽)이나 pit(구덩이)만 됨');
+        if (!isInt(e.turns) || e.turns < 0) return fail('지속 턴은 0(영구) 이상의 정수여야 함');
+        const piece = board[e.at];
+        if (piece && e.kind === 'wall') return fail(`벽은 빈 칸에만 세울 수 있음 (${squareName(e.at)}에 기물이 있음)`);
+        if (!terrainOn(e.at) && terrain.length >= MAX_TERRAIN) return fail(`지형은 한꺼번에 최대 ${MAX_TERRAIN}칸`);
+        if (piece) {
+          // A pit opens under a piece: it falls in, unless a shield holds it up (then no pit).
+          if (piece.type === 'king') return fail('킹 밑에는 구덩이를 팔 수 없음');
+          if (isShielded(piece)) {
+            board[e.at] = withoutTag(piece, SHIELD);
+            touched.push(e.at);
+            events.push({ type: 'shieldBroken', pieceId: piece.id, at: e.at, attackerId: null });
+            break;
+          }
+          board[e.at] = null;
+          touched.push(e.at);
+          events.push({ type: 'removed', piece, at: e.at, cause: 'pit' }, ...goneEvents(piece, e.at));
+        }
+        const turnsLeft = e.turns === 0 ? null : e.turns;
+        terrain = [...terrain.filter((c) => c.at !== e.at), { at: e.at, kind: e.kind, turnsLeft, owner: ctx.color ?? 'white', appliedOnTurn: ctx.turnNumber }];
+        events.push({ type: 'terrainMade', at: e.at, kind: e.kind, turns: turnsLeft });
+        break;
+      }
+      case 'clearTerrain': {
+        if (!onBoard(e.at)) return fail('보드 밖의 칸');
+        const cell = terrainOn(e.at);
+        // Clearing a square with nothing on it is a harmless no-op.
+        if (!cell) break;
+        terrain = terrain.filter((c) => c.at !== e.at);
+        events.push({ type: 'terrainCleared', at: e.at, kind: cell.kind, expired: false });
+        break;
+      }
       default:
         return fail('알 수 없는 효과 종류');
     }
@@ -192,7 +318,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
     events.push({ type: 'transformed', pieceId: piece.id, at: sq, from: 'pawn', to: 'queen' });
     sources.push(-1);
   }
-  return { ok: true, board, events, sources, touched, nextSpawnId };
+  return { ok: true, board, terrain, events, sources, touched, nextSpawnId };
 }
 
 /** Checks a ruling against the rules and dry-runs its effects. Returns a problem description, or null if valid. */

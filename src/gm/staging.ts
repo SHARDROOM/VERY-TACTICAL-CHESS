@@ -54,10 +54,10 @@ export const GmStagingSchema = z.object({
       z.object({
         effect: z.number().describe('꾸밀 효과의 번호(1부터)'),
         wait: z.number().describe('이 효과를 보여 주기 전 대기 초 0~2'),
-        motion: z.string().describe(`move·unboard의 움직임: ${list(MOTION_STYLES)}`),
+        motion: z.string().describe(`move·unboard·swap의 움직임: ${list(MOTION_STYLES)}`),
         speed: z.string().describe(`속도: ${list(SPEEDS)}`),
-        entrance: z.string().describe(`spawn의 등장: ${list(ENTRANCES)}`),
-        exit: z.string().describe(`remove 또는 move로 잡힌 기물의 퇴장: ${list(EXITS)}`),
+        entrance: z.string().describe(`spawn·revive의 등장: ${list(ENTRANCES)}`),
+        exit: z.string().describe(`remove, move로 잡히거나 구덩이에 빠진 기물의 퇴장: ${list(EXITS)}`),
       }),
     )
     .describe('효과별 연출'),
@@ -114,10 +114,10 @@ export const GM_STAGING_JSON_SCHEMA = obj({
     items: obj({
       effect: num('꾸밀 효과의 번호(1부터)'),
       wait: num('이 효과를 보여 주기 전 대기 초 0~2'),
-      motion: en(MOTION_STYLES, 'move·unboard의 움직임'),
+      motion: en(MOTION_STYLES, 'move·unboard·swap의 움직임'),
       speed: en(SPEEDS, '속도'),
-      entrance: en(ENTRANCES, 'spawn의 등장'),
-      exit: en(EXITS, 'remove 또는 move로 잡힌 기물의 퇴장'),
+      entrance: en(ENTRANCES, 'spawn·revive의 등장'),
+      exit: en(EXITS, 'remove, move로 잡히거나 구덩이에 빠진 기물의 퇴장'),
     }),
   },
   acts: {

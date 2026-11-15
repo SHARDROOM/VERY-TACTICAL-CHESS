@@ -1,7 +1,6 @@
 import {
   PROMOTION_TYPES,
   type Board,
-  type CapturedPiece,
   type Color,
   type Command,
   type ChaosEvent,
@@ -13,14 +12,22 @@ import {
   type Piece,
   type Precedent,
   type Square,
+  type TerrainCell,
 } from './types';
 import type { Exit, Staging } from './staging';
 import { isInCheck, legalTargets } from './moves';
 import { fileOf, opponent, rankOf, squareAt } from './squares';
 import { revokeCastling } from './castling';
-import { applyEffects, validateRuling } from './effects';
-import { isShielded, tickTags, withoutTag } from './tags';
+import { applyEffects, validateRuling, type EffectContext } from './effects';
+import { extinguish, isShielded, tickTags, withoutTag } from './tags';
 import { SHIELD } from './types';
+import { tickTerrain } from './terrain';
+import { capturedAfter } from './captured';
+
+/** What effects applied now start from: the turn, whose it is, the walls and pits, the side of the board. */
+function effectContext(state: GameState, nextSpawnId = state.nextSpawnId): EffectContext {
+  return { turnNumber: state.turnNumber, nextSpawnId, color: state.turn, terrain: state.terrain ?? [], captured: state.captured ?? [] };
+}
 
 /** The single entry point for changing game state. Pure: no I/O, no randomness. */
 export function applyCommand(state: GameState, cmd: Command): CommandResult {
@@ -70,9 +77,9 @@ function chaos(state: GameState, event: ChaosEvent): CommandResult {
   const bad = (detail: string): CommandResult => ({ ok: false, reason: 'invalidChaos', detail });
   if (typeof event?.title !== 'string' || typeof event.narration !== 'string' || !Array.isArray(event.effects)) return bad('형식이 올바르지 않음');
   if (event.effects.length > state.rules.maxEffects) return bad(`효과가 너무 많음 (최대 ${state.rules.maxEffects}개)`);
-  const applied = applyEffects(state.board, event.effects, { turnNumber: state.turnNumber, nextSpawnId: state.nextSpawnId });
+  const applied = applyEffects(state.board, event.effects, effectContext(state));
   if (!applied.ok) return bad(applied.detail);
-  if (isInCheck(applied.board, 'white') || isInCheck(applied.board, 'black')) return bad('혼돈 뒤에 킹이 공격받는 상태가 됨');
+  if (isInCheck(applied.board, 'white', applied.terrain) || isInCheck(applied.board, 'black', applied.terrain)) return bad('혼돈 뒤에 킹이 공격받는 상태가 됨');
   const title = event.title.trim().slice(0, 40);
   const narration = event.narration.trim().slice(0, 300);
   const events: GameEvent[] = [
@@ -83,6 +90,7 @@ function chaos(state: GameState, event: ChaosEvent): CommandResult {
     {
       ...state,
       board: applied.board,
+      terrain: applied.terrain,
       nextSpawnId: applied.nextSpawnId,
       castling: revokeCastling(state.castling, applied.touched),
       chaosLog: [...(state.chaosLog ?? []), { turnNumber: state.turnNumber, title, narration }],
@@ -113,21 +121,11 @@ export function exitsOf(events: GameEvent[], sources: number[], staging: Staging
   return exits;
 }
 
-/** The pieces that left the board in these events (plain: no tags, no rider), with how they left. */
-export function takenPieces(events: GameEvent[], exits?: Map<string, Exit>): CapturedPiece[] {
-  const gone: CapturedPiece[] = [];
-  for (const e of events) {
-    const piece = e.type === 'moved' ? e.captured : e.type === 'removed' ? e.piece : null;
-    const exit = piece && exits?.get(piece.id);
-    if (piece) gone.push({ id: piece.id, color: piece.color, type: piece.type, ...(exit && { exit }) });
-  }
-  return gone;
-}
-
-/** Records the pieces that left the board in these events, with how they left. */
+/** Records the pieces that left the board in these events (with how they left) and those that came back. */
 function withCaptured(state: GameState, events: GameEvent[], exits?: Map<string, Exit>): GameState {
-  const gone = takenPieces(events, exits);
-  return gone.length ? { ...state, captured: [...(state.captured ?? []), ...gone] } : state;
+  return events.some((e) => e.type === 'moved' || e.type === 'removed' || e.type === 'revived')
+    ? { ...state, captured: capturedAfter(state.captured, events, exits) }
+    : state;
 }
 
 /** Ends the current player's turn: the opponent moves next and gains AP. */
@@ -143,11 +141,17 @@ function passTurn(
   const apNext = Math.min(apMax, state.ap[next] + apPerTurn);
   const turnNumber = state.turnNumber + 1;
   const ticked = tickTags(board, state.turn, state.turnNumber);
-  events = [...events, ...ticked.events];
+  const land = tickTerrain(state.terrain, state.turn, state.turnNumber);
+  events = [...events, ...ticked.events, ...land.events];
+  // A piece burnt up or a wall gone may open a line onto a king.
+  if (ticked.events.some((e) => e.type === 'removed') || land.events.length) {
+    for (const c of ['white', 'black'] as const) if (isInCheck(ticked.board, c, land.terrain)) events.push({ type: 'check', color: c });
+  }
   return {
     state: {
-      ...state,
+      ...withCaptured(state, ticked.events),
       board: ticked.board,
+      terrain: land.terrain,
       turn: next,
       turnNumber,
       enPassant,
@@ -159,10 +163,10 @@ function passTurn(
   };
 }
 
-function checkEvents(board: Board, mover: Color): GameEvent[] {
+function checkEvents(board: Board, mover: Color, terrain: readonly TerrainCell[] | undefined): GameEvent[] {
   const events: GameEvent[] = [];
-  if (isInCheck(board, mover)) events.push({ type: 'ownKingExposed', color: mover });
-  if (isInCheck(board, opponent(mover))) events.push({ type: 'check', color: opponent(mover) });
+  if (isInCheck(board, mover, terrain)) events.push({ type: 'ownKingExposed', color: mover });
+  if (isInCheck(board, opponent(mover), terrain)) events.push({ type: 'check', color: opponent(mover) });
   return events;
 }
 
@@ -192,7 +196,7 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   if (victim && isShielded(victim)) {
     board[victimSquare] = withoutTag(victim, SHIELD);
     const events: GameEvent[] = [{ type: 'shieldBroken', pieceId: victim.id, at: victimSquare, attackerId: piece.id }];
-    events.push(...checkEvents(board, piece.color));
+    events.push(...checkEvents(board, piece.color, state.terrain));
     return { ok: true, ...passTurn(state, board, null, events) };
   }
 
@@ -200,7 +204,9 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   let special: MoveSpecial | undefined = target.special;
   const touched = [cmd.from, cmd.to];
 
-  board[cmd.to] = promotes ? { ...piece, type: cmd.promotion! } : piece;
+  // Moving off its square puts out a 화상 (the events go after the move's own).
+  const fireOut: GameEvent[] = [];
+  board[cmd.to] = extinguish(promotes ? { ...piece, type: cmd.promotion! } : piece, cmd.to, fireOut);
   board[cmd.from] = null;
   if (promotes) special = { kind: 'promotion', to: cmd.promotion! };
 
@@ -213,7 +219,7 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
     const rank = rankOf(cmd.from);
     const [rookFrom, rookTo] =
       target.special.side === 'king' ? [squareAt(7, rank)!, squareAt(5, rank)!] : [squareAt(0, rank)!, squareAt(3, rank)!];
-    board[rookTo] = board[rookFrom];
+    board[rookTo] = extinguish(board[rookFrom]!, rookTo, fireOut);
     board[rookFrom] = null;
     touched.push(rookFrom, rookTo);
   }
@@ -223,6 +229,7 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   ];
   // Whoever rode the captured piece falls with it.
   if (captured?.rider) events.push({ type: 'removed', piece: captured.rider, at: victimSquare });
+  events.push(...fireOut);
 
   if (captured?.type === 'king') {
     events.push({ type: 'kingCaptured', winner: piece.color });
@@ -236,7 +243,7 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   const doubleStep = piece.type === 'pawn' && Math.abs(rankOf(cmd.to) - rankOf(cmd.from)) === 2;
   const enPassant = doubleStep ? squareAt(fileOf(cmd.from), (rankOf(cmd.from) + rankOf(cmd.to)) / 2) : null;
 
-  events.push(...checkEvents(board, piece.color));
+  events.push(...checkEvents(board, piece.color, state.terrain));
   const withRights = withCaptured({ ...state, castling: revokeCastling(state.castling, touched) }, events);
   return { ok: true, ...passTurn(withRights, board, enPassant, events) };
 }
@@ -245,10 +252,7 @@ function propose(state: GameState, cmd: Extract<Command, { type: 'proposeSpecial
   const action = cmd.action.trim();
   if (!action) return { ok: false, reason: 'emptyAction' };
   if (action.length > state.rules.actionMaxLength) return { ok: false, reason: 'actionTooLong' };
-  const problem = validateRuling(state.board, cmd.ruling, state.rules, {
-    turnNumber: state.turnNumber,
-    nextSpawnId: state.nextSpawnId,
-  });
+  const problem = validateRuling(state.board, cmd.ruling, state.rules, effectContext(state));
   if (problem) return { ok: false, reason: 'invalidRuling', detail: problem };
 
   const pending = { color: state.turn, action, ruling: cmd.ruling };
@@ -273,20 +277,22 @@ function attempt(state: GameState, roll: number): CommandResult {
   const toApply = outcome === 'critSuccess' ? crit : outcome === 'success' ? ruling.effects : outcome === 'critFailure' ? ruling.critFailureEffects ?? [] : [];
 
   let board = state.board;
+  let terrain = state.terrain;
   let castling = state.castling;
   let nextSpawnId = state.nextSpawnId;
   const effectEvents: GameEvent[] = [];
   let exits = new Map<string, Exit>();
   if (toApply.length) {
-    const applied = applyEffects(board, toApply, { turnNumber: state.turnNumber, nextSpawnId });
+    const applied = applyEffects(board, toApply, effectContext(state, nextSpawnId));
     // Validated on proposal and nothing can change the board while pending, so this is an invariant.
     if (!applied.ok) return { ok: false, reason: 'invalidRuling', detail: applied.detail };
     board = applied.board;
+    terrain = applied.terrain;
     nextSpawnId = applied.nextSpawnId;
     castling = revokeCastling(castling, applied.touched);
     exits = exitsOf(applied.events, applied.sources, ruling.staging?.[outcome]);
-    effectEvents.push(...applied.events, ...checkEvents(board, color));
-  } else if (isInCheck(board, opponent(color))) {
+    effectEvents.push(...applied.events, ...checkEvents(board, color, terrain));
+  } else if (isInCheck(board, opponent(color), terrain)) {
     // Nothing changed, but the opponent's king was already attacked (e.g. since the turn began).
     effectEvents.push({ type: 'check', color: opponent(color) });
   }
@@ -318,6 +324,7 @@ function attempt(state: GameState, roll: number): CommandResult {
   const after: GameState = withCaptured({
     ...state,
     board,
+    terrain,
     castling,
     nextSpawnId,
     ap: { ...state.ap, [color]: state.ap[color] - ruling.cost },

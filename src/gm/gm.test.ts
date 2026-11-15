@@ -160,6 +160,57 @@ describe('full effect vocabulary through the GM boundary', () => {
   });
 });
 
+describe('swap, revive, burn and terrain through the GM boundary', () => {
+  const base = {
+    interpretation: 'x',
+    feasible: true,
+    dc: 10,
+    cost: 1,
+    critSuccessEffects: [],
+    critFailureEffects: [],
+    narration: { success: 's', failure: 'f', critSuccess: 'cs', critFailure: 'cf' },
+  };
+
+  it('parses the new effects and converts their squares', () => {
+    const r = parseGmRuling({
+      ...base,
+      effects: [
+        { type: 'swap', a: 'b1', b: 'g8' },
+        { type: 'revive', at: 'c3', color: 'white', piece: 'knight' },
+        { type: 'terrain', at: 'd4', kind: 'wall', turns: 2 },
+        { type: 'clearTerrain', at: 'd4' },
+      ],
+    });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.ruling.effects).toEqual([
+      { type: 'swap', a: sq('b1'), b: sq('g8') },
+      { type: 'revive', at: sq('c3'), color: 'white', piece: 'knight' },
+      { type: 'terrain', at: sq('d4'), kind: 'wall', turns: 2 },
+      { type: 'clearTerrain', at: sq('d4') },
+    ]);
+    expect(parseGmRuling({ ...base, effects: [{ type: 'terrain', at: 'd4', kind: 'lava', turns: 2 }] }).ok).toBe(false);
+  });
+
+  it('fake GM understands swapping, burning, walls, pits and reviving, and the engine takes its rulings', () => {
+    expect(fakeRuling('b1 나이트와 g8 나이트의 자리를 바꾼다').effects).toEqual([{ type: 'swap', a: 'b1', b: 'g8' }]);
+    expect(fakeRuling('g8 나이트에 불을 붙인다').effects).toEqual([{ type: 'tag', at: 'g8', tag: '화상', turns: 3, aura: 'fire', auraStrength: 2 }]);
+    expect(fakeRuling('d4와 e4에 벽을 세운다').effects).toEqual([
+      { type: 'terrain', at: 'd4', kind: 'wall', turns: 2 },
+      { type: 'terrain', at: 'e4', kind: 'wall', turns: 2 },
+    ]);
+    expect(fakeRuling('e5에 구덩이를 판다').effects).toEqual([{ type: 'terrain', at: 'e5', kind: 'pit', turns: 2 }]);
+    expect(fakeRuling('d4 벽을 부순다').effects).toEqual([{ type: 'clearTerrain', at: 'd4' }]);
+    expect(fakeRuling('c3에 나이트를 되살린다').effects).toEqual([{ type: 'revive', at: 'c3', color: 'white', piece: 'knight' }]);
+    const state = { ...createInitialState(), ap: { white: 5, black: 0 } };
+    for (const action of ['b1 나이트와 g8 나이트의 자리를 바꾼다', 'g8 나이트에 불을 붙인다', 'd4와 e4에 벽을 세운다', 'g8에 구덩이를 판다']) {
+      const parsed = parseGmRuling(fakeRuling(action));
+      if (!parsed.ok) throw new Error(parsed.error);
+      const r = applyCommand(state, { type: 'proposeSpecial', action, ruling: parsed.ruling });
+      expect(r.ok, action).toBe(true);
+    }
+  });
+});
+
 describe('fake GM crits', () => {
   it('backfires by stunning the acting piece on a 1, and its rulings pass engine validation', () => {
     const r = fakeRuling('b1 나이트를 c3로 보낸다');

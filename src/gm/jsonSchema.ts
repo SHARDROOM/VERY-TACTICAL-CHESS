@@ -25,7 +25,7 @@ export const GM_EFFECT_JSON_SCHEMAS = [
   effect('remove', { at: sq('제거할 기물이 있는 칸, 예: "d7"') }),
   effect('tag', {
     at: sq('태그를 붙일 기물의 칸'),
-    tag: { type: 'string', description: '태그 이름. 핵심 태그: "기절", "보호막". 그 밖의 이름은 서사용 자유 태그' },
+    tag: { type: 'string', description: '태그 이름. 핵심 태그: "기절", "보호막", "화상". 그 밖의 이름은 서사용 자유 태그' },
     turns: { type: 'integer', description: '지속 턴 수 (그 기물 주인의 턴 기준). 0이면 영구' },
     aura: { type: 'string', enum: ['none', ...ELEMENTS], description: '태그가 남아 있는 동안 기물에 두를 원소 오라' },
     auraStrength: { type: 'number', description: '오라 세기 1~3 (none이면 0)' },
@@ -43,6 +43,18 @@ export const GM_EFFECT_JSON_SCHEMAS = [
     at: sq('편을 바꿀 기물의 칸 (킹 불가)'),
     color: { type: 'string', enum: ['white', 'black'], description: '새로 속할 편' },
   }),
+  effect('swap', { a: sq('자리를 바꿀 기물 하나의 칸'), b: sq('자리를 바꿀 다른 기물의 칸') }),
+  effect('revive', {
+    at: sq('되살린 기물을 놓을 빈 칸'),
+    color: { type: 'string', enum: ['white', 'black'], description: '되살릴 잡힌 기물의 편' },
+    piece: { type: 'string', enum: PIECES, description: '되살릴 잡힌 기물의 종류' },
+  }),
+  effect('terrain', {
+    at: sq('지형을 만들 칸 (벽은 빈 칸만, 구덩이는 그 칸의 기물을 삼킴)'),
+    kind: { type: 'string', enum: ['wall', 'pit'], description: 'wall(벽) 또는 pit(구덩이)' },
+    turns: { type: 'integer', description: '지속 턴 수 (만든 쪽의 턴 기준). 0이면 영구' },
+  }),
+  effect('clearTerrain', { at: sq('벽이나 구덩이를 없앨 칸') }),
 ];
 
 /** Mirrors GmChaosSchema. */

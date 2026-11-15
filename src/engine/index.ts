@@ -1,11 +1,13 @@
 export * from './types';
-export { applyCommand, exitsOf, hasAnyMove, takenPieces } from './game';
+export { applyCommand, exitsOf, hasAnyMove } from './game';
+export { capturedAfter } from './captured';
+export { blockedSquares, terrainAt, tickTerrain, MAX_TERRAIN } from './terrain';
 export { createInitialState, createStateFrom } from './setup';
 export { movesFrom, legalTargets, isAttacked, isInCheck, findKing, type Target } from './moves';
 export { parseMoveText } from './notation';
 export { squareName, parseSquare, fileOf, rankOf, squareAt, opponent } from './squares';
 export { applyEffects, validateRuling, type EffectContext } from './effects';
-export { hasTag, isStunned, isShielded, CORE_TAGS } from './tags';
+export { hasTag, isStunned, isShielded, isBurning, CORE_TAGS } from './tags';
 export { DEFAULT_RULES, withDefaultRules, type RuleConfig } from './config';
 export * from './staging';
-export { buildTimeline, effectDuration, moveDuration, ACT_DURATION, EXIT_DURATION, type Timeline } from './timeline';
+export { buildTimeline, effectDuration, moveDuration, ACT_DURATION, EXIT_DURATION, REVIVE_DURATION, SWAP_DURATION, type Timeline } from './timeline';

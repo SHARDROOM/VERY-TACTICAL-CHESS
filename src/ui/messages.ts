@@ -1,5 +1,5 @@
 import { josa } from './josa';
-import { squareName, type Color, type GameEvent, type Outcome, type PieceType, type RejectReason } from '../engine';
+import { BURN, TERRAIN_NAME, squareName, type Color, type GameEvent, type Outcome, type PieceType, type RejectReason } from '../engine';
 
 export const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑' };
 
@@ -62,7 +62,9 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         break;
       }
       case 'removed':
-        add(`${COLOR_NAME[e.piece.color]} ${PIECE_NAME[e.piece.type]}(${squareName(e.at)}) 제거됨`);
+        if (e.cause === 'burn') add(`🔥 ${squareName(e.at)}의 ${COLOR_NAME[e.piece.color]} ${josa(PIECE_NAME[e.piece.type], '이/가')} 끝내 불타 재가 됨`, 'warn');
+        else if (e.cause === 'pit') add(`🕳 ${COLOR_NAME[e.piece.color]} ${josa(PIECE_NAME[e.piece.type], '이/가')} ${squareName(e.at)}의 구덩이에 빠짐`);
+        else add(`${COLOR_NAME[e.piece.color]} ${PIECE_NAME[e.piece.type]}(${squareName(e.at)}) 제거됨`);
         break;
       case 'tagged': {
         const who = name(e.pieceId);
@@ -70,7 +72,8 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         break;
       }
       case 'untagged':
-        add(`${name(e.pieceId)}(${squareName(e.at)})의 '${e.tag}' 태그가 사라짐`);
+        if (e.tag === BURN) add(`💨 ${josa(name(e.pieceId), '이/가')} ${josa(squareName(e.at), '으로/로')} 움직여 불이 꺼짐`);
+        else add(`${name(e.pieceId)}(${squareName(e.at)})의 '${e.tag}' 태그가 사라짐`);
         break;
       case 'tagExpired':
         add(`⌛ ${name(e.pieceId)}의 '${e.tag}' 효과가 끝남`);
@@ -89,6 +92,18 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         break;
       case 'converted':
         add(`🎭 ${squareName(e.at)}의 ${josa(name(e.pieceId), '이/가')} ${COLOR_NAME[e.to]} 편이 됨`, 'warn');
+        break;
+      case 'swapped':
+        add(`🔄 ${squareName(e.a)}의 ${josa(name(e.aId), '와/과')} ${squareName(e.b)}의 ${josa(name(e.bId), '이/가')} 자리를 맞바꿈`);
+        break;
+      case 'revived':
+        add(`🕯 ${COLOR_NAME[e.piece.color]} ${josa(PIECE_NAME[e.piece.type], '이/가')} ${squareName(e.at)}에 되살아남`);
+        break;
+      case 'terrainMade':
+        add(`${e.kind === 'wall' ? '🧱' : '🕳'} ${squareName(e.at)}에 ${TERRAIN_NAME[e.kind]} ${e.turns === null ? '(영구)' : `(${e.turns}턴)`}`);
+        break;
+      case 'terrainCleared':
+        add(e.expired ? `⌛ ${squareName(e.at)}의 ${josa(TERRAIN_NAME[e.kind], '이/가')} 사라짐` : `${squareName(e.at)}의 ${josa(TERRAIN_NAME[e.kind], '이/가')} 없어짐`);
         break;
       case 'timedOut':
         add(`⏰ ${COLOR_NAME[e.color]}의 시간이 다 되었습니다.${e.apLost ? ` AP ${e.apLost} 차감.` : ''} 턴이 넘어갑니다.`, 'warn');

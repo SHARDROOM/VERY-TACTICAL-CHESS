@@ -45,6 +45,11 @@ export function moveDuration(style: MotionStyle, d: number, speed: Speed = 'norm
 
 export const ACT_DURATION: Record<ActKind, number> = { hop: 0.7, stagger: 1, fall: 1.6, shiver: 0.8, spin: 0.9 };
 
+/** A plain swap: both pieces lift and cross over each other. */
+export const SWAP_DURATION = 1.1;
+/** A plain revival: the piece flies back from beside the board to its square. */
+export const REVIVE_DURATION = 1.3;
+
 /** Seconds a removal takes on screen, by how the piece leaves. */
 export const EXIT_DURATION: Record<Exit, number> = { default: 1, knock: 1, burn: 1.2, ash: 1.3, shatter: 1.4, vanish: 1, sink: 1.1 };
 
@@ -60,6 +65,17 @@ export function effectDuration(effect: Effect, beat: Beat | undefined, _board?: 
       return moveDuration(beat?.motion ?? 'default', distance(effect.from, effect.to), speed);
     case 'unboard':
       return moveDuration(beat?.motion === 'default' || !beat ? 'hop' : beat.motion, distance(effect.at, effect.to), speed);
+    case 'swap':
+      // Both at once, crossing over (a plain swap is a scripted arc, not a physics flight).
+      return beat && beat.motion !== 'default' ? moveDuration(beat.motion, distance(effect.a, effect.b), speed) : SWAP_DURATION * (speed === 'slow' ? 1.6 : speed === 'fast' ? 0.6 : 1);
+    case 'revive': {
+      const entrance = beat?.entrance ?? 'default';
+      return entrance === 'rise' ? 1.2 : entrance === 'materialize' ? 1 : REVIVE_DURATION;
+    }
+    case 'terrain':
+      return effect.kind === 'wall' ? 0.9 : 1;
+    case 'clearTerrain':
+      return 0.7;
     case 'spawn': {
       const entrance = beat?.entrance ?? 'default';
       return entrance === 'rise' ? 0.9 : entrance === 'materialize' ? 0.8 : 1.2;

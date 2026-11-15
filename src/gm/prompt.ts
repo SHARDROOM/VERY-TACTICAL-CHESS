@@ -1,4 +1,4 @@
-import { RIDE, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig } from '../engine';
+import { MAX_TERRAIN, RIDE, TERRAIN_NAME, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig } from '../engine';
 
 const COLOR: Record<Color, string> = { white: '백', black: '흑' };
 const PIECE: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
@@ -34,28 +34,46 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - {"type": "transform", "at": "a2", "into": "knight"}: 기물을 다른 종류(queen, rook, bishop, knight, pawn)로 바꾼다.
 - {"type": "spawn", "at": "e4", "color": "white", "piece": "pawn"}: 빈 칸에 새 기물을 만든다.
 - {"type": "convert", "at": "e2", "color": "black"}: 기물(과 그 기물에 탄 기물)이 상대 편으로 넘어간다. 매수, 배신, 정체는 스파이 같은 행동에 쓴다.
+- {"type": "swap", "a": "b1", "b": "g8"}: 두 칸의 기물이 자리를 맞바꾼다. 편은 상관없고, 탄 기물은 태운 기물과 함께 간다.
+- {"type": "revive", "at": "c3", "color": "white", "piece": "knight"}: 잡혀서 보드 옆에 있는 그 편, 그 종류의 기물(가장 최근에 잡힌 것)을 빈 칸 at으로 되살린다. 보드 상태의 "잡힌 기물" 목록에 있어야 한다.
+- {"type": "terrain", "at": "d4", "kind": "wall", "turns": 2}: 칸에 벽(wall)이나 구덩이(pit)를 만든다. turns는 만든 쪽(지금 차례인 편)의 턴 기준이고 0이면 영구다. 벽은 빈 칸에만 세운다. 구덩이를 기물이 있는 칸에 파면 그 기물이 빠져서 없어진다.
+- {"type": "clearTerrain", "at": "d4"}: 그 칸의 벽이나 구덩이를 없앤다.
 효과는 목록 순서대로 적용되고, 각 효과는 앞 효과가 적용된 뒤의 보드를 기준으로 합니다. 칸 이름은 a1~h8 형식입니다.
 
 ## 태그의 의미
 - "기절": 그 기물은 일반 수로도 효과로도 움직일 수 없고, 상대 킹을 체크하지도 못한다.
 - "보호막": 그 기물이 다음에 잡히거나 제거될 때 한 번 막아 주고 사라진다. 잡으려던 기물은 제자리에 남는다.
 - "탑승": board 효과로만 생긴다. 탄 기물은 태운 기물과 함께 움직이고, 혼자 움직이거나 공격하지 못한다. 태운 기물이 잡히면 함께 잡힌다.
+- "화상": 불이 붙은 기물. 지속 턴이 다할 때까지 그 기물이 칸을 옮기지 않으면(일반 수든 효과든) 불타서 없어진다. 옮기면 불이 꺼진다. 보호막이 있으면 보호막이 대신 깨진다. 1턴 이상이어야 하고(보통 2~3턴), 킹에는 붙일 수 없다. 불을 붙이는 행동에는 서사용 태그 대신 이것을 쓰세요.
 - 그 밖의 이름(예: "불타는 중", "용기백배"): 규칙에는 영향이 없는 서사용 태그. 이후 판정에서 당신이 참고한다. 짧게(20자 이내) 지으세요.
+- 태그의 남은 턴은 그 기물 주인의 턴이 끝날 때만 줄어듭니다(붙인 그 턴은 세지 않음). 남은 턴은 시스템이 세고, 다하면 시스템이 태그를 뗍니다(화상은 기물을 태웁니다).
 - 보드 상태에 각 기물의 태그와 남은 턴, 타고 있는 기물이 표시됩니다. 이를 판정에 반영하세요(예: 불타는 기물은 다른 기물에 불을 옮기기 쉽다).
+
+## 지형 (벽과 구덩이)
+- 벽과 구덩이가 있는 칸에는 어떤 기물도 들어가거나 지나갈 수 없습니다. 룩, 비숍, 퀸의 길과 폰의 전진을 막고, 체크도 막습니다. 나이트는 뛰어넘을 수 있습니다.
+- 지형도 남은 턴을 시스템이 세고(만든 쪽의 턴이 끝날 때만), 다하면 사라집니다.
+- move 효과로 기물을 구덩이 칸에 보내면 그 기물이 빠져서 없어집니다(밀어 떨어뜨리기). 벽 칸으로는 move할 수 없습니다.
+- 지형은 한꺼번에 최대 ${MAX_TERRAIN}칸입니다.
 
 ## 절대 규칙 (어기면 판정 전체가 거부됩니다)
 - 킹은 어떤 효과로도 제거하거나 잡거나 변환하거나 편을 바꿀 수 없고, 킹을 새로 만들 수도 없습니다. 킹은 일반 체스 수로만 잡힙니다. 킹에 태그를 붙이는 것은 됩니다.
 - 기물이 없는 칸을 from/at/rider/carrier로 쓰지 마세요. 같은 편 기물이 있는 칸으로 move하지 마세요.
 - 기절한 기물은 move나 board로 움직일 수 없습니다.
 - board: 같은 편끼리만, 킹은 탈 수 없음, 한 기물에는 한 명만 탈 수 있음. 탑승은 tag 효과로 붙이거나 뗄 수 없습니다.
-- spawn과 unboard의 도착 칸은 비어 있어야 합니다.
-- 폰을 그 편의 마지막 줄(백은 8번 줄, 흑은 1번 줄)에 spawn하거나 그 줄의 기물을 폰으로 transform할 수 없습니다. 효과로 폰이 마지막 줄에 도착하면 자동으로 퀸으로 승격됩니다.
+- spawn, unboard, revive의 도착 칸은 비어 있어야 하고 벽이나 구덩이도 없어야 합니다.
+- swap은 두 칸 모두에 기물이 있어야 하고, 둘 다 기절하지 않아야 합니다.
+- revive는 "잡힌 기물" 목록에 있는 기물만 되살립니다. 킹은 되살릴 수 없습니다.
+- 킹이 서 있는 칸에는 구덩이를 팔 수 없고, 킹을 구덩이에 빠뜨릴 수도 없습니다. 킹에는 화상을 붙일 수 없습니다.
+- 폰을 그 편의 마지막 줄(백은 8번 줄, 흑은 1번 줄)에 spawn이나 revive하거나 그 줄의 기물을 폰으로 transform할 수 없습니다. 효과로 폰이 마지막 줄에 도착하면 자동으로 퀸으로 승격됩니다.
 
 ## 난이도와 비용의 기준
 - 그럴듯하고 영향이 작은 행동(가까운 칸으로의 기발한 이동 등): DC ${rules.dcMin}~10, AP ${rules.costMin}.
 - 대담하거나 판을 크게 바꾸는 행동(먼 거리 이동, 중요 기물 위협, 폰이나 마이너 기물 제거): DC 11~17, AP ${Math.min(rules.costMax, rules.costMin + 1)}.
 - 터무니없거나 결정적인 행동(퀸이나 룩 제거, 폰을 퀸으로 변환, 강한 기물 생성, 상대 기물 매수, 여러 기물에 한꺼번에 영향): DC 18~${rules.dcMax}, AP ${rules.costMax}.
 - 기절과 보호막은 지속 턴이 길수록, 영구일수록 DC와 비용을 높이세요. 대부분은 1~2턴이면 충분합니다.
+- 화상은 짧을수록(상대가 피할 시간이 적을수록) 강합니다. 보통 2~3턴, 중요한 기물일수록 DC를 높이세요.
+- 되살리기는 기물을 새로 만드는 것과 같은 무게로, 되살리는 기물이 강할수록 어렵게 하세요.
+- 벽과 구덩이는 1~3턴이 보통입니다. 오래가거나 영구인 지형, 여러 칸, 킹을 가두는 지형은 어렵게 하세요. 기물을 삼키는 구덩이는 제거와 같은 무게입니다.
 - 선언이 체스판의 상황과 맞아떨어질수록(예: 실제로 인접한 기물끼리의 협동) DC를 낮추고, 억지스러울수록 높이세요.
 - 한 번의 특수 행동이 게임을 사실상 끝내지 않도록 효과를 선언에 꼭 필요한 만큼만 넣으세요.
 
@@ -63,7 +81,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 판정과 함께 결과 넷(success, failure, critSuccess, critFailure)이 화면에서 어떻게 보일지 정합니다. 규칙에는 영향이 없고, 서술을 눈으로 보여 주는 도구입니다. 서술과 맞게, 결과의 크기에 맞게 쓰세요. 대성공은 화려하게, 실패는 짧게, 대실패는 행동한 쪽에 역효과처럼. 무엇을 어떻게 보여 줄지는 당신이 정합니다.
 - fx: 이펙트 (최대 6개). element는 fire, light, water, nature, darkness, lightning, ice, wind, poison, arcane, earth, impact. shape는 burst(at 칸 중심, radius 0.5~3), beam(at에서 to까지), area(at과 to를 모서리로 하는 직사각형, 둘 다 ""이면 보드 전체), trail(withEffect 번호의 효과로 움직이는 기물을 따라감). strength 1~5, duration 0.5~5초. withEffect(1부터, 0이면 연출 시작 기준)와 delay(초)로 시점을 정합니다.
 - shake: 화면 흔들림 0~3. 큰 사건에만.
-- beats: 효과별 연출. effect(효과 번호, 1부터), wait(이 효과 전 대기 0~2초), motion(move·unboard: default, fly, hop, slide, teleport, charge, sneak, spin, burrow), speed(slow, normal, fast), entrance(spawn: default, drop, rise, materialize), exit(remove나 move로 잡힌 기물: default, knock, burn, ash, vanish, sink, shatter).
+- beats: 효과별 연출. effect(효과 번호, 1부터), wait(이 효과 전 대기 0~2초), motion(move·unboard·swap: default, fly, hop, slide, teleport, charge, sneak, spin, burrow), speed(slow, normal, fast), entrance(spawn·revive: default, drop, rise, materialize), exit(remove, move로 잡히거나 구덩이에 빠진 기물: default, knock, burn, ash, vanish, sink, shatter). 벽은 솟아오르고 구덩이는 꺼지는 모습이 따로 나옵니다.
 - acts: 보드를 바꾸지 않는 제자리 연기(hop, stagger, fall, shiver, spin). 실패에서도 쓸 수 있습니다.
 - tag 효과의 aura: 태그가 남아 있는 동안 기물에 두를 원소(none이면 없음)와 세기 1~3. 예: "불타는 중" 태그에 fire.
 전체 연출은 6초 안에 끝나야 합니다. 쓰지 않을 항목은 빈 목록, "", 0, default로 두세요.
@@ -84,11 +102,13 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 /** Text board, uppercase = white, rank 8 at the top. */
 function boardGrid(state: GameState): string {
   const rows: string[] = [];
+  const ground = new Map((state.terrain ?? []).map((c) => [c.at, c.kind]));
   for (let rank = 7; rank >= 0; rank--) {
     const cells: string[] = [];
     for (let file = 0; file < 8; file++) {
       const p = state.board[rank * 8 + file];
-      cells.push(p ? (p.color === 'white' ? LETTER[p.type].toUpperCase() : LETTER[p.type]) : '.');
+      const g = ground.get(rank * 8 + file);
+      cells.push(p ? (p.color === 'white' ? LETTER[p.type].toUpperCase() : LETTER[p.type]) : g === 'wall' ? '#' : g === 'pit' ? 'O' : '.');
     }
     rows.push(`${rank + 1} ${cells.join(' ')}`);
   }
@@ -110,6 +130,24 @@ function pieceList(state: GameState, color: Color): string {
     items.push(`${PIECE[p.type]} ${squareName(sq)}${describeTags(p)}${rider}`);
   });
   return items.join(', ') || '(없음)';
+}
+
+const ORDER: PieceType[] = ['queen', 'rook', 'bishop', 'knight', 'pawn', 'king'];
+
+/** Pieces beside the board, by side and kind (what revive can bring back). */
+function capturedList(state: GameState, color: Color): string {
+  const counts = new Map<PieceType, number>();
+  for (const p of state.captured ?? []) if (p.color === color) counts.set(p.type, (counts.get(p.type) ?? 0) + 1);
+  const items = ORDER.filter((t) => counts.has(t)).map((t) => `${PIECE[t]} ${counts.get(t)}`);
+  return items.join(', ') || '(없음)';
+}
+
+function terrainList(state: GameState): string {
+  const cells = state.terrain ?? [];
+  if (!cells.length) return '(없음)';
+  return cells
+    .map((c) => `${TERRAIN_NAME[c.kind]} ${squareName(c.at)} (${c.turnsLeft === null ? '영구' : `${COLOR[c.owner]}의 턴으로 ${c.turnsLeft}턴 남음`})`)
+    .join(', ');
 }
 
 const MAX_PRECEDENTS = 20;
@@ -143,7 +181,14 @@ export function buildUserMessage(action: string, state: GameState): string {
 - 백: ${pieceList(state, 'white')}
 - 흑: ${pieceList(state, 'black')}
 
-## 보드 (대문자 = 백, 소문자 = 흑, . = 빈 칸; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰; 태그와 탑승은 위 목록 참고)
+## 잡힌 기물 (보드 옆, revive로 되살릴 수 있음)
+- 백: ${capturedList(state, 'white')}
+- 흑: ${capturedList(state, 'black')}
+
+## 지형
+${terrainList(state)}
+
+## 보드 (대문자 = 백, 소문자 = 흑, . = 빈 칸, # = 벽, O = 구덩이; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰; 태그와 탑승은 위 목록 참고)
 ${boardGrid(state)}
 
 ## 이번 게임의 판례 (최근 ${MAX_PRECEDENTS}개까지, 오래된 순)
@@ -178,17 +223,23 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 - 벼락이 떨어져 기물이 기절 → {"type": "tag", "at": "g1", "tag": "기절", "turns": 1}
 - 하늘에서 떨어진 보급품 → 빈 칸에 폰을 spawn
 - 수호 정령의 축복 → "보호막" 태그
+- 지진으로 땅이 갈라짐 → 빈 칸에 구덩이 terrain
+- 유령의 장난으로 두 기물의 자리가 뒤바뀜 → swap
 - 그 밖에 상상력을 발휘하되, 보드의 실제 상황(기물 위치, 태그, 지난 혼돈과 판례)과 엮일수록 좋습니다.
 
 ## 효과 (이것만 쓸 수 있습니다)
 - {"type": "move", "from": "b1", "to": "e5"}: 기물을 옮긴다. to에 상대 기물이 있으면 잡는다.
 - {"type": "remove", "at": "d7"}: 기물을 없앤다.
-- {"type": "tag", "at": "g8", "tag": "기절", "turns": 1}: 태그를 붙인다 (turns 0 = 영구). "기절"은 못 움직임, "보호막"은 한 번의 잡힘을 막음, 그 밖의 이름은 서사용.
+- {"type": "tag", "at": "g8", "tag": "기절", "turns": 1}: 태그를 붙인다 (turns 0 = 영구, 그 기물 주인의 턴 기준). "기절"은 못 움직임, "보호막"은 한 번의 잡힘을 막음, "화상"은 지속 턴 안에 칸을 옮기지 않으면 타서 없어짐(1턴 이상, 킹 불가), 그 밖의 이름은 서사용.
 - {"type": "untag", "at": "g8", "tag": "기절"}: 태그를 뗀다.
 - {"type": "transform", "at": "a2", "into": "knight"}: 기물 종류를 바꾼다 (queen, rook, bishop, knight, pawn).
 - {"type": "spawn", "at": "e4", "color": "white", "piece": "pawn"}: 빈 칸에 기물을 만든다.
 - {"type": "convert", "at": "e2", "color": "black"}: 기물이 상대 편으로 넘어간다.
 - {"type": "board", ...}, {"type": "unboard", ...}: 탑승과 하차 (같은 편끼리).
+- {"type": "swap", "a": "b1", "b": "g8"}: 두 기물이 자리를 맞바꾼다.
+- {"type": "revive", "at": "c3", "color": "white", "piece": "knight"}: 잡힌 기물 목록에 있는 기물을 빈 칸에 되살린다.
+- {"type": "terrain", "at": "d4", "kind": "wall", "turns": 2}: 벽(wall, 빈 칸만)이나 구덩이(pit, 그 칸의 기물을 삼킴)를 만든다. 아무도 들어가거나 지나가지 못하고(나이트는 뛰어넘음), turns는 지금 차례인 편의 턴 기준.
+- {"type": "clearTerrain", "at": "d4"}: 벽이나 구덩이를 없앤다.
 칸 이름은 a1~h8 형식이고, 효과는 순서대로 앞 효과가 적용된 보드를 기준으로 합니다.
 
 ## 절대 규칙 (어기면 사건 전체가 취소됩니다)
@@ -197,12 +248,14 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 - 사건이 끝난 뒤 어느 쪽 킹도 공격받는 상태(체크)가 되면 안 됩니다.
 - 기물이 없는 칸을 대상으로 하지 말고, 같은 편 기물이 있는 칸으로 move하지 마세요. 기절한 기물은 move할 수 없습니다.
 - 폰을 그 편의 마지막 줄(백은 8번 줄, 흑은 1번 줄)에 만들지 마세요.
+- 벽이나 구덩이 칸에는 기물을 옮기거나 만들 수 없습니다(구덩이로 move하면 그 기물이 빠져서 없어짐). 킹 밑에 구덩이를 팔 수 없습니다.
+- 지형은 한꺼번에 최대 ${MAX_TERRAIN}칸입니다.
 
 ## 연출 (staging, 보기용)
 사건이 화면에서 어떻게 보일지 staging에 정합니다. 규칙에는 영향이 없습니다. 서술과 맞게, 사건의 크기에 맞게 쓰세요. fx(element: fire, light, water, nature, darkness, lightning, ice, wind, poison, arcane, earth, impact / shape: burst, beam, area, trail / strength 1~5, duration 0.5~5초, withEffect와 delay로 시점), shake 0~3, beats(효과별 wait, motion, speed, entrance, exit), acts(제자리 연기)를 쓸 수 있고, tag 효과에는 aura(원소와 세기 1~3)를 붙일 수 있습니다. 넓은 사건(모래폭풍, 비)은 area로 보드를 덮어도 좋습니다. 전체 6초 이내.
 
 ## 무엇을 바꿀까
-- 가능하면 기물의 위치, 편, 종류가 실제로 바뀌는 사건을 고르세요(move, convert, transform, spawn, remove). 태그만 붙이는 사건은 가끔만 쓰세요.
+- 가능하면 기물의 위치, 편, 종류나 보드의 지형이 실제로 바뀌는 사건을 고르세요(move, swap, convert, transform, spawn, revive, remove, terrain). 태그만 붙이는 사건은 가끔만 쓰세요.
 - 사용자 메시지에 "영감" 단어가 오면 출발점으로 삼아도 되고 무시해도 됩니다. 단어를 그대로 제목에 쓰지 않아도 됩니다.
 
 ## 균형
@@ -237,7 +290,14 @@ export function buildChaosUserMessage(state: GameState, inspiration: string[] = 
 - 백: ${pieceList(state, 'white')}
 - 흑: ${pieceList(state, 'black')}
 
-## 보드 (대문자 = 백, 소문자 = 흑, . = 빈 칸; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰)
+## 잡힌 기물 (보드 옆, revive로 되살릴 수 있음)
+- 백: ${capturedList(state, 'white')}
+- 흑: ${capturedList(state, 'black')}
+
+## 지형
+${terrainList(state)}
+
+## 보드 (대문자 = 백, 소문자 = 흑, . = 빈 칸, # = 벽, O = 구덩이; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰)
 ${boardGrid(state)}
 
 ## 이번 게임의 판례 (최근 ${MAX_PRECEDENTS}개까지, 오래된 순)

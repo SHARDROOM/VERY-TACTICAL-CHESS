@@ -7,7 +7,7 @@ import {
   FX_SHAPES,
   moveDuration,
   parseSquare,
-  takenPieces,
+  capturedAfter,
   type ActKind,
   type Board,
   type CapturedPiece,
@@ -62,7 +62,7 @@ function staged(params: URLSearchParams, start: Board): { board: Board; captured
   for (const [sq] of list('swirl')) get(applied.board[parseSquare(sq)!]!.id).swirl = true;
   const now = performance.now();
   for (const [kind, sq] of list('act')) get(applied.board[parseSquare(sq)!]!.id).acts.push({ kind: kind as ActKind, start: now, duration: ACT_DURATION[kind as ActKind] });
-  return { board: applied.board, captured: takenPieces(applied.events, exits), directions };
+  return { board: applied.board, captured: capturedAfter([], applied.events, exits), directions };
 }
 function parseFx(spec: string): Fx[] {
   return spec

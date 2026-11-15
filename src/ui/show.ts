@@ -3,7 +3,7 @@ import {
   buildTimeline,
   effectiveStaging,
   exitsOf,
-  takenPieces,
+  capturedAfter,
   type Effect,
   type Element,
   type Exit,
@@ -83,14 +83,15 @@ export function buildShow(events: GameEvent[], before: GameState, outcomeLabel: 
 
   const steps: GameState[] = [start];
   const movers: (string | null)[] = [];
-  const ctx = { turnNumber: before.turnNumber, nextSpawnId: before.nextSpawnId };
+  const color = head.type === 'specialResolved' ? head.color : before.turn;
+  const ctx = { turnNumber: before.turnNumber, nextSpawnId: before.nextSpawnId, color, terrain: before.terrain ?? [], captured: before.captured ?? [] };
   for (let i = 0; i < effects.length; i++) {
     movers.push(moverOf(effects[i], steps[i].board));
     // From the start each time, so spawned pieces get the same ids as in the real result.
     const applied = applyEffects(before.board, effects.slice(0, i + 1), ctx);
     if (!applied.ok) break; // cannot happen for a result the engine accepted; show what we have
-    const taken = takenPieces(applied.events, exitsOf(applied.events, applied.sources, staging));
-    steps.push({ ...start, board: applied.board, captured: [...(before.captured ?? []), ...taken] });
+    const captured = capturedAfter(before.captured, applied.events, exitsOf(applied.events, applied.sources, staging));
+    steps.push({ ...start, board: applied.board, terrain: applied.terrain, captured });
   }
   const shown = effects.slice(0, steps.length - 1);
   const timeline = buildTimeline(staging, shown);

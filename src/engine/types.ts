@@ -10,6 +10,8 @@ export const PROMOTION_TYPES: readonly PromotionType[] = ['queen', 'rook', 'bish
 export const STUN = '기절';
 export const RIDE = '탑승';
 export const SHIELD = '보호막';
+/** A burning piece: if it has not moved off its square when the turns run out, it burns to ash. */
+export const BURN = '화상';
 
 export interface Tag {
   name: string;
@@ -35,6 +37,22 @@ export interface Piece {
   rider?: Piece;
 }
 
+/** What can stand on a square instead of a piece: nothing enters or passes it (knights jump over). */
+export type TerrainKind = 'wall' | 'pit';
+export const TERRAIN_KINDS: readonly TerrainKind[] = ['wall', 'pit'];
+export const TERRAIN_NAME: Record<TerrainKind, string> = { wall: '벽', pit: '구덩이' };
+
+/** A wall or pit on one square. A square with terrain never holds a piece. */
+export interface TerrainCell {
+  at: Square;
+  kind: TerrainKind;
+  /** Turns of `owner` left; null = permanent. Counts down like a tag (see tags.ts). */
+  turnsLeft: number | null;
+  /** Whose turns it lasts: the side whose turn it was made on. */
+  owner: Color;
+  appliedOnTurn: number;
+}
+
 /** 0..63, index = rank * 8 + file. a1 = 0, h1 = 7, a8 = 56. */
 export type Square = number;
 
@@ -58,7 +76,15 @@ export type Effect =
   | { type: 'transform'; at: Square; into: PieceType }
   | { type: 'spawn'; at: Square; color: Color; piece: PieceType }
   /** The piece on `at` (and whoever rides it) changes sides. */
-  | { type: 'convert'; at: Square; color: Color };
+  | { type: 'convert'; at: Square; color: Color }
+  /** The pieces on `a` and `b` trade squares (riders go with their carriers). */
+  | { type: 'swap'; a: Square; b: Square }
+  /** The most recently taken piece of that colour and kind comes back onto the empty square `at`. */
+  | { type: 'revive'; at: Square; color: Color; piece: PieceType }
+  /** A wall (empty square only) or a pit (swallows whatever stands there) on `at`; turns 0 = permanent. */
+  | { type: 'terrain'; at: Square; kind: TerrainKind; turns: number }
+  /** Takes away the wall or pit on `at` (nothing there: no-op). */
+  | { type: 'clearTerrain'; at: Square };
 
 /** The GM's ruling on a declared special action, already converted to engine squares. */
 export interface Ruling {
@@ -139,6 +165,8 @@ export interface GameState {
   captured: CapturedPiece[];
   /** Chaos events so far, oldest first (missing in saves from before the rule existed). */
   chaosLog?: ChaosRecord[];
+  /** Walls and pits on the board (missing = none). */
+  terrain?: TerrainCell[];
 }
 
 export type Command =
@@ -160,7 +188,8 @@ export type MoveSpecial =
 
 export type GameEvent =
   | { type: 'moved'; pieceId: string; from: Square; to: Square; captured: Piece | null; special?: MoveSpecial }
-  | { type: 'removed'; piece: Piece; at: Square }
+  /** `cause`: burnt up by 화상 at the end of its owner's turn, or fell into a pit. */
+  | { type: 'removed'; piece: Piece; at: Square; cause?: 'burn' | 'pit' }
   | { type: 'tagged'; pieceId: string; at: Square; tag: string; turns: number | null }
   | { type: 'untagged'; pieceId: string; at: Square; tag: string }
   | { type: 'tagExpired'; pieceId: string; tag: string }
@@ -169,6 +198,11 @@ export type GameEvent =
   | { type: 'transformed'; pieceId: string; at: Square; from: PieceType; to: PieceType }
   | { type: 'spawned'; piece: Piece; at: Square }
   | { type: 'converted'; pieceId: string; at: Square; to: Color }
+  | { type: 'swapped'; aId: string; bId: string; a: Square; b: Square }
+  | { type: 'revived'; piece: Piece; at: Square }
+  | { type: 'terrainMade'; at: Square; kind: TerrainKind; turns: number | null }
+  /** `expired`: its turns ran out (otherwise an effect took it away). */
+  | { type: 'terrainCleared'; at: Square; kind: TerrainKind; expired: boolean }
   | { type: 'timedOut'; color: Color; apLost: number }
   /** Carries the applied effects and their staging so every screen can play the event step by step. */
   | { type: 'chaos'; title: string; narration: string; effects: Effect[]; staging?: Staging }

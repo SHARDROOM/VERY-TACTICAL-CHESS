@@ -28,7 +28,11 @@ function lastPieceWord(text: string): Exclude<PieceType, 'king'> | null {
  * that mention squares:
  * - two squares + a riding word ("a2 폰을 b1 나이트에 태운다") → first boards second
  * - a square + 기절 → 1-turn stun; a square + 보호막 → permanent shield
- * - a square + a burning word ("g8 나이트에 불을 붙인다") → "불타는 중" for 2 turns, with a fire aura
+ * - two squares + a swapping word ("b1 나이트와 g8 나이트의 자리를 바꾼다") → swap them
+ * - a square + a burning word ("g8 나이트에 불을 붙인다") → 화상 for 3 turns, with a fire aura
+ * - squares + 벽 ("d4에 벽을 세운다") → a 2-turn wall on each (up to 3); + 구덩이 → a pit on the last
+ * - a square + 벽/구덩이 + a breaking word ("d4 벽을 부순다") → clear it
+ * - a square + a piece name + a reviving word ("c3에 나이트를 되살린다") → revive the player's piece
  * - one or more squares + a removal word ("d7 폰을 저격한다") → remove the last square
  * - a square + a piece name + a summoning word ("e4에 나이트를 소환한다") → spawn one for the player
  * - a square + a piece name + a changing word ("a2 폰을 퀸으로 바꾼다") → transform
@@ -136,6 +140,58 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
     };
   }
 
+  if (squares.length >= 2 && /맞바꾸|맞바꿔|맞바꾼|자리를?\s*(바꾸|바꿔|바꾼|교체|교환)|스왑|뒤바꾸|뒤바꿔|뒤바꾼/.test(action)) {
+    const [a, b] = names;
+    return {
+      interpretation: `${a}의 기물과 ${b}의 기물이 자리를 맞바꾼다.`,
+      feasible: true,
+      dc: 12,
+      cost: 2,
+      effects: [{ type: 'swap', a, b }],
+      look: look({ beats: [beat(1)], fx: [fx('arcane', 'burst', a, { strength: 3, radius: 0.7 }), fx('arcane', 'burst', b, { strength: 3, radius: 0.7 })] }),
+      narration: { success: `두 기물이 서로를 향해 날아올라 ${a}와 ${b}의 자리가 뒤바뀌었다!`, failure: '두 기물이 엇갈리려다 서로 부딪혀 제자리로 튕겨 났다.' },
+    };
+  }
+
+  if (squares.length >= 1 && /벽|구덩이|함정|구멍/.test(action) && /부숴|부순|부수|허물|허문|메운|메워|메우|없애|치운|치워/.test(action)) {
+    const at = names[names.length - 1];
+    return {
+      interpretation: `${at}의 지형을 없앤다.`,
+      feasible: true,
+      dc: 9,
+      cost: 1,
+      effects: [{ type: 'clearTerrain', at }],
+      look: look({ fx: [fx('earth', 'burst', at, { strength: 3, radius: 0.8, withEffect: 1 }), fx('wind', 'burst', at, { strength: 2, withEffect: 1, delay: 0.2 })] }),
+      narration: { success: `${at}의 지형이 와르르 무너져 평평해졌다!`, failure: '꿈쩍도 하지 않는다.' },
+    };
+  }
+
+  if (squares.length >= 1 && /벽|장벽|바리케이드|성벽/.test(action)) {
+    const at = [...new Set(names)].slice(0, 3);
+    return {
+      interpretation: `${at.join(', ')}에 두 턴 동안 벽을 세운다.`,
+      feasible: true,
+      dc: 9 + at.length * 2,
+      cost: at.length > 1 ? 2 : 1,
+      effects: at.map((sq) => ({ type: 'terrain' as const, at: sq, kind: 'wall', turns: 2 })),
+      look: look({ shake: 1, fx: at.map((sq, i) => fx('earth', 'burst', sq, { strength: 3, radius: 0.7, withEffect: i + 1 })) }),
+      narration: { success: `땅이 울리며 ${at.join(', ')}에 돌벽이 솟아올랐다!`, failure: '돌무더기가 조금 들썩이다 말았다.' },
+    };
+  }
+
+  if (squares.length >= 1 && /구덩이|함정|구멍|싱크홀/.test(action)) {
+    const at = names[names.length - 1];
+    return {
+      interpretation: `${at}에 두 턴 동안 구덩이를 판다.`,
+      feasible: true,
+      dc: 12,
+      cost: 2,
+      effects: [{ type: 'terrain', at, kind: 'pit', turns: 2 }],
+      look: look({ shake: 2, beats: [beat(1, { exit: 'sink' })], fx: [fx('earth', 'burst', at, { strength: 4, radius: 0.9, withEffect: 1 })] }),
+      narration: { success: `${at}의 땅이 꺼지며 시커먼 구덩이가 입을 벌렸다!`, failure: '땅에 금이 갔지만 꺼지지는 않았다.' },
+    };
+  }
+
   if (squares.length >= 1 && /기절|스턴|마비/.test(action)) {
     const at = names[names.length - 1];
     return {
@@ -162,20 +218,33 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
     };
   }
 
-  if (squares.length >= 1 && /불태|불붙|불을 붙|불을 질|화염|점화/.test(action)) {
+  if (squares.length >= 1 && /불태|불붙|불을 붙|불을 질|화염|점화|화상/.test(action)) {
     const at = names[names.length - 1];
     return {
-      interpretation: `${at}의 기물에 불을 붙여 두 턴 동안 타오르게 한다.`,
+      interpretation: `${at}의 기물에 불을 붙인다. 세 턴 안에 자리를 옮기지 않으면 타서 없어진다.`,
       feasible: true,
-      dc: 11,
-      cost: 1,
-      effects: [{ type: 'tag', at, tag: '불타는 중', turns: 2, aura: 'fire', auraStrength: 2 }],
+      dc: 12,
+      cost: 2,
+      effects: [{ type: 'tag', at, tag: '화상', turns: 3, aura: 'fire', auraStrength: 2 }],
       look: look({ fx: [fx('fire', 'burst', at, { strength: 3, radius: 0.8, withEffect: 1 })], acts: [{ at, act: 'shiver', delay: 0.4 }] }),
-      narration: { success: `${at}의 기물에 불길이 옮겨붙었다!`, failure: '불씨가 피식 꺼져 버렸다.' },
+      narration: { success: `${at}의 기물에 불길이 옮겨붙었다! 어서 움직이지 않으면 재가 된다.`, failure: '불씨가 피식 꺼져 버렸다.' },
     };
   }
 
   const named = lastPieceWord(action);
+  if (squares.length >= 1 && named && /되살|부활|살려|소생/.test(action)) {
+    const at = names[names.length - 1];
+    const strong = named === 'queen' || named === 'rook';
+    return {
+      interpretation: `잡혔던 ${color === 'white' ? '백' : '흑'} ${josa(PIECE_KO[named], '을/를')} ${at}에 되살린다.`,
+      feasible: true,
+      dc: strong ? 18 : named === 'pawn' ? 10 : 14,
+      cost: strong ? 3 : 2,
+      effects: [{ type: 'revive', at, color, piece: named }],
+      look: look({ beats: [beat(1, { entrance: 'rise' })], fx: [fx('light', 'burst', at, { strength: 4, radius: 1, withEffect: 1 })] }),
+      narration: { success: `빛기둥 속에서 쓰러졌던 ${josa(PIECE_KO[named], '이/가')} ${at}에 다시 일어섰다!`, failure: '영혼이 잠시 머물다 흩어졌다.' },
+    };
+  }
   if (squares.length >= 1 && named && SPAWN_WORDS.test(action)) {
     const at = names[names.length - 1];
     const strong = named === 'queen' || named === 'rook';
@@ -253,7 +322,7 @@ function fakeBaseRuling(action: string, color: Color): BaseRuling {
 
   return {
     interpretation:
-      '가짜 GM은 칸 좌표가 들어간 행동만 이해합니다. 예: "b1 나이트를 투석기로 e5까지 날린다", "d7 폰을 저격한다", "g8 나이트를 기절시킨다", "e1 킹에 보호막", "a2 폰을 b1 나이트에 태운다", "e4에 나이트를 소환한다", "a2 폰을 퀸으로 바꾼다"',
+      '가짜 GM은 칸 좌표가 들어간 행동만 이해합니다. 예: "b1 나이트를 투석기로 e5까지 날린다", "d7 폰을 저격한다", "g8 나이트를 기절시킨다", "e1 킹에 보호막", "a2 폰을 b1 나이트에 태운다", "e4에 나이트를 소환한다", "a2 폰을 퀸으로 바꾼다", "b1과 g8의 자리를 바꾼다", "g8 나이트에 불을 붙인다", "c3에 나이트를 되살린다", "d4에 벽을 세운다", "e5에 구덩이를 판다"',
     feasible: false,
     dc: 0,
     cost: 0,
