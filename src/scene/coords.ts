@@ -1,7 +1,7 @@
 import { fileOf, isAir, rankOf, type Square } from '../engine';
 
-/** Height of the air layer (공중부양): a second board floating over the first, clear of the tallest piece. */
-export const AIR_Y = 1.45;
+/** Height of the air layer (공중부양): where floating pieces stand, well clear of the tallest piece below. */
+export const AIR_Y = 2.3;
 
 /** World position of a square's center: on the board plane (y = 0), or on the air layer above it. White's back rank is at +z. */
 export function squareToWorld(sq: Square): [number, number, number] {

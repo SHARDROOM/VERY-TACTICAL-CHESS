@@ -442,7 +442,7 @@ describe('turn clock', () => {
 });
 
 describe('chaos', () => {
-  it('may strike when a turn begins, and everyone sees it', async () => {
+  it('may strike once a round, when white\'s turn begins, and everyone sees it', async () => {
     const gm = new TestGm();
     const o = online(gm, () => 20);
     await settle();
@@ -451,6 +451,10 @@ describe('chaos', () => {
     (o.host as unknown as { authority: { chance: () => number } }).authority.chance = () => 0;
     await o.begin();
     o.host.request({ type: 'move', from: sq('e2'), to: sq('e4') });
+    await settle();
+    // Black's turn starting is not a new round.
+    expect(gm.chaosCalls).toBe(0);
+    o.guest.request({ type: 'move', from: sq('e7'), to: sq('e5') });
     await settle();
     expect(gm.chaosCalls).toBe(1);
     expect(o.guest.view().state.board[sq('a6')]).toMatchObject({ type: 'pawn', color: 'black' });
@@ -488,6 +492,7 @@ describe('chaos', () => {
     s.setRules({ chaosChance: 0.1 });
     s.start();
     s.request({ type: 'move', from: sq('e2'), to: sq('e4') });
+    s.request({ type: 'move', from: sq('e7'), to: sq('e5') });
     await settle();
     expect(asked).toHaveLength(2);
     expect((asked[1] as { problem?: string }).problem).toContain('킹');
@@ -502,6 +507,7 @@ describe('chaos', () => {
     s.start();
     const rec = record(s);
     s.request({ type: 'move', from: sq('e2'), to: sq('e4') });
+    s.request({ type: 'move', from: sq('e7'), to: sq('e5') });
     await settle();
     expect(s.view().state.board[sq('e8')]).toMatchObject({ type: 'king' });
     expect(rec.notices().join()).toContain('혼돈이 일어나려다');

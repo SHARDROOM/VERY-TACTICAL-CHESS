@@ -458,7 +458,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     if (!captured && (to.y > 0.5 || from.y > 0.5) && !(trip && trip.style !== 'default' && trip.style !== 'fly')) {
       phys.current = null;
       const rise = Math.hypot(to.x - from.x, to.z - from.z) < 0.01;
-      motion.current = rise ? { ...scripted, delay: trip ? 0 : 0.1, duration: 1.1, arc: 0, kind: 'settle', fromQ: shownQ.current.clone() } : scripted;
+      motion.current = rise ? { ...scripted, delay: trip ? 0 : 0.1, duration: 1.4, arc: 0, kind: 'settle', fromQ: shownQ.current.clone() } : scripted;
       return;
     }
     if (trip && trip.style !== 'default' && trip.style !== 'fly') {

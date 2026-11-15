@@ -226,7 +226,7 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
                   <ul className="rule-notes">
                     <li>시간은 내 차례에만 흐르고, GM이 판정하는 동안에는 멈춥니다.</li>
                     {rules.chaosChance > 0 && (
-                      <li>혼돈: 턴이 시작될 때 {chaosLabel(rules.chaosChance)} 확률로 GM(API)이 기상천외한 사건을 지어내 일으킵니다. GM API 사용량이 늘어납니다.</li>
+                      <li>혼돈: 라운드마다(양쪽이 한 번씩 두고 백의 차례가 시작될 때) {chaosLabel(rules.chaosChance)} 확률로 GM(API)이 기상천외한 사건을 지어내 일으킵니다. GM API 사용량이 늘어납니다.</li>
                     )}
                     {rules.chaosChance > 0 && !view.chaosReady && (
                       <li className="rule-warn">⚠ 지금 GM({view.gmName})은 API를 쓰지 않아서 혼돈이 일어나지 않습니다. GM을 Claude, OpenAI, Gemini 중 하나로 바꾸고 API 키를 넣어 주세요.</li>

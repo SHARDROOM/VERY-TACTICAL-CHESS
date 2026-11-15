@@ -197,15 +197,17 @@ export class Authority {
     this.apply({ type: 'land', seed, landings }, 'all');
   }
 
-  /** Keeps the clock in step with the game and sets off chaos when a turn begins. */
+  /** Keeps the clock in step with the game and sets off chaos when a round begins. */
   private afterChange(events: GameEvent[]): void {
     if (this.state.status.kind !== 'playing') return this.restartClock();
     // A clash's dice (and its duel) do not eat the time of whoever moves next.
     const clashTime = events.reduce((t, e) => t + (e.type === 'clash' ? DICE_GRACE_MS + Math.round(duelSeconds(e.exchanges) * 1000) : 0), 0);
-    if (events.some((e) => e.type === 'turnPassed')) {
+    const passed = events.find((e) => e.type === 'turnPassed');
+    if (passed) {
       this.restartClock();
       if (clashTime) this.addTime(clashTime);
-      this.maybeChaos();
+      // Chaos may strike once a round: when white's turn begins (both sides have moved).
+      if (passed.turn === 'white') this.maybeChaos();
     } else {
       const resolved = events.find((e) => e.type === 'specialResolved');
       // The roll and the show that follows it do not eat the player's time.

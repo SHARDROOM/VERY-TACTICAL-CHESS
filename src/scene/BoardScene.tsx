@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { CanvasTexture, SRGBColorSpace, Vector3, type Group } from 'three';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { CameraControls, Environment, Lightformer } from '@react-three/drei';
-import { AIR, fileOf, isAir, rankOf, type Board, type CapturedPiece, type Color, type FallingPiece, type Square, type TerrainCell } from '../engine';
-import { AIR_Y, squareToWorld } from './coords';
+import { fileOf, isAir, rankOf, type Board, type CapturedPiece, type Color, type FallingPiece, type Square, type TerrainCell } from '../engine';
+import { squareToWorld } from './coords';
 import { PieceMesh, PiecePhysicsContext, type PiecePhysics } from './PieceMesh';
 import type { Obstacle } from './piecePhysics';
 import { TABLE_TOP_Y, WoodTable } from './WoodTable';
@@ -108,10 +108,12 @@ const NO_TERRAIN: readonly TerrainCell[] = [];
 const NO_FALLING: readonly FallingPiece[] = [];
 
 /**
- * The air layer (공중부양): a ghost of the board floating above it, there while anything floats.
- * Only its markers take clicks (pieces take their own), so the board below stays clickable.
+ * Squares in the air (공중부양) are not drawn: only what matters there shows, floating where
+ * the square is: where the selected piece may go (these take clicks; pieces take their own, so
+ * the board below stays clickable), and rings for the selected piece, a king in check and the
+ * pieces a ruling names.
  */
-function AirLayer({ board, selected, targets, checkedKing, marks, clashOdds, onClick }: {
+function AirMarks({ board, selected, targets, checkedKing, marks, clashOdds, onClick }: {
   board: Board;
   selected: Square | null;
   targets: Square[];
@@ -120,38 +122,31 @@ function AirLayer({ board, selected, targets, checkedKing, marks, clashOdds, onC
   clashOdds: { at: Square; chance: number }[];
   onClick: (sq: Square) => (e: ThreeEvent<MouseEvent>) => void;
 }) {
+  const rings: { at: Square; color: string }[] = [];
+  if (selected !== null && isAir(selected)) rings.push({ at: selected, color: '#c9a227' });
+  if (checkedKing !== null && isAir(checkedKing)) rings.push({ at: checkedKing, color: '#b23b3b' });
+  if (marks && isAir(marks.actor)) rings.push({ at: marks.actor, color: '#d9b24c' });
+  for (const t of marks?.targets ?? []) if (isAir(t)) rings.push({ at: t, color: '#c98058' });
   return (
     <group>
-      {Array.from({ length: 64 }, (_, g) => {
-        const sq = g + AIR;
-        const [x, , z] = squareToWorld(sq);
-        const dark = (fileOf(g) + rankOf(g)) % 2 === 0;
-        let color = dark ? '#9fc4e8' : '#e6f1fb';
-        let opacity = dark ? 0.26 : 0.15;
-        if (sq === selected) [color, opacity] = ['#c9a227', 0.55];
-        else if (sq === checkedKing) [color, opacity] = ['#b23b3b', 0.55];
-        else if (sq === marks?.actor) [color, opacity] = ['#d9b24c', 0.5];
-        else if (marks?.targets.includes(sq)) [color, opacity] = ['#c98058', 0.5];
+      {rings.map((r, i) => {
+        const [x, y, z] = squareToWorld(r.at);
         return (
-          <group key={sq}>
-            <mesh position={[x, AIR_Y - 0.012, z]} rotation={[-Math.PI / 2, 0, 0]}>
-              <planeGeometry args={[0.96, 0.96]} />
-              <meshBasicMaterial color={color} transparent opacity={opacity} depthWrite={false} side={2} />
-            </mesh>
-            {targets.includes(sq) && (
-              <mesh position={[x, AIR_Y - 0.004, z]} rotation={[-Math.PI / 2, 0, 0]} onClick={onClick(sq)}>
-                {board[sq] ? <ringGeometry args={[0.36, 0.46, 32]} /> : <circleGeometry args={[0.18, 24]} />}
-                <meshBasicMaterial color={clashOdds.some((c) => c.at === sq) ? '#e2b45a' : '#4fb36b'} transparent opacity={0.9} depthWrite={false} side={2} />
-              </mesh>
-            )}
-          </group>
+          <mesh key={`r${i}`} position={[x, y - 0.01, z]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[0.3, 0.42, 32]} />
+            <meshBasicMaterial color={r.color} transparent opacity={0.85} depthWrite={false} side={2} />
+          </mesh>
         );
       })}
-      {/* A faint rim so the layer reads as a board. */}
-      <mesh position={[0, AIR_Y - 0.014, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[5.66, 5.8, 4, 1, Math.PI / 4]} />
-        <meshBasicMaterial color="#cfe4f7" transparent opacity={0.55} depthWrite={false} side={2} />
-      </mesh>
+      {targets.filter(isAir).map((sq) => {
+        const [x, y, z] = squareToWorld(sq);
+        return (
+          <mesh key={sq} position={[x, y - 0.004, z]} rotation={[-Math.PI / 2, 0, 0]} onClick={onClick(sq)}>
+            {board[sq] ? <ringGeometry args={[0.36, 0.46, 32]} /> : <circleGeometry args={[0.18, 24]} />}
+            <meshBasicMaterial color={clashOdds.some((c) => c.at === sq) ? '#e2b45a' : '#4fb36b'} transparent opacity={0.9} depthWrite={false} side={2} />
+          </mesh>
+        );
+      })}
     </group>
   );
 }
@@ -324,8 +319,6 @@ export function BoardScene({
   const startingIds = useMemo(() => new Set([...board, ...captured].flatMap((p) => (p ? [p.id, ...(p.rider ? [p.rider.id] : [])] : []))), []);
   const graveyard = useMemo(() => graveyardLayout(captured, diceSide), [captured, diceSide]);
   const auras = useMemo(() => aurasOn(board), [board]);
-  // The air layer shows while anything floats or falls (or a floating square is in play).
-  const airborne = falling.length > 0 || board.some((p, sq) => p && isAir(sq)) || (selected !== null && isAir(selected));
   const click = (sq: Square) => (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
     onSquareClick(sq);
@@ -386,7 +379,7 @@ export function BoardScene({
       })}
 
       <TerrainLayer terrain={terrain} />
-      {airborne && <AirLayer board={board} selected={selected} targets={targets} checkedKing={checkedKing} marks={marks} clashOdds={clashOdds} onClick={click} />}
+      <AirMarks board={board} selected={selected} targets={targets} checkedKing={checkedKing} marks={marks} clashOdds={clashOdds} onClick={click} />
       {clashOdds.map((c) => (
         <ClashOdds key={c.at} at={c.at} chance={c.chance} height={squareToWorld(c.at)[1] + (board[c.at] ? PIECE_HEIGHT[board[c.at]!.type] : 1)} />
       ))}
