@@ -17,6 +17,7 @@ import { ConnectionOverlay } from './ConnectionOverlay';
 import { SettingsMenu, useFullscreen } from './SettingsMenu';
 import { chaosLabel, rulesSummary, secondsLabel } from './rules';
 import { playSfx } from '../audio/sfx';
+import { Icon } from './Icon';
 
 const ROLE_BADGE: Record<Member['role'], string> = { white: '백', black: '흑', spectator: '관전' };
 
@@ -87,8 +88,8 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
           <header className="waiting-head">
             <h1>대기실</h1>
             <div className="waiting-head-actions">
-              <button className="menu-button" onClick={() => setShowMenu(true)} aria-haspopup="menu" title="설정">
-                ⚙
+              <button className="menu-button icon-only" onClick={() => setShowMenu(true)} aria-haspopup="menu" title="설정" aria-label="설정">
+                <Icon name="gear" />
               </button>
               <button onClick={onLeave}>{online ? '나가기' : '로비로'}</button>
             </div>

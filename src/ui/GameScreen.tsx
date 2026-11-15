@@ -34,6 +34,7 @@ import type { DoodleTool } from '../scene/DoodleLayer';
 import { DOODLE_COLORS, type DoodleOp } from '../session/doodle';
 import { clockText, rulesSummary } from './rules';
 import { Icon } from './Icon';
+import { PieceSilhouette } from './PieceSilhouette';
 
 interface LogLine extends LogEntry {
   id: number;
@@ -470,7 +471,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
                   <br />
                   지금 GM: {view.gmName}.{' '}
                   {view.isAuthority
-                    ? '진짜 GM은 ⚙ 버튼에서 Claude, OpenAI, Gemini 중 하나의 API 키를 넣으면 켜집니다.'
+                    ? '진짜 GM은 설정에서 Claude, OpenAI, Gemini 중 하나의 API 키를 넣으면 켜집니다.'
                     : 'GM은 방장이 설정합니다.'}
                   {view.isAuthority && game.rules.chaosChance > 0 && !view.chaosReady && (
                     <>
@@ -632,10 +633,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         <div className="overlay">
           <div className="dialog">
             <h2>프로모션</h2>
-            <p>폰을 무엇으로 바꿀까요?</p>
-            <div className="choice-row">
+            <p>폰이 끝줄에 닿았습니다. 무엇으로 바꿀까요?</p>
+            <div className="promo-row">
               {(['queen', 'rook', 'bishop', 'knight'] as const).map((t) => (
-                <button key={t} onClick={() => promote(t)}>
+                <button key={t} className="promo" onClick={() => promote(t)}>
+                  <PieceSilhouette type={t} color={game.board[promotionChoice.from]?.color ?? 'white'} />
                   {PIECE_NAME[t]}
                 </button>
               ))}
@@ -687,19 +689,22 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
 
       {winner && connected && !dice && (
         <div className="overlay">
-          <div className="victory">
+          <div className={`victory victory-${winner}`}>
+            <span className="victory-stone" aria-hidden />
             <h1>{COLOR_NAME[winner]} 승리</h1>
-            <p>{COLOR_NAME[opponent(winner)]} 킹이 잡혔습니다.</p>
-            {view.isAuthority ? (
-              <button onClick={restart}>대기실로 (새 게임)</button>
-            ) : (
-              <p className="muted-line">방장이 대기실로 돌아가면 새 게임을 준비합니다.</p>
-            )}
-            {online && (
-              <button className="link" onClick={onLeave}>
-                나가기
-              </button>
-            )}
+            {online && nameOf(winner) && <div className="victory-name">{nameOf(winner)}</div>}
+            <p className="victory-how">{COLOR_NAME[opponent(winner)]} 킹이 잡혔습니다.</p>
+            <p className="victory-recap">{recap(game)}</p>
+            <div className="victory-actions">
+              {view.isAuthority ? (
+                <button className="primary" onClick={restart}>
+                  대기실로 돌아가기
+                </button>
+              ) : (
+                <p className="muted-line">방장이 대기실로 돌아가면 새 게임을 준비합니다.</p>
+              )}
+              {online && <button onClick={onLeave}>방에서 나가기</button>}
+            </div>
           </div>
         </div>
       )}
@@ -749,4 +754,20 @@ function D20Odds({ dc }: { dc: number }) {
       <div className="odds-caption">d20에서 {Math.min(dc, 20)} 이상이면 성공{dc > 20 ? ' (20만 성공)' : ''}</div>
     </div>
   );
+}
+
+/** One sentence about how the game went. */
+function recap(game: GameState): string {
+  const specials = game.precedents.length;
+  const crits = game.precedents.filter((p) => p.outcome === 'critSuccess').length;
+  const fumbles = game.precedents.filter((p) => p.outcome === 'critFailure').length;
+  const chaos = game.chaosLog?.length ?? 0;
+  const parts: string[] = [];
+  if (specials) {
+    const extra = [crits && `대성공 ${crits}번`, fumbles && `대실패 ${fumbles}번`].filter(Boolean).join(', ');
+    parts.push(`특수 행동 ${specials}번${extra ? `(${extra})` : ''}`);
+  }
+  if (chaos) parts.push(`혼돈 ${chaos}번`);
+  const turns = `${game.turnNumber}턴 만에 끝났습니다.`;
+  return parts.length ? `${turns} ${parts.join(', ')}이 있었습니다.` : `${turns} 특수 행동 없이 체스 실력만으로 끝났습니다.`;
 }

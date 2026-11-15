@@ -22,11 +22,11 @@ const EFFORTS: { id: GmEffort; label: string }[] = [
   { id: 'high', label: '신중하게 (느리고 비쌈)' },
 ];
 
-const PROVIDERS: { id: GmConfig['provider']; label: string }[] = [
-  { id: 'claude', label: 'Claude (Anthropic)' },
-  { id: 'openai', label: 'OpenAI' },
-  { id: 'gemini', label: 'Gemini (Google) · 무료 등급 키 가능' },
-  { id: 'fake', label: '가짜 GM (개발용, 무료 · 칸 좌표가 있는 문장만 이해)' },
+const PROVIDERS: { id: GmConfig['provider']; name: string; note: string }[] = [
+  { id: 'claude', name: 'Claude', note: 'Anthropic API 키가 필요합니다.' },
+  { id: 'openai', name: 'OpenAI', note: 'OpenAI API 키가 필요합니다.' },
+  { id: 'gemini', name: 'Gemini', note: 'Google API 키가 필요합니다. 무료 등급 키도 됩니다.' },
+  { id: 'fake', name: '가짜 GM', note: '키 없이 시험해 볼 때. 칸 좌표가 있는 문장만 알아듣고, 혼돈은 일으키지 않습니다.' },
 ];
 
 const DEFAULT_MODEL: Record<LlmProvider, string> = {
@@ -80,11 +80,14 @@ export function GmSettings({ current, onSave, onClose }: Props) {
         }}
       >
         <h2>GM 설정</h2>
-        <fieldset>
+        <p className="settings-lead">특수 행동을 판정하고 혼돈을 일으킬 GM을 고르세요.</p>
+        <fieldset className="provider-grid">
+          <legend className="sr-only">GM 종류</legend>
           {PROVIDERS.map((p) => (
-            <label key={p.id} className="radio">
+            <label key={p.id} className={`provider-tile ${provider === p.id ? 'active' : ''}`}>
               <input type="radio" name="provider" checked={provider === p.id} onChange={() => setProvider(p.id)} />
-              {p.label}
+              <span className="provider-name">{p.name}</span>
+              <span className="provider-note">{p.note}</span>
             </label>
           ))}
         </fieldset>
@@ -146,7 +149,9 @@ export function GmSettings({ current, onSave, onClose }: Props) {
         )}
 
         <div className="choice-row">
-          <button type="submit" className="primary" disabled={!canSave}>저장</button>
+          <button type="submit" className="primary" disabled={!canSave}>
+            {llm && !keys[llm].trim() ? 'API 키를 넣어 주세요' : '이 GM으로 정하기'}
+          </button>
           <button type="button" onClick={onClose}>닫기</button>
         </div>
       </form>

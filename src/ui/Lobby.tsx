@@ -4,6 +4,7 @@ import type { SavedGame } from '../session/storage';
 import type { TourInset } from '../scene/TourCamera';
 import { LobbyBackdrop } from './LobbyBackdrop';
 import { SettingsMenu, useFullscreen } from './SettingsMenu';
+import { Icon } from './Icon';
 
 function ago(ms: number): string {
   const min = Math.round((Date.now() - ms) / 60000);
@@ -79,7 +80,7 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onHo
         <p>아주 전략적인 체스</p>
       </header>
       <button className="menu-button lobby-menu-button" onClick={() => setShowMenu(true)} aria-haspopup="menu" title="설정">
-        ⚙ <span className="label">설정</span>
+        <Icon name="gear" /> <span className="label">설정</span>
       </button>
 
       <div className="lobby-scroll">
