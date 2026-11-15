@@ -685,7 +685,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         captured={game.captured ?? []}
         terrain={game.terrain}
         marks={marks}
-        clashTargets={clashOdds.map((c) => c.at)}
+        clashOdds={locked ? undefined : clashOdds}
         directions={directions}
         fx={fxShow}
         shake={shake}
@@ -1028,17 +1028,6 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             {COLOR_NAME[duel.clash.attacker]} {pieceName(game, duel.clash.attackerId)} 대 {COLOR_NAME[opponent(duel.clash.attacker)]} {pieceName(game, duel.clash.defenderId)}
           </span>
           <button onClick={() => endDuel.current?.()}>건너뛰기</button>
-        </div>
-      )}
-
-      {clashOdds.length > 0 && !locked && (
-        <div className="hud clash-odds" role="status">
-          {clashOdds.map((c) => (
-            <span key={c.at} className="clash-odd">
-              <span className="clash-odd-square">{squareName(c.at)}</span> 합 ×{c.attack} 대 ×{c.defense}
-              {c.shield ? ' (보호막)' : ''} · 승률 <strong>{Math.round(c.chance * 100)}%</strong>
-            </span>
-          ))}
         </div>
       )}
 

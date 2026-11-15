@@ -15,6 +15,7 @@ import type { Doodle, DoodleOp } from '../session/doodle';
 import { FxLayer, type FxShow } from './FxLayer';
 import { aurasOn } from './auras';
 import { TerrainLayer } from './Terrain';
+import { PIECE_HEIGHT } from './pieceGeometry';
 import type { PieceDirection } from './pieceMotion';
 
 /** 'dice' looks at the dice tray beside the board while a roll plays. */
@@ -61,8 +62,8 @@ interface Props {
   terrain?: readonly TerrainCell[];
   /** While a ruling waits: the square of the piece that acts and the squares it acts on. */
   marks?: { actor: Square; targets: Square[] } | null;
-  /** Targets of the selected piece whose capture would be a clash (합): crossed swords over them. */
-  clashTargets?: Square[];
+  /** Targets of the selected piece whose capture would be a clash (합), with its chance of winning each. */
+  clashOdds?: { at: Square; chance: number }[];
 }
 
 /** Shakes everything on the table (not the camera, which the player controls) for a moment. */
@@ -102,45 +103,73 @@ export function graveyardLayout(captured: CapturedPiece[], side: 1 | -1): { piec
 }
 
 const NO_TERRAIN: readonly TerrainCell[] = [];
-const NO_SQUARES: Square[] = [];
+const NO_ODDS: { at: Square; chance: number }[] = [];
 
-/** Two crossed swords, drawn once into a texture. */
-let swordsTexture: CanvasTexture | null = null;
-function crossedSwords(): CanvasTexture {
-  if (swordsTexture) return swordsTexture;
+/** Crossed swords and a win chance ("67%"), drawn once per chance into a texture. */
+const oddsTextures = new Map<number, { texture: CanvasTexture; aspect: number }>();
+function clashOddsTexture(percent: number): { texture: CanvasTexture; aspect: number } {
+  let t = oddsTextures.get(percent);
+  if (t) return t;
+  const h = 96;
+  const w = 228;
   const c = document.createElement('canvas');
-  c.width = c.height = 128;
+  c.width = w;
+  c.height = h;
   const ctx = c.getContext('2d')!;
-  ctx.fillStyle = 'rgba(24, 25, 32, 0.82)';
+  ctx.fillStyle = 'rgba(24, 25, 32, 0.88)';
+  ctx.strokeStyle = '#e2b45a';
+  ctx.lineWidth = 4;
   ctx.beginPath();
-  ctx.arc(64, 64, 60, 0, Math.PI * 2);
+  ctx.roundRect(2, 2, w - 4, h - 4, 40);
   ctx.fill();
+  ctx.stroke();
+  // Two crossed swords: blade, guard, grip.
   ctx.lineCap = 'round';
   for (const flip of [1, -1]) {
     ctx.save();
-    ctx.translate(64, 64);
+    ctx.translate(52, 48);
     ctx.rotate((flip * Math.PI) / 4);
-    // Blade, guard, grip.
     ctx.strokeStyle = '#e9e4da';
-    ctx.lineWidth = 9;
+    ctx.lineWidth = 7;
     ctx.beginPath();
-    ctx.moveTo(0, -40);
-    ctx.lineTo(0, 22);
+    ctx.moveTo(0, -30);
+    ctx.lineTo(0, 16);
     ctx.stroke();
     ctx.strokeStyle = '#e2b45a';
-    ctx.lineWidth = 8;
+    ctx.lineWidth = 6;
     ctx.beginPath();
-    ctx.moveTo(-14, 22);
-    ctx.lineTo(14, 22);
-    ctx.moveTo(0, 26);
-    ctx.lineTo(0, 40);
+    ctx.moveTo(-11, 16);
+    ctx.lineTo(11, 16);
+    ctx.moveTo(0, 19);
+    ctx.lineTo(0, 30);
     ctx.stroke();
     ctx.restore();
   }
-  swordsTexture = new CanvasTexture(c);
-  swordsTexture.colorSpace = SRGBColorSpace;
-  return swordsTexture;
+  // Better than even in green, worse in red.
+  ctx.fillStyle = percent >= 50 ? '#8fe0a6' : '#f0a39d';
+  ctx.font = '800 54px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${percent}%`, 150, 52);
+  const texture = new CanvasTexture(c);
+  texture.colorSpace = SRGBColorSpace;
+  t = { texture, aspect: w / h };
+  oddsTextures.set(percent, t);
+  return t;
 }
+
+/** Over a piece the selected one could attack into a clash: crossed swords and the chance of winning. */
+function ClashOdds({ at, chance, height }: { at: Square; chance: number; height: number }) {
+  const [x, , z] = squareToWorld(at);
+  const { texture, aspect } = clashOddsTexture(Math.round(chance * 100));
+  const h = 0.042;
+  return (
+    <sprite position={[x, height + 0.62, z]} scale={[h * aspect, h, 1]} renderOrder={22}>
+      <spriteMaterial map={texture} transparent depthWrite={false} depthTest={false} sizeAttenuation={false} />
+    </sprite>
+  );
+}
+
 const LIGHT = '#d4bf98';
 const DARK = '#7d5a3b';
 
@@ -230,7 +259,7 @@ export function BoardScene({
   lightFx = false,
   terrain = NO_TERRAIN,
   marks = null,
-  clashTargets = NO_SQUARES,
+  clashOdds = NO_ODDS,
 }: Props) {
   const resting = useRef(new Map<string, Obstacle>());
   const objects = useRef(new Map<string, Group>());
@@ -294,19 +323,17 @@ export function BoardScene({
             {targets.includes(sq) && (
               <mesh position={[x, 0.006, z]} rotation={[-Math.PI / 2, 0, 0]} onClick={click(sq)}>
                 {board[sq] ? <ringGeometry args={[0.36, 0.46, 32]} /> : <circleGeometry args={[0.14, 24]} />}
-                <meshBasicMaterial color={clashTargets.includes(sq) ? '#e2b45a' : '#4fb36b'} transparent opacity={0.85} />
+                <meshBasicMaterial color={clashOdds.some((c) => c.at === sq) ? '#e2b45a' : '#4fb36b'} transparent opacity={0.85} />
               </mesh>
-            )}
-            {clashTargets.includes(sq) && (
-              <sprite position={[x, 1.55, z]} scale={[0.05, 0.05, 1]} renderOrder={21}>
-                <spriteMaterial map={crossedSwords()} transparent depthWrite={false} depthTest={false} sizeAttenuation={false} />
-              </sprite>
             )}
           </group>
         );
       })}
 
       <TerrainLayer terrain={terrain} />
+      {clashOdds.map((c) => (
+        <ClashOdds key={c.at} at={c.at} chance={c.chance} height={board[c.at] ? PIECE_HEIGHT[board[c.at]!.type] : 1} />
+      ))}
 
       <PiecePhysicsContext.Provider value={physics}>
       {/* One list for the board and the side, so a taken piece stays the same object and travels from its square. */}
