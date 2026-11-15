@@ -2,7 +2,7 @@ import type { Board, Color, GameState, MoveSpecial, Square, TerrainCell } from '
 import { fileOf, rankOf, squareAt } from './squares';
 import { KING_START, ROOK_START } from './castling';
 import { isStunned } from './tags';
-import { blockedSquares } from './terrain';
+import { blockedSquares, terrainBlocks } from './terrain';
 
 const KNIGHT_STEPS = [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]];
 const KING_STEPS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
@@ -23,9 +23,10 @@ export function movesFrom(board: Board, from: Square, terrain?: readonly Terrain
   const f = fileOf(from);
   const r = rankOf(from);
   const out: Square[] = [];
-  const blocked = blockedSquares(terrain);
+  // Walls and unbridged pits stop everything; a laddered wall can be crossed but not stood on.
+  const { noPass, noLand } = terrainBlocks(terrain);
 
-  const canLand = (sq: Square) => !blocked.has(sq) && board[sq]?.color !== piece.color;
+  const canLand = (sq: Square) => !noPass.has(sq) && !noLand.has(sq) && board[sq]?.color !== piece.color;
 
   const steps = (deltas: number[][]) => {
     for (const [df, dr] of deltas) {
@@ -38,7 +39,8 @@ export function movesFrom(board: Board, from: Square, terrain?: readonly Terrain
     for (const [df, dr] of dirs) {
       for (let i = 1; ; i++) {
         const sq = squareAt(f + df * i, r + dr * i);
-        if (sq === null || blocked.has(sq)) break;
+        if (sq === null || noPass.has(sq)) break;
+        if (noLand.has(sq)) continue;
         const occupant = board[sq];
         if (!occupant) {
           out.push(sq);
@@ -70,10 +72,10 @@ export function movesFrom(board: Board, from: Square, terrain?: readonly Terrain
       const dir = piece.color === 'white' ? 1 : -1;
       const startRank = piece.color === 'white' ? 1 : 6;
       const one = squareAt(f, r + dir);
-      if (one !== null && !board[one] && !blocked.has(one)) {
-        out.push(one);
+      if (one !== null && !board[one] && !noPass.has(one)) {
+        if (!noLand.has(one)) out.push(one);
         const two = squareAt(f, r + 2 * dir);
-        if (r === startRank && two !== null && !board[two] && !blocked.has(two)) out.push(two);
+        if (r === startRank && two !== null && !board[two] && canLand(two)) out.push(two);
       }
       for (const df of [-1, 1]) {
         const diag = squareAt(f + df, r + dir);

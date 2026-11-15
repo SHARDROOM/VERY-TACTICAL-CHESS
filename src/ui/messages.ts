@@ -1,5 +1,5 @@
 import { josa } from './josa';
-import { BURN, TERRAIN_NAME, squareName, type Color, type GameEvent, type Outcome, type PieceType, type RejectReason } from '../engine';
+import { BURN, COVER_NAME, TERRAIN_NAME, squareName, type Color, type GameEvent, type Outcome, type PieceType, type RejectReason } from '../engine';
 
 export const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑' };
 
@@ -124,6 +124,15 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         break;
       case 'terrainCleared':
         add(e.expired ? `⌛ ${squareName(e.at)}의 ${josa(TERRAIN_NAME[e.kind], '이/가')} 사라짐` : `${squareName(e.at)}의 ${josa(TERRAIN_NAME[e.kind], '이/가')} 없어짐`);
+        break;
+      case 'coverMade':
+        add(`${e.kind === 'bridge' ? '🌉' : '🪜'} ${squareName(e.at)}에 ${COVER_NAME[e.kind]} ${e.turns === null ? '(영구)' : `(${e.turns}턴)`}`);
+        break;
+      case 'coverGone':
+        add(e.expired ? `⌛ ${squareName(e.at)}의 ${josa(COVER_NAME[e.kind], '이/가')} 사라짐` : `${squareName(e.at)}의 ${josa(COVER_NAME[e.kind], '이/가')} 없어짐`);
+        break;
+      case 'pushed':
+        add(`${josa(name(e.pieceId), '이/가')} 무너지는 다리에서 ${josa(squareName(e.to), '으로/로')} 비켜남`, 'warn');
         break;
       case 'timedOut':
         add(`⏰ ${COLOR_NAME[e.color]}의 시간이 다 되었습니다.${e.apLost ? ` AP ${e.apLost} 차감.` : ''} 턴이 넘어갑니다.`, 'warn');

@@ -50,7 +50,21 @@ export type TerrainKind = 'wall' | 'pit';
 export const TERRAIN_KINDS: readonly TerrainKind[] = ['wall', 'pit'];
 export const TERRAIN_NAME: Record<TerrainKind, string> = { wall: '벽', pit: '구덩이' };
 
-/** A wall or pit on one square. A square with terrain never holds a piece. */
+/** What lets pieces cross terrain: a bridge over a pit (cross and stand on it), a ladder on a wall (cross only). */
+export type CoverKind = 'bridge' | 'ladder';
+export const COVER_NAME: Record<CoverKind, string> = { bridge: '다리', ladder: '사다리' };
+
+export interface TerrainCover {
+  kind: CoverKind;
+  /** Turns of `owner` left; null = permanent (counted like the terrain itself). */
+  turnsLeft: number | null;
+  owner: Color;
+  appliedOnTurn: number;
+  /** The look the GM gave it (a ready-made bridge or ladder otherwise). */
+  prop?: Prop;
+}
+
+/** A wall or pit on one square. Only a bridged pit ever holds a piece. */
 export interface TerrainCell {
   at: Square;
   kind: TerrainKind;
@@ -59,6 +73,10 @@ export interface TerrainCell {
   /** Whose turns it lasts: the side whose turn it was made on. */
   owner: Color;
   appliedOnTurn: number;
+  /** The look the GM gave it (a barricade, a statue...); stones or a plain hole otherwise. */
+  prop?: Prop;
+  /** A bridge over the pit or a ladder on the wall. */
+  cover?: TerrainCover;
 }
 
 /** 0..63, index = rank * 8 + file. a1 = 0, h1 = 7, a8 = 56. */
@@ -90,7 +108,11 @@ export type Effect =
   /** The most recently taken piece of that colour and kind comes back onto the empty square `at`. */
   | { type: 'revive'; at: Square; color: Color; piece: PieceType }
   /** A wall (empty square only) or a pit (swallows whatever stands there) on `at`; turns 0 = permanent. */
-  | { type: 'terrain'; at: Square; kind: TerrainKind; turns: number }
+  | { type: 'terrain'; at: Square; kind: TerrainKind; turns: number; prop?: Prop }
+  /** A bridge over the pit on `at`, or a ladder on the wall there; turns 0 = permanent. */
+  | { type: 'cover'; at: Square; kind: CoverKind; turns: number; prop?: Prop }
+  /** Cuts the bridge or takes the ladder away (whoever stands on a bridge falls). */
+  | { type: 'clearCover'; at: Square }
   /** Takes away the wall or pit on `at` (nothing there: no-op). */
   | { type: 'clearTerrain'; at: Square };
 
@@ -246,6 +268,10 @@ export type GameEvent =
   | { type: 'terrainMade'; at: Square; kind: TerrainKind; turns: number | null }
   /** `expired`: its turns ran out (otherwise an effect took it away). */
   | { type: 'terrainCleared'; at: Square; kind: TerrainKind; expired: boolean }
+  | { type: 'coverMade'; at: Square; kind: CoverKind; turns: number | null }
+  | { type: 'coverGone'; at: Square; kind: CoverKind; expired: boolean }
+  /** A king that would have fallen off a bridge, moved to the nearest safe square instead. */
+  | { type: 'pushed'; pieceId: string; from: Square; to: Square }
   | { type: 'timedOut'; color: Color; apLost: number }
   /** Carries the applied effects and their staging so every screen can play the event step by step. */
   | { type: 'chaos'; title: string; narration: string; effects: Effect[]; staging?: Staging }

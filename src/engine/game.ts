@@ -21,7 +21,7 @@ import { revokeCastling } from './castling';
 import { applyEffects, validateRuling, type EffectContext } from './effects';
 import { extinguish, isShielded, tickTags, withoutTag } from './tags';
 import { SHIELD } from './types';
-import { tickTerrain } from './terrain';
+import { dropFromBridges, tickTerrain } from './terrain';
 import { capturedAfter } from './captured';
 import { canResist, clashMultiplier, resolveClash } from './clash';
 
@@ -146,11 +146,14 @@ function passTurn(
   const { apMax, apPerTurn } = state.rules;
   const apNext = Math.min(apMax, state.ap[next] + apPerTurn);
   const turnNumber = state.turnNumber + 1;
-  const ticked = tickTags(board, state.turn, state.turnNumber);
+  const tagged = tickTags(board, state.turn, state.turnNumber);
   const land = tickTerrain(state.terrain, state.turn, state.turnNumber);
-  events = [...events, ...ticked.events, ...land.events];
+  // A bridge that ran out drops whoever stands on it.
+  const dropped = dropFromBridges(tagged.board, land.fallen, land.terrain);
+  const ticked = { board: dropped.board, events: [...tagged.events, ...dropped.events] };
+  events = [...events, ...tagged.events, ...land.events, ...dropped.events];
   // A piece burnt up or a wall gone may open a line onto a king.
-  if (ticked.events.some((e) => e.type === 'removed') || land.events.length) {
+  if (ticked.events.some((e) => e.type === 'removed' || e.type === 'pushed') || land.events.length) {
     for (const c of ['white', 'black'] as const) if (isInCheck(ticked.board, c, land.terrain)) events.push({ type: 'check', color: c });
   }
   return {

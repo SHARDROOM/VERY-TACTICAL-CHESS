@@ -20,7 +20,7 @@ import type { RuleConfig } from './config';
 import { rankOf, squareName } from './squares';
 import { extinguish, isShielded, isStunned, withTag, withoutTag } from './tags';
 import { SHIELD } from './types';
-import { MAX_TERRAIN } from './terrain';
+import { MAX_TERRAIN, dropFromBridges } from './terrain';
 import { capturedAfter } from './captured';
 import { checkActor } from './actor';
 import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, resolveClash } from './clash';
@@ -98,10 +98,11 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
     const where = `효과 ${i + 1}`;
     const fail = (why: string): EffectResult => ({ ok: false, detail: `${where}: ${why}` });
     const pieceAt = (sq: unknown): Piece | null => (onBoard(sq) ? board[sq] : null);
-    /** Why a piece cannot land on `sq` because of a wall or pit there, or null. */
+    /** Why a piece cannot land on `sq` because of a wall or pit there (a bridged pit is ground), or null. */
     const blockedLanding = (sq: Square): string | null => {
       const c = terrainOn(sq);
-      return c ? `${squareName(sq)}에 ${TERRAIN_NAME[c.kind]}이(가) 있음` : null;
+      if (!c || (c.kind === 'pit' && c.cover?.kind === 'bridge')) return null;
+      return `${squareName(sq)}에 ${TERRAIN_NAME[c.kind]}이(가) 있음`;
     };
 
     switch (e.type) {
@@ -113,7 +114,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (e.from === e.to) return fail('같은 칸으로 이동');
         const ground = terrainOn(e.to);
         if (ground?.kind === 'wall') return fail(`${squareName(e.to)}에 벽이 있음`);
-        if (ground?.kind === 'pit') {
+        if (ground?.kind === 'pit' && ground.cover?.kind !== 'bridge') {
           // Thrown into a pit: it falls in and is gone (a shield saves it, and it stays put).
           if (piece.type === 'king') return fail('킹은 구덩이에 빠뜨릴 수 없음');
           if (isShielded(piece)) {
@@ -359,8 +360,43 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           events.push({ type: 'removed', piece, at: e.at, cause: 'pit' }, ...goneEvents(piece, e.at));
         }
         const turnsLeft = e.turns === 0 ? null : e.turns;
-        terrain = [...terrain.filter((c) => c.at !== e.at), { at: e.at, kind: e.kind, turnsLeft, owner: ctx.color ?? 'white', appliedOnTurn: ctx.turnNumber }];
+        const look = e.prop ? cleanProp(e.prop) : null;
+        terrain = [
+          ...terrain.filter((c) => c.at !== e.at),
+          { at: e.at, kind: e.kind, turnsLeft, owner: ctx.color ?? 'white', appliedOnTurn: ctx.turnNumber, ...(look && { prop: look }) },
+        ];
         events.push({ type: 'terrainMade', at: e.at, kind: e.kind, turns: turnsLeft });
+        break;
+      }
+      case 'cover': {
+        if (!onBoard(e.at)) return fail('보드 밖의 칸');
+        if (e.kind !== 'bridge' && e.kind !== 'ladder') return fail('덮개는 bridge(다리)나 ladder(사다리)만 됨');
+        if (!isInt(e.turns) || e.turns < 0) return fail('지속 턴은 0(영구) 이상의 정수여야 함');
+        const cell = terrainOn(e.at);
+        const needs = e.kind === 'bridge' ? 'pit' : 'wall';
+        if (cell?.kind !== needs) return fail(`${e.kind === 'bridge' ? '다리는 구덩이' : '사다리는 벽'} 위에만 놓을 수 있음 (${squareName(e.at)})`);
+        const turnsLeft = e.turns === 0 ? null : e.turns;
+        const look = e.prop ? cleanProp(e.prop) : null;
+        const cover = { kind: e.kind, turnsLeft, owner: ctx.color ?? 'white', appliedOnTurn: ctx.turnNumber, ...(look && { prop: look }) };
+        terrain = terrain.map((c) => (c.at === e.at ? { ...c, cover } : c));
+        events.push({ type: 'coverMade', at: e.at, kind: e.kind, turns: turnsLeft });
+        break;
+      }
+      case 'clearCover': {
+        if (!onBoard(e.at)) return fail('보드 밖의 칸');
+        const cell = terrainOn(e.at);
+        // No bridge or ladder there: a harmless no-op.
+        if (!cell?.cover) break;
+        const { cover, ...bare } = cell;
+        terrain = terrain.map((c) => (c.at === e.at ? bare : c));
+        events.push({ type: 'coverGone', at: e.at, kind: cover.kind, expired: false });
+        if (cover.kind === 'bridge') {
+          // Whoever stood on the bridge falls in (a king is pushed aside).
+          const dropped = dropFromBridges(board, [e.at], terrain);
+          for (let sq = 0; sq < 64; sq++) board[sq] = dropped.board[sq];
+          events.push(...dropped.events);
+          if (dropped.events.length) touched.push(e.at);
+        }
         break;
       }
       case 'clearTerrain': {

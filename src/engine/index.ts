@@ -2,7 +2,7 @@ export * from './types';
 export { applyCommand, clashEventFor, exitsOf, hasAnyMove } from './game';
 export { CLASH_MAX, CLASH_MIN, CLASH_ROLLS, DUEL_TIMING, duelSeconds, canResist, clashMultiplier, clashWinChance, exchangesFor, resolveClash } from './clash';
 export { capturedAfter } from './captured';
-export { blockedSquares, terrainAt, tickTerrain, MAX_TERRAIN } from './terrain';
+export { blockedSquares, dropFromBridges, terrainAt, terrainBlocks, tickTerrain, MAX_TERRAIN } from './terrain';
 export { createInitialState, createStateFrom } from './setup';
 export { movesFrom, legalTargets, isAttacked, isInCheck, findKing, type Target } from './moves';
 export { parseMoveText } from './notation';

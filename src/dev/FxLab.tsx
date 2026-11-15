@@ -21,6 +21,9 @@ import {
   type PieceType,
   type AttachPoint,
   type PropPreset,
+  type TerrainCell,
+  type TerrainKind,
+  type CoverKind,
   defaultAttach,
 } from '../engine';
 import type { PieceDirection } from '../scene/pieceMotion';
@@ -35,8 +38,9 @@ import type { FxShow } from '../scene/FxLayer';
  * `&exit=ash:d7,shatter:e7` (removed, leaving that way), `&aura=fire:e2:3` (a tag with an aura).
  * Props: `&prop=sword:e2,shield:d2:leftHand,flag:c2::#3355cc,crown:e1` (preset:square:attach:colour), and
  * `&parts=e4:<url-encoded JSON array of parts>` for a prop of the GM's own parts.
+ * Terrain: `&terrain=wall:d4,pit:e4,wall:f4:barricade` (kind:square:look) and `&cover=bridge:e4,ladder:d4`.
  */
-function staged(params: URLSearchParams, start: Board): { board: Board; captured: CapturedPiece[]; directions: Map<string, PieceDirection> } {
+function staged(params: URLSearchParams, start: Board): { board: Board; captured: CapturedPiece[]; directions: Map<string, PieceDirection>; terrain: TerrainCell[] } {
   const list = (name: string) => (params.get(name) ?? '').split(',').filter(Boolean).map((x) => x.split(':'));
   const effects: Effect[] = [];
   const trips: { from: number; style: MotionStyle; d: number }[] = [];
@@ -60,6 +64,10 @@ function staged(params: URLSearchParams, start: Board): { board: Board; captured
     const [sq, json] = [custom.slice(0, 2), custom.slice(3)];
     effects.push({ type: 'tag', at: parseSquare(sq)!, tag: '자유 조형물', turns: 0, prop: { preset: null, parts: JSON.parse(json), attach: 'rightHand', scale: 1 } });
   }
+  for (const [kind, sq, look] of list('terrain')) {
+    effects.push({ type: 'terrain', at: parseSquare(sq)!, kind: kind as TerrainKind, turns: 3, ...(look && { prop: { preset: look as PropPreset, parts: [], attach: 'feet', scale: 1 } }) });
+  }
+  for (const [kind, sq] of list('cover')) effects.push({ type: 'cover', at: parseSquare(sq)!, kind: kind as CoverKind, turns: 2 });
   const exits = new Map<string, Exit>();
   for (const [exit, sq] of list('exit')) {
     effects.push({ type: 'remove', at: parseSquare(sq)! });
@@ -75,7 +83,7 @@ function staged(params: URLSearchParams, start: Board): { board: Board; captured
   for (const [sq] of list('swirl')) get(applied.board[parseSquare(sq)!]!.id).swirl = true;
   const now = performance.now();
   for (const [kind, sq] of list('act')) get(applied.board[parseSquare(sq)!]!.id).acts.push({ kind: kind as ActKind, start: now, duration: ACT_DURATION[kind as ActKind] });
-  return { board: applied.board, captured: capturedAfter([], applied.events, exits), directions };
+  return { board: applied.board, captured: capturedAfter([], applied.events, exits), directions, terrain: applied.terrain };
 }
 function parseFx(spec: string): Fx[] {
   return spec
@@ -102,7 +110,7 @@ export default function FxLab() {
   const [spec, setSpec] = useState(params.get('fx') ?? 'fire:burst:e4');
   const [nonce, setNonce] = useState(0);
   const start = useMemo(() => createInitialState().board, []);
-  const [scene, setScene] = useState<{ board: Board; captured: CapturedPiece[]; directions?: Map<string, PieceDirection> }>({ board: start, captured: [] });
+  const [scene, setScene] = useState<{ board: Board; captured: CapturedPiece[]; directions?: Map<string, PieceDirection>; terrain?: TerrainCell[] }>({ board: start, captured: [] });
   const fx = useMemo<FxShow>(() => {
     const list = parseFx(spec);
     return { fx: list, starts: list.map(() => 0), ends: list.map((f) => f.duration), startedAt: performance.now(), followers: list.map(() => null) };
@@ -131,6 +139,7 @@ export default function FxLab() {
         onDiceLanded={() => {}}
         ap={{ white: 0, black: 0 }}
         captured={scene.captured}
+        terrain={scene.terrain}
         fx={fx}
         shake={shake}
       />

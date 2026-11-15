@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { BoxGeometry, CanvasTexture, CircleGeometry, DodecahedronGeometry, RingGeometry, SRGBColorSpace, type Group } from 'three';
-import type { Square, TerrainCell, TerrainKind } from '../engine';
+import { COVER_NAME, type Prop, type Square, type TerrainCell, type TerrainCover, type TerrainKind } from '../engine';
 import { squareToWorld } from './coords';
-import { TurnBadges } from './TagEffects';
+import { TurnBadges, type Chip } from './TagEffects';
+import { PropMesh } from './PropMesh';
 
 /*
  * Walls and pits on the board (docs/SPEC.md, "지형"). A wall rises out of its square and sinks
@@ -150,11 +151,71 @@ function TerrainPiece({ shown }: { shown: Shown }) {
       g.visible = q > 0.001;
     }
   });
-  const label = cell.turnsLeft === null ? null : cell.turnsLeft;
+  const chips: Chip[] = [];
+  if (cell.turnsLeft !== null) chips.push({ text: `${cell.kind === 'wall' ? '벽' : '구덩이'} ${cell.turnsLeft}`, tone: 'terrain' });
+  if (cell.cover?.turnsLeft != null) chips.push({ text: `${COVER_NAME[cell.cover.kind]} ${cell.cover.turnsLeft}`, tone: 'terrain' });
+  const top = cell.kind === 'wall' ? (cell.prop ? 1 : WALL_HEIGHT) + 0.32 : 0.3;
   return (
     <group ref={ref} position={[x, 0, z]}>
-      {cell.kind === 'wall' ? <Wall at={cell.at} /> : <Pit at={cell.at} />}
-      {label !== null && !shown.gone && <TurnBadges chips={[{ text: `${cell.kind === 'wall' ? '벽' : '구덩이'} ${label}`, tone: 'terrain' }]} y={cell.kind === 'wall' ? WALL_HEIGHT + 0.32 : 0.3} />}
+      {cell.kind === 'wall' ? (
+        // A wall the GM gave a look (a barricade, a statue) is that; otherwise dry stones.
+        cell.prop ? <PropMesh prop={cell.prop} maxReach={0.75} /> : <Wall at={cell.at} />
+      ) : (
+        <>
+          <Pit at={cell.at} />
+          {cell.prop && <PropMesh prop={cell.prop} maxReach={0.7} />}
+        </>
+      )}
+      {!shown.gone && <Cover cover={cell.cover ?? null} onWall={cell.kind === 'wall'} />}
+      {chips.length > 0 && !shown.gone && <TurnBadges chips={chips} y={top} />}
+    </group>
+  );
+}
+
+const BRIDGE: Prop = { preset: 'bridge', parts: [], attach: 'feet', scale: 1 };
+const LADDER: Prop = { preset: 'ladder', parts: [], attach: 'feet', scale: 1 };
+const COVER_SECONDS = 0.7;
+
+/**
+ * A bridge laid over a pit (it drops into place) or a ladder leaning on a wall from its maker's
+ * side (it tips onto the wall). When it goes it drops into the pit or falls away.
+ */
+function Cover({ cover, onWall }: { cover: TerrainCover | null; onWall: boolean }) {
+  const ref = useRef<Group>(null);
+  const [shown, setShown] = useState<{ cover: TerrainCover; since: number; gone: boolean } | null>(cover ? { cover, since: -1e9, gone: false } : null);
+  useEffect(() => {
+    const now = performance.now();
+    if (cover) setShown((old) => (old && !old.gone && old.cover.kind === cover.kind ? { ...old, cover } : { cover, since: now, gone: false }));
+    else setShown((old) => (old && !old.gone ? { ...old, since: now, gone: true } : old));
+  }, [cover]);
+  useEffect(() => {
+    if (!shown?.gone) return;
+    const t = setTimeout(() => setShown(null), COVER_SECONDS * 1000 + 50);
+    return () => clearTimeout(t);
+  }, [shown]);
+  useFrame(() => {
+    const g = ref.current;
+    if (!g || !shown) return;
+    const q = Math.min(1, (performance.now() - shown.since) / 1000 / COVER_SECONDS);
+    const e = shown.gone ? q * q : easeOutBack(q);
+    if (onWall) {
+      const s = shown.cover.owner === 'white' ? 1 : -1;
+      // Tips onto the wall from flat, leaning in at the top; falls back away when it goes.
+      const lean = shown.gone ? -0.3 * s + 1.2 * s * e : 1.3 * s - 1.6 * s * e;
+      g.rotation.set(lean, 0, 0);
+      g.position.set(0, 0, 0.56 * s);
+      g.visible = !(shown.gone && q >= 1);
+    } else {
+      // Drops onto the pit; sinks into it when it goes.
+      g.position.set(0, shown.gone ? -0.5 * e : 0.6 * (1 - Math.min(1, e)), 0);
+      g.visible = !(shown.gone && q >= 1);
+    }
+  });
+  if (!shown) return null;
+  const prop = shown.cover.prop ?? (onWall ? LADDER : BRIDGE);
+  return (
+    <group ref={ref}>
+      <PropMesh prop={prop} maxReach={onWall ? 0.8 : 0.85} />
     </group>
   );
 }

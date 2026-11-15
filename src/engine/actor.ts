@@ -33,6 +33,8 @@ export function targetsOf(e: Effect): Square[] {
     case 'revive':
     case 'terrain':
     case 'clearTerrain':
+    case 'cover':
+    case 'clearCover':
       return [e.at];
   }
 }
