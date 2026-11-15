@@ -239,6 +239,8 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const bobPhase = useRef(Math.random() * 6);
   /** The recording this piece last played (so it settles back once only). */
   const puppetDone = useRef<unknown>(null);
+  /** The recording it is playing now (if another takes its place first, it still settles back). */
+  const puppetOn = useRef<unknown>(null);
   /** The next plan is the slow walk back after a recording, not an ordinary trip. */
   const settleNext = useRef(false);
   const planRef = useRef<() => void>(() => {});
@@ -566,7 +568,16 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     let squash = 1;
     // A recording (a duel, a romp) drives the piece; when it is over it eases back where it belongs.
     const pup = direction?.puppet;
+    // Cut short (the next recording started without it): it eases back from where it was left.
+    if (puppetOn.current && puppetOn.current !== pup && puppetDone.current !== puppetOn.current) {
+      puppetDone.current = puppetOn.current;
+      puppetOn.current = null;
+      settleNext.current = true;
+      lastTarget.current = '';
+      planRef.current();
+    }
     if (pup && puppetDone.current !== pup) {
+      puppetOn.current = pup;
       const t = (now - pup.start) / 1000;
       if (t >= 0) {
         const o = Math.max(0, Math.min(pup.steps - 1, Math.floor(t / pup.dt))) * 7;
