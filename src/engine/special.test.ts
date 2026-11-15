@@ -62,7 +62,9 @@ describe('end turn', () => {
 
   it('is allowed after a special action was attempted, even a failed one, and passes without moving', () => {
     for (const roll of [20, 2]) {
-      const s = ok(attempt(ok(propose(rich())).state, roll)).state;
+      let s = ok(attempt(ok(propose(rich())).state, roll)).state;
+      // A failure first offers a second try; letting it go leaves the turn to end.
+      if (s.pending?.retry) s = ok(cancel(s)).state;
       const r = ok(endTurn(s));
       expect(r.state.turn).toBe('black');
       expect(r.state.board).toEqual(s.board);
@@ -248,5 +250,66 @@ describe('attempting and cancelling', () => {
   it('special-action effects revoke castling rights', () => {
     const s = ok(propose(rich(), ruling({ effects: [{ type: 'remove', at: sq('h8') }] }))).state;
     expect(ok(attempt(s, 20)).state.castling.black.kingSide).toBe(false);
+  });
+});
+
+describe('rolling again after a failure', () => {
+  const failed = (ap = 3, over: Partial<Ruling> = {}) => ok(attempt(ok(propose(rich(ap), ruling(over))).state, 5));
+
+  it('a plain failure keeps the action open for a second try', () => {
+    const r = failed();
+    expect(r.state.ap.white).toBe(2);
+    expect(r.state.pending).toMatchObject({ color: 'white', action: '나이트를 투석기로 날린다', retry: { roll: 5, narration: '실패 서술', rerolls: 0 } });
+    expect(r.state.precedents).toHaveLength(1);
+  });
+
+  it('a second try costs the reroll price, uses the same ruling and replaces the precedent', () => {
+    const s = failed(5, { cost: 3 });
+    expect(s.state.ap.white).toBe(2);
+    const r = ok(attempt(s.state, 15));
+    expect(r.events[0]).toMatchObject({ type: 'specialResolved', roll: 15, cost: DEFAULT_RULES.rerollCost, reroll: 1, success: true });
+    expect(r.state.ap.white).toBe(2 - DEFAULT_RULES.rerollCost);
+    expect(r.state.board[sq('e5')]).toMatchObject({ type: 'knight' });
+    expect(r.state.pending).toBeNull();
+    expect(r.state.precedents).toEqual([expect.objectContaining({ roll: 15, outcome: 'success', rerolls: 1, cost: 3 })]);
+  });
+
+  it('failing again keeps it open, counting the tries, until the AP runs out', () => {
+    const s = failed(3);
+    const second = ok(attempt(s.state, 4));
+    expect(second.state.pending?.retry).toEqual({ roll: 4, narration: '실패 서술', rerolls: 1 });
+    expect(second.state.ap.white).toBe(1);
+    const third = ok(attempt(second.state, 6));
+    expect(third.events[0]).toMatchObject({ reroll: 2 });
+    expect(third.state.ap.white).toBe(0);
+    expect(third.state.pending).toBeNull();
+    expect(third.state.precedents).toEqual([expect.objectContaining({ roll: 6, rerolls: 2 })]);
+  });
+
+  it('letting it go ends the action (the AP stays spent)', () => {
+    const r = ok(cancel(failed().state));
+    expect(r.state.pending).toBeNull();
+    expect(r.state.ap.white).toBe(2);
+    expect(r.events).toEqual([{ type: 'specialCancelled', color: 'white', action: '나이트를 투석기로 날린다', afterFailure: true }]);
+    expect(okMove(r.state, 'e2', 'e4').state.turn).toBe('black');
+  });
+
+  it('while it is open nothing else can happen', () => {
+    const s = failed().state;
+    expect(move(s, 'e2', 'e4')).toMatchObject({ ok: false, reason: 'actionPending' });
+    expect(endTurn(s)).toMatchObject({ ok: false, reason: 'actionPending' });
+  });
+
+  it('no second try after a natural 1, without the AP for it, or when the room turned rerolls off', () => {
+    expect(ok(attempt(ok(propose(rich(3))).state, 1)).state.pending).toBeNull();
+    expect(failed(1).state.pending).toBeNull();
+    const off = { ...rich(3), rules: { ...DEFAULT_RULES, rerollCost: 0 } };
+    expect(ok(attempt(ok(propose(off)).state, 5)).state.pending).toBeNull();
+  });
+
+  it('a costlier reroll rule is charged', () => {
+    const s = { ...rich(5), rules: { ...DEFAULT_RULES, rerollCost: 2 } };
+    const f = ok(attempt(ok(propose(s)).state, 5));
+    expect(ok(attempt(f.state, 15)).state.ap.white).toBe(2);
   });
 });

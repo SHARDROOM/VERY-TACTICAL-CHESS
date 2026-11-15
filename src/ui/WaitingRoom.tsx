@@ -5,6 +5,7 @@ import {
   CHAOS_CHANCES,
   CHAT_MAX_LENGTH,
   NAME_MAX_LENGTH,
+  REROLL_COSTS,
   TIMEOUT_PENALTIES,
   TURN_SECONDS,
   type Member,
@@ -15,7 +16,7 @@ import { saveName } from '../session/storage';
 import { LobbyBackdrop } from './LobbyBackdrop';
 import { ConnectionOverlay } from './ConnectionOverlay';
 import { SettingsMenu, useFullscreen } from './SettingsMenu';
-import { chaosLabel, rulesSummary, secondsLabel } from './rules';
+import { chaosLabel, rerollLabel, rulesSummary, secondsLabel } from './rules';
 import { playSfx } from '../audio/sfx';
 import { Icon } from './Icon';
 
@@ -194,6 +195,16 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
                       {AP_PER_TURN.map((n) => (
                         <option key={n} value={n}>
                           {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>실패 후 다시 굴리기</span>
+                    <select value={rules.rerollCost} onChange={(e) => set({ rerollCost: Number(e.target.value) })}>
+                      {REROLL_COSTS.map((n) => (
+                        <option key={n} value={n}>
+                          {rerollLabel(n)}
                         </option>
                       ))}
                     </select>

@@ -211,7 +211,7 @@ function precedentList(state: GameState): string {
   return recent
     .map(
       (p) =>
-        `- 턴 ${p.turnNumber} ${COLOR[p.color]}: "${sanitizeDeclaration(p.action)}" → ${p.interpretation} / DC ${p.dc}, AP ${p.cost}, 주사위 ${p.roll} (${OUTCOME[p.outcome]})`,
+        `- 턴 ${p.turnNumber} ${COLOR[p.color]}: "${sanitizeDeclaration(p.action)}" → ${p.interpretation} / DC ${p.dc}, AP ${p.cost}, 주사위 ${p.roll} (${OUTCOME[p.outcome]}${p.rerolls ? `, 실패 후 ${p.rerolls}번 다시 굴림` : ''})`,
     )
     .join('\n');
 }

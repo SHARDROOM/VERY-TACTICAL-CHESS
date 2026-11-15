@@ -144,6 +144,7 @@ export function cleanRules(base: RuleConfig, change: Partial<RuleConfig>): RuleC
   const next = { ...base };
   if ('turnSeconds' in change) next.turnSeconds = pick(change.turnSeconds, TURN_SECONDS, base.turnSeconds);
   if ('timeoutPenalty' in change) next.timeoutPenalty = pick(change.timeoutPenalty, TIMEOUT_PENALTIES, base.timeoutPenalty);
+  if ('rerollCost' in change) next.rerollCost = pick(change.rerollCost, REROLL_COSTS, base.rerollCost);
   if ('apPerTurn' in change) next.apPerTurn = pick(change.apPerTurn, AP_PER_TURN, base.apPerTurn);
   if ('chaosChance' in change) next.chaosChance = pick(change.chaosChance, CHAOS_CHANCES.map((c) => c.value), base.chaosChance);
   if ('doodle' in change && typeof change.doodle === 'boolean') next.doodle = change.doodle;
@@ -154,6 +155,8 @@ export function cleanRules(base: RuleConfig, change: Partial<RuleConfig>): RuleC
 export const TURN_SECONDS = [0, 30, 60, 90, 120, 180] as const;
 export const TIMEOUT_PENALTIES = [1, 2, 3] as const;
 export const AP_PER_TURN = [1, 2, 3] as const;
+/** AP for a second try after a failed special action; 0 = none. */
+export const REROLL_COSTS = [0, 1, 2, 3] as const;
 export const CHAOS_CHANCES = [
   { value: 0, label: '끔' },
   { value: 0.1, label: '가끔 (10%)' },

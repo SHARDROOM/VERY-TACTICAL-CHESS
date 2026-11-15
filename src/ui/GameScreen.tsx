@@ -25,6 +25,7 @@ import {
 import { BoardScene, type CameraRequest } from '../scene/BoardScene';
 import { COLOR_NAME, OUTCOME_LABEL, PIECE_NAME, REJECT_MESSAGE, describeEvents, score, type LogEntry, type LogTone } from './messages';
 import { PrecedentList } from './PrecedentList';
+import { josa } from './josa';
 import { GmSettings, type GmConfig } from './GmSettings';
 import { PieceInfo } from './PieceInfo';
 import { SettingsMenu, useFullscreen } from './SettingsMenu';
@@ -765,7 +766,10 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   /** Back to the waiting room (this screen goes away). */
   const restart = () => session.restart();
 
-  const canAfford = pending ? game.ap[pending.color] >= pending.ruling.cost : false;
+  // After a failed roll the same ruling can be rolled again, for the room's reroll price.
+  const retry = pending?.retry;
+  const rollCost = pending ? (retry ? game.rules.rerollCost : pending.ruling.cost) : 0;
+  const canAfford = pending ? game.ap[pending.color] >= rollCost : false;
   const canActOnPending = !!pending && (seat === 'both' || seat === pending.color) && connected;
   const nameOf = (color: Color) => view.members.find((m) => m.role === color)?.name;
   const absent = view.members.find((m) => (m.role === 'white' || m.role === 'black') && !m.online);
@@ -986,6 +990,14 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
           <article className="ruling-sheet" aria-labelledby="ruling-title">
             <div className="ruling-who">{COLOR_NAME[pending.color]}{online && nameOf(pending.color) ? `(${nameOf(pending.color)})` : ''}의 선언</div>
             <blockquote>“{pending.action}”</blockquote>
+            {retry && (
+              <div className="retry-note">
+                <div className="retry-roll">
+                  🎲 {retry.roll} 실패{retry.rerolls ? ` (다시 굴림 ${retry.rerolls}번째)` : ''}
+                </div>
+                {retry.narration && <p className="retry-narration">{retry.narration}</p>}
+              </div>
+            )}
             <div className="ruling-body">
               <h2 id="ruling-title">GM 판정</h2>
               <p className="ruling-text">{pending.ruling.interpretation}</p>
@@ -1020,12 +1032,12 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
                 <D20Odds dc={pending.ruling.dc} />
                 <dl className="ruling-facts">
                   <div>
-                    <dt>비용</dt>
+                    <dt>{retry ? '다시 굴리는 비용' : '비용'}</dt>
                     <dd>
-                      {Array.from({ length: pending.ruling.cost }, (_, i) => (
+                      {Array.from({ length: rollCost }, (_, i) => (
                         <span key={i} className="coin" aria-hidden />
                       ))}
-                      AP {pending.ruling.cost}
+                      AP {rollCost}
                     </dd>
                   </div>
                   <div>
@@ -1037,7 +1049,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
                   <li>20이 나오면 대성공: {pending.ruling.critSuccessEffects?.length ? '성공보다 더 좋은 결과가 납니다.' : '성공과 같은 결과입니다.'}</li>
                   <li>1이 나오면 대실패: {pending.ruling.critFailureEffects?.length ? '역효과가 있습니다.' : '아무 일도 일어나지 않습니다.'}</li>
                 </ul>
-                {!canAfford && <p className="infeasible">AP가 부족해서 시도할 수 없습니다.</p>}
+                {!canAfford && <p className="infeasible">AP가 부족해서 {retry ? '다시 굴릴' : '시도할'} 수 없습니다.</p>}
               </>
             ) : (
               <p className="infeasible">GM이 불가능한 행동으로 판정했습니다.</p>
@@ -1045,12 +1057,15 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             {canActOnPending ? (
               <div className="choice-row">
                 <button className="primary" onClick={() => session.request({ type: 'attempt' })} disabled={!pending.ruling.feasible || !canAfford}>
-                  주사위 굴리기
+                  {retry ? `다시 굴리기 (AP ${rollCost})` : '주사위 굴리기'}
                 </button>
-                <button onClick={() => session.request({ type: 'cancel' })}>취소 (AP는 그대로)</button>
+                <button onClick={() => session.request({ type: 'cancel' })}>{retry ? '그만두기' : '취소 (AP는 그대로)'}</button>
               </div>
             ) : (
-              <p className="muted-line">{spectator ? `${COLOR_NAME[pending.color]}이(가) 굴릴지 정하는 중입니다…` : '상대가 굴릴지 정하는 중입니다…'}</p>
+              <p className="muted-line">
+                {spectator ? `${josa(COLOR_NAME[pending.color], '이/가')} ` : '상대가 '}
+                {retry ? '다시 굴릴지' : '굴릴지'} 정하는 중입니다…
+              </p>
             )}
           </article>
         </div>

@@ -19,7 +19,10 @@ export function PrecedentList({ precedents, onClose }: { precedents: Precedent[]
                   <span>
                     {p.turnNumber}턴, {COLOR_NAME[p.color]}
                   </span>
-                  <span className={`outcome ${p.outcome}`}>🎲 {p.roll} {OUTCOME_LABEL[p.outcome]}</span>
+                  <span className={`outcome ${p.outcome}`}>
+                    🎲 {p.roll} {OUTCOME_LABEL[p.outcome]}
+                    {p.rerolls ? ` (다시 굴림 ${p.rerolls}번)` : ''}
+                  </span>
                 </div>
                 <div className="precedent-action">“{p.action}”</div>
                 <div className="muted">{p.interpretation}</div>

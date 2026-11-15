@@ -223,7 +223,8 @@ describe('reconnecting', () => {
     // ...and play continues: the pending ruling can still be attempted (it is white's).
     host.request({ type: 'attempt' });
     await settle();
-    expect(guest.view().state.pending).toBeNull();
+    // Rolled (a failure leaves it open for a second try, so look at the precedents).
+    expect(guest.view().state.precedents).toHaveLength(state.precedents.length + 1);
     guest.dispose();
   });
 

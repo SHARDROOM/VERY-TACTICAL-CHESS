@@ -52,8 +52,8 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
     case 'attemptSpecial':
       return attempt(state, cmd.roll, cmd.clashRolls);
     case 'cancelSpecial': {
-      const { color, action } = state.pending!;
-      return { ok: true, state: { ...state, pending: null }, events: [{ type: 'specialCancelled', color, action }] };
+      const { color, action, retry } = state.pending!;
+      return { ok: true, state: { ...state, pending: null }, events: [{ type: 'specialCancelled', color, action, ...(retry && { afterFailure: true }) }] };
     }
     case 'chaos':
       return chaos(state, cmd.chaos);
@@ -320,9 +320,12 @@ function propose(state: GameState, cmd: Extract<Command, { type: 'proposeSpecial
 }
 
 function attempt(state: GameState, roll: number, clashRolls: readonly number[] = []): CommandResult {
-  const { color, action, ruling } = state.pending!;
+  const { color, action, ruling, retry } = state.pending!;
   if (!ruling.feasible) return { ok: false, reason: 'notFeasible' };
-  if (state.ap[color] < ruling.cost) return { ok: false, reason: 'notEnoughAp' };
+  // A second try after a failure costs the reroll price, not the action's.
+  const cost = retry ? state.rules.rerollCost : ruling.cost;
+  const reroll = retry ? retry.rerolls + 1 : 0;
+  if (state.ap[color] < cost) return { ok: false, reason: 'notEnoughAp' };
   if (!Number.isInteger(roll) || roll < 1 || roll > 20) return { ok: false, reason: 'invalidRoll' };
 
   // A natural 20 always succeeds and a natural 1 always fails, whatever the DC.
@@ -367,7 +370,7 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
 
   const staging = ruling.staging?.[outcome];
   const events: GameEvent[] = [
-    { type: 'specialResolved', color, action, roll, dc: ruling.dc, cost: ruling.cost, success, outcome, narration, effects: toApply, ...(staging && { staging }) },
+    { type: 'specialResolved', color, action, roll, dc: ruling.dc, cost, success, outcome, narration, ...(reroll && { reroll }), effects: toApply, ...(staging && { staging }) },
     ...effectEvents,
   ];
   const precedent: Precedent = {
@@ -379,17 +382,23 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
     cost: ruling.cost,
     roll,
     outcome,
+    ...(reroll && { rerolls: reroll }),
   };
+  const apLeft = state.ap[color] - cost;
+  // A plain failure may be rolled again (same ruling) while the AP lasts; a natural 1 stands.
+  const rerollCost = state.rules.rerollCost;
+  const again = outcome === 'failure' && rerollCost > 0 && apLeft >= rerollCost;
   const after: GameState = withCaptured({
     ...state,
     board,
     terrain,
     castling,
     nextSpawnId,
-    ap: { ...state.ap, [color]: state.ap[color] - ruling.cost },
+    ap: { ...state.ap, [color]: apLeft },
     usedApThisTurn: true,
-    pending: null,
-    precedents: [...state.precedents, precedent],
+    pending: again ? { color, action, ruling, retry: { roll, narration, rerolls: reroll } } : null,
+    // A second try replaces the precedent of the failure it follows (one action, one precedent).
+    precedents: [...(retry ? state.precedents.slice(0, -1) : state.precedents), precedent],
   }, events, exits);
 
   // A king that charged into a clash and lost.

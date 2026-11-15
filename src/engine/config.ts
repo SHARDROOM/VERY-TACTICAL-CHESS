@@ -17,6 +17,8 @@ export interface RuleConfig {
   turnSeconds: number;
   /** AP lost when the time runs out; the turn then passes. */
   timeoutPenalty: number;
+  /** AP for rolling a failed special action again (same ruling, same turn); 0 = no second tries. */
+  rerollCost: number;
   /** Chance (0..1) that something chaotic happens at the start of each turn; 0 = off. */
   chaosChance: number;
   /** Whether anyone in the room may draw and write on the table. */
@@ -35,6 +37,7 @@ export const DEFAULT_RULES: RuleConfig = {
   maxEffects: 8,
   turnSeconds: 0,
   timeoutPenalty: 1,
+  rerollCost: 1,
   chaosChance: 0,
   doodle: true,
 };

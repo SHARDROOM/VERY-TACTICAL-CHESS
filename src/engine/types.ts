@@ -165,6 +165,8 @@ export interface Precedent {
   cost: number;
   roll: number;
   outcome: Outcome;
+  /** How many times the dice were rolled again after a failure (roll and outcome are the last). */
+  rerolls?: number;
 }
 
 /** Something chaotic the GM made happen at the start of a turn (the 혼돈 rule). */
@@ -187,6 +189,11 @@ export interface PendingAction {
   color: Color;
   action: string;
   ruling: Ruling;
+  /**
+   * Set when the last roll was a plain failure: the same ruling may be rolled again for
+   * `rules.rerollCost` AP, or let go. `rerolls`: second tries made so far.
+   */
+  retry?: { roll: number; narration: string; rerolls: number };
 }
 
 export interface GameState {
@@ -286,7 +293,8 @@ export type GameEvent =
   | { type: 'ownKingExposed'; color: Color }
   | { type: 'turnPassed'; turn: Color; turnNumber: number; apGained: number }
   | { type: 'specialProposed'; color: Color; action: string; ruling: Ruling }
-  | { type: 'specialCancelled'; color: Color; action: string }
+  /** `afterFailure`: the player let a failed action go instead of rolling again. */
+  | { type: 'specialCancelled'; color: Color; action: string; afterFailure?: boolean }
   | {
       type: 'specialResolved';
       color: Color;
@@ -297,6 +305,8 @@ export type GameEvent =
       success: boolean;
       outcome: Outcome;
       narration: string;
+      /** Set on a second try after a failure: which one (1 = the first reroll). `cost` is what it cost. */
+      reroll?: number;
       /** The effects that were applied for this outcome (empty on a plain failure), for step-by-step playback. */
       effects: Effect[];
       staging?: Staging;
