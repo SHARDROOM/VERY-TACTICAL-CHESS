@@ -8,6 +8,7 @@ export function describeHttpError(provider: string, status: number, detail: stri
   if (status === 403) return `이 ${provider} API 키로는 선택한 모델을 쓸 수 없습니다.${d}`;
   if (status === 404) return `선택한 ${provider} 모델을 찾을 수 없습니다. GM 설정에서 모델 이름을 확인해 주세요.${d}`;
   if (status === 429) return `${provider} 요청 한도나 크레딧이 부족합니다. 잠시 후 다시 시도하거나 사용량을 확인해 주세요.${d}`;
+  if (status === 503 || status === 529) return `${provider}의 이 모델에 지금 요청이 몰려 있습니다. 잠시 후 다시 시도하거나 GM 설정에서 다른 모델을 골라 보세요.`;
   if (status >= 500) return `${provider} 서버에 일시적인 문제가 있습니다. 잠시 후 다시 시도해 주세요.`;
   return `${provider} 요청이 거부되었습니다 (HTTP ${status})${d}.`;
 }
@@ -18,4 +19,15 @@ export function describeNetworkError(provider: string, err: unknown): string {
     return `${provider} GM 응답이 너무 오래 걸립니다. 다시 시도해 주세요.`;
   }
   return `${provider} API에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.`;
+}
+
+/** Statuses worth one more try after a short wait (busy or briefly broken servers). */
+export const RETRYABLE = new Set([500, 502, 503, 504, 529]);
+
+/** POSTs once more after `delayMs` if the server was busy; any other answer is returned as is. */
+export async function fetchWithRetry(doFetch: typeof fetch, url: string, init: () => RequestInit, delayMs: number): Promise<Response> {
+  const first = await doFetch(url, init());
+  if (!RETRYABLE.has(first.status)) return first;
+  await new Promise((r) => setTimeout(r, delayMs));
+  return doFetch(url, init());
 }

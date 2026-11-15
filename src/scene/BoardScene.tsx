@@ -151,11 +151,10 @@ export function BoardScene({
 }: Props) {
   const resting = useRef(new Map<string, Obstacle>());
   const physics = useMemo<PiecePhysics>(() => ({ diceSide, resting: resting.current }), [diceSide]);
-  // Pieces that appear after the first render (spawned by a special action) pop in.
-  const mountedRef = useRef(false);
-  useEffect(() => {
-    mountedRef.current = true;
-  }, []);
+  // Pieces that were not on the table when the scene opened (spawned by a special action or
+  // chaos) drop in. Not a "mounted yet?" flag: the 3D children render after this component's
+  // first effect, so such a flag would make every starting piece drop in too.
+  const startingIds = useMemo(() => new Set([...board, ...captured].flatMap((p) => (p ? [p.id, ...(p.rider ? [p.rider.id] : [])] : []))), []);
   const graveyard = useMemo(() => graveyardLayout(captured, diceSide), [captured, diceSide]);
   const click = (sq: Square) => (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
@@ -222,7 +221,7 @@ export function BoardScene({
             piece={piece}
             position={squareToWorld(sq)}
             selected={sq === selected}
-            popIn={mountedRef.current}
+            popIn={!startingIds.has(piece.id)}
             flung={flung?.has(piece.id) ?? false}
             onClick={click(sq)}
             onHover={(on) => onHoverSquare(on ? sq : null)}

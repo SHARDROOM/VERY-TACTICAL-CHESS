@@ -1,10 +1,9 @@
 import type { z } from 'zod';
-import type { GameState } from '../engine';
-import type { GameMaster, GmChaosJson, GmRequest, GmRulingJson } from './types';
+import type { ChaosRequest, GameMaster, GmChaosJson, GmRequest, GmRulingJson } from './types';
 import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
 import { GM_CHAOS_JSON_SCHEMA, GM_RULING_JSON_SCHEMA } from './jsonSchema';
 import { GmChaosSchema, GmRulingSchema } from './schema';
-import { GmError, describeHttpError, describeNetworkError } from './errors';
+import { GmError, describeHttpError, describeNetworkError, fetchWithRetry } from './errors';
 import { REFUSED, TRUNCATED, jsonFromText } from './llmReply';
 
 /** Suggestions only: the settings field accepts any model id. */
@@ -15,6 +14,8 @@ export interface OpenAiGmOptions {
   model: string;
   fetch?: typeof fetch;
   baseUrl?: string;
+  /** Wait before the one retry of a busy server (tests use 0). */
+  retryDelayMs?: number;
 }
 
 interface ChatCompletion {
@@ -34,15 +35,15 @@ export class OpenAiGameMaster implements GameMaster {
     return this.ask(buildSystemPrompt(state.rules), buildUserMessage(action, state), 'gm_ruling', GM_RULING_JSON_SCHEMA, GmRulingSchema);
   }
 
-  chaos({ state }: { state: GameState }): Promise<GmChaosJson> {
-    return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state), 'gm_chaos', GM_CHAOS_JSON_SCHEMA, GmChaosSchema);
+  chaos({ state, inspiration, problem }: ChaosRequest): Promise<GmChaosJson> {
+    return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state, inspiration, problem), 'gm_chaos', GM_CHAOS_JSON_SCHEMA, GmChaosSchema);
   }
 
   private async ask<T extends z.ZodTypeAny>(system: string, user: string, name: string, jsonSchema: object, schema: T): Promise<z.infer<T>> {
     const doFetch = this.options.fetch ?? fetch;
     let res: Response;
     try {
-      res = await doFetch(`${this.options.baseUrl ?? 'https://api.openai.com'}/v1/chat/completions`, {
+      res = await fetchWithRetry(doFetch, `${this.options.baseUrl ?? 'https://api.openai.com'}/v1/chat/completions`, () => ({
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}` },
         body: JSON.stringify({
@@ -57,7 +58,7 @@ export class OpenAiGameMaster implements GameMaster {
           },
         }),
         signal: AbortSignal.timeout(90_000),
-      });
+      }), this.options.retryDelayMs ?? 1500);
     } catch (err) {
       throw new GmError(describeNetworkError('OpenAI', err));
     }

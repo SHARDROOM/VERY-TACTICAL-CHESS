@@ -189,13 +189,31 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 - 기물이 없는 칸을 대상으로 하지 말고, 같은 편 기물이 있는 칸으로 move하지 마세요. 기절한 기물은 move할 수 없습니다.
 - 폰을 그 편의 마지막 줄(백은 8번 줄, 흑은 1번 줄)에 만들지 마세요.
 
+## 무엇을 바꿀까
+- 가능하면 기물의 위치, 편, 종류가 실제로 바뀌는 사건을 고르세요(move, convert, transform, spawn, remove). 태그만 붙이는 사건은 가끔만 쓰세요.
+- 사용자 메시지에 "영감" 단어가 오면 출발점으로 삼아도 되고 무시해도 됩니다. 단어를 그대로 제목에 쓰지 않아도 됩니다.
+
 ## 균형
 - 혼돈은 재미를 위한 것입니다. 한쪽이 사실상 이기게 만드는 사건(퀸 제거, 퀸 생성, 여러 중요 기물 매수)은 피하고, 영향은 작게 또는 양쪽에 비슷하게 주세요.
 - 지난 혼돈과 다른 종류의 사건을 일으키세요.
 - title은 15자 이내의 짧은 제목, narration은 판타지 전장 해설자 같은 생생한 한국어 1~2문장.`;
 }
 
-export function buildChaosUserMessage(state: GameState): string {
+/** Words the host draws at random for each chaos request, so events start from different places. */
+export const CHAOS_SPARKS = [
+  '고양이', '폭풍', '유령', '떠돌이 상인', '축제', '반란', '신탁', '요리사', '거인', '지진', '시간 왜곡', '거울', '음유시인', '용',
+  '마녀', '늪', '얼음', '화산', '꿈', '도둑', '연금술', '별똥별', '해적', '서커스', '결혼식', '역병', '보물', '저주', '쌍둥이',
+  '그림자', '회오리바람', '홍수', '벌떼', '시계탑', '가면무도회', '첩자', '배신', '동맹', '술집', '왕실 칙령', '마법 실험', '이사 철',
+] as const;
+
+export function pickSparks(random: () => number = Math.random, count = 2): string[] {
+  const pool = [...CHAOS_SPARKS];
+  const out: string[] = [];
+  for (let i = 0; i < count && pool.length; i++) out.push(pool.splice(Math.floor(random() * pool.length), 1)[0]);
+  return out;
+}
+
+export function buildChaosUserMessage(state: GameState, inspiration: string[] = [], problem?: string): string {
   const me = state.turn;
   const them = me === 'white' ? 'black' : 'white';
   return `## 현재 상황
@@ -213,5 +231,6 @@ ${boardGrid(state)}
 ## 이번 게임의 판례 (최근 ${MAX_PRECEDENTS}개까지, 오래된 순)
 ${precedentList(state)}
 ${chaosSection(state) || '\n## 이번 게임에 일어난 혼돈\n(아직 없음)\n'}
+${inspiration.length ? `\n## 영감 (참고만 하세요)\n${inspiration.join(', ')}\n` : ''}${problem ? `\n## 방금 낸 사건이 거부된 이유\n${problem}\n이 문제가 생기지 않는 사건으로 다시 정해 주세요.\n` : ''}
 지금 일어날 혼돈 사건 하나를 정해 주세요.`;
 }

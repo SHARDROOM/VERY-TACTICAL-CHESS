@@ -22,5 +22,13 @@ export interface GameMaster {
   /** Returns raw JSON-like data; callers must run it through parseGmRuling. */
   rule(request: GmRequest): Promise<unknown>;
   /** Makes up a chaos event for the turn that is starting; callers run it through parseGmChaos. */
-  chaos?(request: { state: GameState }): Promise<unknown>;
+  chaos?(request: ChaosRequest): Promise<unknown>;
+}
+
+export interface ChaosRequest {
+  state: GameState;
+  /** A couple of random words to start from, so events differ from game to game (the GM may ignore them). */
+  inspiration?: string[];
+  /** Why the GM's previous idea for this turn was turned down, for its second try. */
+  problem?: string;
 }

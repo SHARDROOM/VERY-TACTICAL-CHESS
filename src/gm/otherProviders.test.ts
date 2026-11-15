@@ -6,7 +6,7 @@ import { buildSystemPrompt, buildUserMessage } from './prompt';
 import { GM_RULING_JSON_SCHEMA } from './jsonSchema';
 import { GmRulingSchema } from './schema';
 import { parseGmRuling } from './parse';
-import { failingFetch, fakeFetch, type Captured } from './fakeHttp';
+import { failingFetch, fakeFetch, sequenceFetch, type Captured } from './fakeHttp';
 
 const ruling = {
   interpretation: '룩이 성벽을 타고 미끄러진다',
@@ -142,5 +142,44 @@ describe('chaos requests', () => {
     const gemini = new GeminiGameMaster({ apiKey: 'k', model: 'm', fetch: fakeFetch({ body: geminiReply(JSON.stringify(chaosReply)) }, gCaptured) });
     expect(await gemini.chaos({ state })).toEqual(chaosReply);
     expect(gCaptured[0].body.generationConfig.responseJsonSchema).toEqual(GM_CHAOS_JSON_SCHEMA);
+  });
+});
+
+describe('busy servers', () => {
+  const busy = { status: 503, body: { error: { code: 503, message: 'This model is currently experiencing high demand.', status: 'UNAVAILABLE' } } };
+
+  it('tries once more after a 503 and succeeds if the server recovered', async () => {
+    const captured: Captured[] = [];
+    const gemini = new GeminiGameMaster({ apiKey: 'k', model: 'm', retryDelayMs: 0, fetch: sequenceFetch([busy, { body: geminiReply(JSON.stringify(ruling)) }], captured) });
+    expect(await gemini.rule(req)).toEqual(ruling);
+    expect(captured).toHaveLength(2);
+    const openai = new OpenAiGameMaster({ apiKey: 'k', model: 'm', retryDelayMs: 0, fetch: sequenceFetch([busy, { body: openaiReply(JSON.stringify(ruling)) }]) });
+    expect(await openai.rule(req)).toEqual(ruling);
+  });
+
+  it('says the model is busy and suggests another one if it stays busy', async () => {
+    const captured: Captured[] = [];
+    const gemini = new GeminiGameMaster({ apiKey: 'k', model: 'm', retryDelayMs: 0, fetch: sequenceFetch([busy], captured) });
+    await expect(gemini.rule(req)).rejects.toThrow(/요청이 몰려 있습니다.*다른 모델/);
+    expect(captured).toHaveLength(2);
+  });
+
+  it('does not retry a bad key or a missing model', async () => {
+    const captured: Captured[] = [];
+    const gemini = new GeminiGameMaster({ apiKey: 'k', model: 'm', retryDelayMs: 0, fetch: sequenceFetch([{ status: 404, body: { error: { message: 'gone' } } }], captured) });
+    await expect(gemini.rule(req)).rejects.toThrow(/모델을 찾을 수 없습니다/);
+    expect(captured).toHaveLength(1);
+  });
+});
+
+describe('chaos inspiration', () => {
+  it('a couple of random words go with each chaos request; none without them', async () => {
+    const { buildChaosUserMessage, pickSparks, CHAOS_SPARKS } = await import('./prompt');
+    const words = pickSparks(() => 0.5);
+    expect(words).toHaveLength(2);
+    expect(new Set(words).size).toBe(2);
+    for (const w of words) expect(CHAOS_SPARKS).toContain(w);
+    expect(buildChaosUserMessage(state, words)).toContain(`## 영감 (참고만 하세요)\n${words.join(', ')}`);
+    expect(buildChaosUserMessage(state)).not.toContain('영감');
   });
 });

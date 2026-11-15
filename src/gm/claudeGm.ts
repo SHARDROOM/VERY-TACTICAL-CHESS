@@ -1,8 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import type { z } from 'zod';
-import type { GameState } from '../engine';
-import type { GameMaster, GmChaosJson, GmRequest, GmRulingJson } from './types';
+import type { ChaosRequest, GameMaster, GmChaosJson, GmRequest, GmRulingJson } from './types';
 import { GmChaosSchema, GmRulingSchema } from './schema';
 import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
 import { GmError } from './errors';
@@ -51,8 +50,8 @@ export class ClaudeGameMaster implements GameMaster {
     return this.ask(buildSystemPrompt(state.rules), buildUserMessage(action, state), GmRulingSchema);
   }
 
-  chaos({ state }: { state: GameState }): Promise<GmChaosJson> {
-    return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state), GmChaosSchema);
+  chaos({ state, inspiration, problem }: ChaosRequest): Promise<GmChaosJson> {
+    return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state, inspiration, problem), GmChaosSchema);
   }
 
   private async ask<T extends z.ZodTypeAny>(system: string, user: string, schema: T): Promise<z.infer<T>> {

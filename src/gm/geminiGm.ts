@@ -1,20 +1,22 @@
 import type { z } from 'zod';
-import type { GameState } from '../engine';
-import type { GameMaster, GmChaosJson, GmRequest, GmRulingJson } from './types';
+import type { ChaosRequest, GameMaster, GmChaosJson, GmRequest, GmRulingJson } from './types';
 import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
 import { GM_CHAOS_JSON_SCHEMA, GM_RULING_JSON_SCHEMA } from './jsonSchema';
 import { GmChaosSchema, GmRulingSchema } from './schema';
-import { GmError, describeHttpError, describeNetworkError } from './errors';
+import { GmError, describeHttpError, describeNetworkError, fetchWithRetry } from './errors';
 import { REFUSED, TRUNCATED, jsonFromText } from './llmReply';
 
 /** Suggestions only: the settings field accepts any model id. */
-export const GEMINI_MODEL_SUGGESTIONS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-4-argon'];
+/** Flash-Lite first: it answered reliably in live tests while 3.8 Flash was often overloaded (503/502). */
+export const GEMINI_MODEL_SUGGESTIONS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-4-argon'];
 
 export interface GeminiGmOptions {
   apiKey: string;
   model: string;
   fetch?: typeof fetch;
   baseUrl?: string;
+  /** Wait before the one retry of a busy server (tests use 0). */
+  retryDelayMs?: number;
 }
 
 interface GenerateContentResponse {
@@ -37,8 +39,8 @@ export class GeminiGameMaster implements GameMaster {
     return this.ask(buildSystemPrompt(state.rules), buildUserMessage(action, state), GM_RULING_JSON_SCHEMA, GmRulingSchema);
   }
 
-  chaos({ state }: { state: GameState }): Promise<GmChaosJson> {
-    return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state), GM_CHAOS_JSON_SCHEMA, GmChaosSchema);
+  chaos({ state, inspiration, problem }: ChaosRequest): Promise<GmChaosJson> {
+    return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state, inspiration, problem), GM_CHAOS_JSON_SCHEMA, GmChaosSchema);
   }
 
   private async ask<T extends z.ZodTypeAny>(system: string, user: string, jsonSchema: object, schema: T): Promise<z.infer<T>> {
@@ -46,7 +48,7 @@ export class GeminiGameMaster implements GameMaster {
     const base = this.options.baseUrl ?? 'https://generativelanguage.googleapis.com';
     let res: Response;
     try {
-      res = await doFetch(`${base}/v1beta/models/${encodeURIComponent(this.options.model)}:generateContent`, {
+      res = await fetchWithRetry(doFetch, `${base}/v1beta/models/${encodeURIComponent(this.options.model)}:generateContent`, () => ({
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-goog-api-key': this.options.apiKey },
         body: JSON.stringify({
@@ -55,7 +57,7 @@ export class GeminiGameMaster implements GameMaster {
           generationConfig: { responseMimeType: 'application/json', responseJsonSchema: jsonSchema },
         }),
         signal: AbortSignal.timeout(90_000),
-      });
+      }), this.options.retryDelayMs ?? 1500);
     } catch (err) {
       throw new GmError(describeNetworkError('Gemini', err));
     }

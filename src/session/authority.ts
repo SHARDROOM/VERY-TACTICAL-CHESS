@@ -1,6 +1,7 @@
 import { applyCommand, createInitialState, type Color, type Command, type GameEvent, type GameState, type RuleConfig } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
+import { pickSparks } from '../gm/prompt';
 import { GmError } from '../gm/errors';
 import { REJECT_MESSAGE } from '../ui/messages';
 import type { NoticeTone, Phase, Request, TimerSnapshot } from './types';
@@ -205,16 +206,29 @@ export class Authority {
     this.setBusy(true);
     const skip = (why: string) => this.emit({ kind: 'notice', to: 'all', text: `🌪 혼돈이 일어나려다 잠잠해졌습니다. (${why})`, tone: 'warn' });
     try {
-      const raw = await this.gm.chaos!({ state: this.state });
-      if (generation !== this.generation || turnNumber !== this.state.turnNumber) return;
-      const parsed = parseGmChaos(raw);
-      if (!parsed.ok) return skip(`GM 응답 형식 오류: ${parsed.error}`);
-      if (!parsed.chaos.effects.length) return;
-      const result = applyCommand(this.state, { type: 'chaos', chaos: parsed.chaos });
-      if (!result.ok) return skip(result.detail ?? REJECT_MESSAGE[result.reason]);
-      const before = this.state;
-      this.state = result.state;
-      this.emit({ kind: 'events', events: result.events, before, after: result.state });
+      const inspiration = pickSparks(Math.random);
+      // If the first idea breaks a rule, the GM hears why and gets one more go.
+      let problem: string | undefined;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const raw = await this.gm.chaos!({ state: this.state, inspiration, problem });
+        if (generation !== this.generation || turnNumber !== this.state.turnNumber) return;
+        const parsed = parseGmChaos(raw);
+        if (!parsed.ok) {
+          problem = `응답 형식 오류: ${parsed.error}`;
+          continue;
+        }
+        if (!parsed.chaos.effects.length) return;
+        const result = applyCommand(this.state, { type: 'chaos', chaos: parsed.chaos });
+        if (!result.ok) {
+          problem = result.detail ?? REJECT_MESSAGE[result.reason];
+          continue;
+        }
+        const before = this.state;
+        this.state = result.state;
+        this.emit({ kind: 'events', events: result.events, before, after: result.state });
+        return;
+      }
+      skip(problem ?? '규칙에 맞지 않음');
     } catch (err) {
       if (generation !== this.generation) return;
       skip(err instanceof GmError ? err.message : 'GM 호출 실패');

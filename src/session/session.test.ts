@@ -397,6 +397,27 @@ describe('chaos', () => {
     expect(s.view().chaosReady).toBe(true);
   });
 
+  it('a chaos idea that breaks the rules goes back to the GM once, with the reason', async () => {
+    const gm = new TestGm();
+    const asked: unknown[] = [];
+    let n = 0;
+    gm.chaos = async (req?: unknown) => {
+      asked.push(req);
+      n++;
+      return n === 1
+        ? { title: '반칙', narration: '킹을 없앤다', effects: [{ type: 'remove', at: 'e8' }] }
+        : { title: '지진', narration: '땅이 흔들린다.', effects: [{ type: 'move', from: 'a7', to: 'a6' }] };
+    };
+    const s = new LocalSession(gm, { roll: () => 20, chance: () => 0 });
+    s.setRules({ chaosChance: 0.1 });
+    s.start();
+    s.request({ type: 'move', from: sq('e2'), to: sq('e4') });
+    await settle();
+    expect(asked).toHaveLength(2);
+    expect((asked[1] as { problem?: string }).problem).toContain('킹');
+    expect(s.view().state.chaosLog?.[0].title).toBe('지진');
+  });
+
   it('a chaos event that breaks the rules is skipped with a notice', async () => {
     const gm = new TestGm();
     gm.chaosReply = { title: '반칙', narration: '킹을 없앤다', effects: [{ type: 'remove', at: 'e8' }] };
