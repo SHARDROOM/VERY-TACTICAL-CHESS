@@ -8,7 +8,7 @@ const ladder = (): TerrainCell['cover'] => ({ kind: 'ladder', turnsLeft: null, o
 const legal = (s: GameState, from: string) => legalTargets(s, sq(from)).map((t) => squareName(t.to)).sort();
 const ruling = (effects: Effect[]): Ruling => ({ interpretation: 'x', feasible: true, dc: 5, cost: 1, effects, narration: { success: 's', failure: 'f' } });
 const act = (state: GameState, ...effects: Effect[]) => {
-  const p = applyCommand({ ...state, ap: { white: 5, black: 5, red: 0 } }, { type: 'proposeSpecial', action: 'a', ruling: ruling(effects) });
+  const p = applyCommand({ ...state, ap: { white: 5, black: 5, red: 0, gray: 0 } }, { type: 'proposeSpecial', action: 'a', ruling: ruling(effects) });
   if (!p.ok) throw new Error(p.detail);
   return ok(applyCommand(p.state, { type: 'attemptSpecial', roll: 5 }));
 };

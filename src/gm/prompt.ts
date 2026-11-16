@@ -1,6 +1,6 @@
 import { AIR, BASE_CLASH, COVER_NAME, ridersOf, MAX_TERRAIN, PROP_PRESET_NAME, RIDE, TERRAIN_NAME, airOf, distance, isAir, parseSquare, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig , SQUARE_PATTERN, playersOf, squareAt } from '../engine';
 
-const COLOR: Record<Color, string> = { white: '백', black: '흑', red: '적' };
+const COLOR: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
 const PIECE: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
 const LETTER: Record<PieceType, string> = { king: 'k', queen: 'q', rook: 'r', bishop: 'b', knight: 'n', pawn: 'p' };
 
@@ -128,6 +128,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - 칸에 놓일 때(벽, 구덩이, 다리, 사다리) 원점은 칸 가운데 바닥이고, x는 h열 쪽, z는 8줄 쪽입니다. 한 칸 안에 들어가게 만드세요.
 ${hexRules(rules)}
 ## 절대 규칙 (어기면 판정 전체가 거부됩니다)
+- 회색(gray) 기물은 혼돈 사건이 데려온 떠돌이로 누구의 편도 아닙니다. 판정의 효과로 회색 기물을 만들거나 회색으로 바꿀 수는 없지만, 잡거나 옮기거나 태그를 붙이는 대상으로는 쓸 수 있습니다(누구의 기물도 아니니 주체는 될 수 없습니다).
 - 킹은 어떤 효과로도 제거하거나 잡거나 변환하거나 편을 바꿀 수 없고, 킹을 새로 만들 수도 없습니다. 킹은 일반 체스 수로만 잡힙니다. 킹에 태그를 붙이는 것은 됩니다.
 - 기물이 없는 칸을 from/at/rider/carrier로 쓰지 마세요. 같은 편 기물이 있는 칸으로 move하지 마세요.
 - 기절한 기물은 move나 board로 움직일 수 없습니다.
@@ -187,7 +188,7 @@ function boardGrid(state: GameState): string {
       for (let file = 0; file < 8; file++) {
         const p = state.board[layer + rank * 8 + file];
         const g = terrain ? ground.get(rank * 8 + file) : undefined;
-        cells.push(p ? (p.color === 'white' ? LETTER[p.type].toUpperCase() : LETTER[p.type]) : (g ?? '.'));
+        cells.push(p ? (p.color === 'gray' ? '*' : p.color === 'white' ? LETTER[p.type].toUpperCase() : LETTER[p.type]) : (g ?? '.'));
       }
       rows.push(`${rank + 1} ${cells.join(' ')}`);
     }
@@ -204,7 +205,7 @@ function boardGrid(state: GameState): string {
  */
 function hexGrid(state: GameState): string {
   const ground = new Map((state.terrain ?? []).map((c) => [c.at, c.cover ? (c.kind === 'wall' ? 'H' : '=') : c.kind === 'wall' ? '#' : 'O']));
-  const side = { white: 'w', black: 'b', red: 'r' } as const;
+  const side = { white: 'w', black: 'b', red: 'r', gray: 'g' } as const;
   const cell = (sq: number, terrain: boolean) => {
     const p = state.board[sq];
     return p ? side[p.color] + LETTER[p.type] : terrain ? `${ground.get(sq) ?? '.'} ` : '. ';
@@ -236,6 +237,11 @@ function describeTags(p: Piece): string {
     return `${t.name}(${notes.join(', ')})`;
   };
   return ` [${tags.map(one).join(', ')}]`;
+}
+
+/** Chaos's gray wanderers on the board, if any (a line of their own after the sides). */
+function wanderers(state: GameState): string {
+  return state.board.some((p) => p?.color === 'gray') ? `\n- 회색(떠돌이, 누구의 편도 아님): ${pieceList(state, 'gray')}` : '';
 }
 
 function pieceList(state: GameState, color: Color): string {
@@ -319,7 +325,7 @@ ${them.map((c) => `- 상대: ${COLOR[c]} (보유 AP ${state.ap[c] ?? 0})`).join(
 - 턴 번호: ${state.turnNumber}
 
 ## 기물 위치
-${sides.map((c) => `- ${COLOR[c]}: ${pieceList(state, c)}`).join('\n')}
+${sides.map((c) => `- ${COLOR[c]}: ${pieceList(state, c)}`).join('\n')}${wanderers(state)}
 
 ## 잡힌 기물 (보드 옆, revive로 되살릴 수 있음)
 ${sides.map((c) => `- ${COLOR[c]}: ${capturedList(state, c)}`).join('\n')}
@@ -327,7 +333,7 @@ ${sides.map((c) => `- ${COLOR[c]}: ${capturedList(state, c)}`).join('\n')}
 ## 지형
 ${terrainList(state)}
 
-## 보드 (${state.map === 'hex3' ? '칸마다 편 글자(w 백, b 흑, r 적)와 기물 글자' : '대문자 = 백, 소문자 = 흑'}, . = 빈 칸, # = 벽, H = 사다리 걸린 벽, O = 구덩이, = = 다리 놓인 구덩이; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰; 태그와 탑승은 위 목록 참고)
+## 보드 (${state.map === 'hex3' ? '칸마다 편 글자(w 백, b 흑, r 적, g 회색 떠돌이)와 기물 글자' : '대문자 = 백, 소문자 = 흑, * = 회색 떠돌이'}, . = 빈 칸, # = 벽, H = 사다리 걸린 벽, O = 구덩이, = = 다리 놓인 구덩이; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰; 태그와 탑승은 위 목록 참고)
 ${boardGrid(state)}
 
 ## 이번 게임의 판례 (최근 ${MAX_PRECEDENTS}개까지, 오래된 순)
@@ -370,6 +376,7 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 - "적의 투석기가 쏜 돌덩이가 빗나가 땅에 구멍을 냈습니다" → 빈 칸에 구덩이 terrain
 - 역병을 피해 농민병이 진영을 버리고 달아남 → {"type": "move", "from": "g2", "to": "g4"}
 - 떠돌이 용병단이 합류 → 빈 칸에 폰이나 나이트를 spawn
+- 떠돌이 상인이 전장을 지나감 → 회색(gray) 폰을 spawn하고 tag로 "떠돌이 상인"이라 이름 붙임 (아래 "떠돌이")
 - 마상 시합 소식에 두 기사가 자리를 맞바꿈 → swap
 - 눈보라에 길을 잃은 기사가 엉뚱한 곳에 나타남 → move
 - 낡은 성탑이 무너져 돌무더기가 길을 막음 → 빈 칸에 벽 terrain
@@ -393,6 +400,11 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 - {"type": "cover", "at": "d4", "kind": "bridge", "turns": 2}: 구덩이에 다리(bridge, 건너고 설 수 있음)나 벽에 사다리(ladder, 넘어가기만)를 놓는다. {"type": "clearCover", "at": "d4"}로 치운다(다리 위 기물은 빠짐).
 - tag에는 합 배율(clash 1.2~2.0, 싸움 실력)을, tag·terrain·cover에는 prop(모습: 미리 만든 모양 sword, spear, shield, ladder, bridge, flag, crown, barricade 또는 직접 조합)을 줄 수 있다. 필요 없으면 clash 0, prop의 preset "none".
 칸 이름은 a1~h8 형식(공중의 칸은 e4^처럼 ^를 붙임)이고, 효과는 순서대로 앞 효과가 적용된 보드를 기준으로 합니다.
+
+## 떠돌이 (주체가 있는 사건)
+- 사건에 누구의 편도 아닌 주체가 있으면(떠돌이 상인, 의문의 기사, 순례자, 방랑 마법사, 길 잃은 용 등) 그 인물을 회색 기물로 데려오세요: {"type": "spawn", "at": "빈 칸", "color": "gray", "piece": 어울리는 종류}에 이어 같은 칸에 {"type": "tag", "tag": "의문의 기사", "turns": 0}처럼 그 인물의 이름 태그를 붙입니다. 기물 종류는 인물에 맞게(상인·순례자는 폰, 기사는 나이트, 마법사·성직자는 비숍, 거인이나 용은 룩이나 퀸).
+- 회색 기물은 누구의 차례도 아닙니다. 누군가 턴을 넘길 때마다 제멋대로 한 칸(제 종류의 수 하나) 움직이고, 그 자리의 기물을 잡을 수 있습니다(킹과 보호막·합 장비가 있는 기물은 빼고). 누구든 회색 기물을 잡을 수 있고, 잡힐 때까지 판에 머뭅니다. 체크는 걸지 않습니다.
+- 회색 기물을 데려오는 것은 혼돈 사건만 할 수 있습니다. 판에 이미 떠돌이가 여럿이면 새로 데려오지 말고 그들과 엮인 사건을 지어내세요.
 ${hexRules(rules)}
 ## 절대 규칙 (어기면 사건 전체가 취소됩니다)
 - 효과는 1~3개, 최대 ${rules.maxEffects}개.
@@ -468,7 +480,7 @@ ${them.map((c) => `- 상대: ${COLOR[c]} (보유 AP ${state.ap[c] ?? 0})`).join(
 - 턴 번호: ${state.turnNumber}
 
 ## 기물 위치
-${sides.map((c) => `- ${COLOR[c]}: ${pieceList(state, c)}`).join('\n')}
+${sides.map((c) => `- ${COLOR[c]}: ${pieceList(state, c)}`).join('\n')}${wanderers(state)}
 
 ## 잡힌 기물 (보드 옆, revive로 되살릴 수 있음)
 ${sides.map((c) => `- ${COLOR[c]}: ${capturedList(state, c)}`).join('\n')}
@@ -476,7 +488,7 @@ ${sides.map((c) => `- ${COLOR[c]}: ${capturedList(state, c)}`).join('\n')}
 ## 지형
 ${terrainList(state)}
 
-## 보드 (${state.map === 'hex3' ? '칸마다 편 글자(w 백, b 흑, r 적)와 기물 글자' : '대문자 = 백, 소문자 = 흑'}, . = 빈 칸, # = 벽, H = 사다리 걸린 벽, O = 구덩이, = = 다리 놓인 구덩이; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰)
+## 보드 (${state.map === 'hex3' ? '칸마다 편 글자(w 백, b 흑, r 적, g 회색 떠돌이)와 기물 글자' : '대문자 = 백, 소문자 = 흑, * = 회색 떠돌이'}, . = 빈 칸, # = 벽, H = 사다리 걸린 벽, O = 구덩이, = = 다리 놓인 구덩이; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰)
 ${boardGrid(state)}
 
 ## 이번 게임의 판례 (최근 ${MAX_PRECEDENTS}개까지, 오래된 순)

@@ -1,4 +1,4 @@
-import { CLASH_ROLLS, applyCommand, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
+import { CLASH_ROLLS, applyCommand, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
@@ -222,6 +222,8 @@ export class Authority {
     if (passed) {
       this.restartClock();
       if (clashTime) this.addTime(clashTime);
+      // Chaos's gray wanderers each take a step of their own whenever a turn passes.
+      this.wander();
       // Chaos may strike once a round: when white's turn begins (both sides have moved).
       if (passed.turn === 'white') this.maybeChaos();
     } else {
@@ -231,6 +233,28 @@ export class Authority {
       // Nor does a fall.
       if (events.some((e) => e.type === 'fell')) this.addTime(FALL_SHOW_MS);
     }
+  }
+
+  /** The gray wanderers' random moves, one each (in board order, each seeing the moves before it). */
+  private wander(): void {
+    const s = this.state;
+    if (s.status.kind !== 'playing' || s.surrender || s.falling?.length || s.pending) return;
+    const board = [...s.board];
+    const moves: { from: number; to: number }[] = [];
+    // Where each stands now (a wanderer moved further along the board is not moved twice).
+    const wanderers = board.flatMap((p, sq) => (p?.color === 'gray' ? [{ id: p.id, sq }] : []));
+    for (const w of wanderers) {
+      const from = w.sq;
+      // Taken by a wanderer that moved before it: nothing left to move.
+      if (board[from]?.id !== w.id) continue;
+      const options = wanderTargets(board, from, s.terrain);
+      if (!options.length) continue;
+      const to = options[Math.floor(this.chance() * options.length) % options.length];
+      board[to] = board[from];
+      board[from] = null;
+      moves.push({ from, to });
+    }
+    if (moves.length) this.apply({ type: 'wander', moves }, 'all');
   }
 
   private setBusy(busy: boolean): void {

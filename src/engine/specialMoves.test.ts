@@ -7,6 +7,7 @@ const allRights = {
   white: { kingSide: true, queenSide: true },
   black: { kingSide: true, queenSide: true },
   red: { kingSide: false, queenSide: false },
+  gray: { kingSide: false, queenSide: false },
 };
 
 describe('castling', () => {

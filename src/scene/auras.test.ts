@@ -5,7 +5,7 @@ import { aurasOn } from './auras';
 const sq = (n: string) => parseSquare(n)!;
 
 function tagged(effects: Ruling['effects']): GameState {
-  let s: GameState = { ...createInitialState(), ap: { white: 3, black: 0, red: 0 } };
+  let s: GameState = { ...createInitialState(), ap: { white: 3, black: 0, red: 0, gray: 0 } };
   const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 4, cost: 1, effects, narration: { success: 's', failure: 'f' } };
   const p = applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling });
   if (!p.ok) throw new Error(p.detail);

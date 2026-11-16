@@ -128,7 +128,7 @@ describe('full effect vocabulary through the GM boundary', () => {
       { type: 'transform', at: sq('a3'), into: 'queen' },
       { type: 'spawn', at: sq('e4'), color: 'black', piece: 'knight' },
     ]);
-    const state = { ...createInitialState(), ap: { white: 5, black: 0, red: 0 } };
+    const state = { ...createInitialState(), ap: { white: 5, black: 0, red: 0, gray: 0 } };
     expect(applyCommand(state, { type: 'proposeSpecial', action: 'x', ruling: r.ruling }).ok).toBe(true);
   });
 
@@ -201,7 +201,7 @@ describe('swap, revive, burn and terrain through the GM boundary', () => {
     expect(fakeRuling('e2 폰이 e5에 구덩이를 판다').effects).toMatchObject([{ type: 'terrain', at: 'e5', kind: 'pit', turns: 2 }]);
     expect(fakeRuling('e3 폰이 d4 벽을 부순다').effects).toEqual([{ type: 'clearTerrain', at: 'd4' }]);
     expect(fakeRuling('d1 퀸이 c3에 나이트를 되살린다').effects).toEqual([{ type: 'revive', at: 'c3', color: 'white', piece: 'knight' }]);
-    const state = { ...createInitialState(), ap: { white: 5, black: 0, red: 0 } };
+    const state = { ...createInitialState(), ap: { white: 5, black: 0, red: 0, gray: 0 } };
     for (const action of ['b1 나이트와 g8 나이트의 자리를 바꾼다', 'g1 나이트가 불화살을 쏘아 g8 나이트를 맞힌다', 'e2 폰이 d4와 e4에 벽을 세운다', 'f2 폰이 g8에 구덩이를 판다']) {
       const parsed = parseGmRuling(fakeRuling(action, 'white', state.board));
       if (!parsed.ok) throw new Error(parsed.error);
@@ -276,7 +276,7 @@ describe('clash multipliers, props, bridges and ladders through the GM boundary'
     expect(fakeRuling('e3 폰이 d4 구덩이에 다리를 놓는다').effects).toMatchObject([{ type: 'cover', at: 'd4', kind: 'bridge', turns: 2 }]);
     expect(fakeRuling('e3 폰이 d4 벽에 사다리를 건다').effects).toMatchObject([{ type: 'cover', at: 'd4', kind: 'ladder' }]);
     expect(fakeRuling('e3 폰이 d4 다리를 끊는다').effects).toEqual([{ type: 'clearCover', at: 'd4' }]);
-    const state = { ...createInitialState(), ap: { white: 5, black: 0, red: 0 } };
+    const state = { ...createInitialState(), ap: { white: 5, black: 0, red: 0, gray: 0 } };
     const parsed = parseGmRuling(fakeRuling('e2 폰이 영감을 얻어 검술에 눈을 뜬다', 'white', state.board));
     if (!parsed.ok) throw new Error(parsed.error);
     const r = applyCommand(state, { type: 'proposeSpecial', action: 'x', ruling: parsed.ruling });
@@ -290,7 +290,7 @@ describe('fake GM crits', () => {
     expect(r.critFailureEffects).toMatchObject([{ type: 'tag', at: 'b1', tag: '기절', turns: 1, aura: 'none', auraStrength: 0 }]);
     const parsed = parseGmRuling(r);
     if (!parsed.ok) throw new Error(parsed.error);
-    const state = { ...createInitialState(), ap: { white: 5, black: 0, red: 0 } };
+    const state = { ...createInitialState(), ap: { white: 5, black: 0, red: 0, gray: 0 } };
     expect(applyCommand(state, { type: 'proposeSpecial', action: 'x', ruling: parsed.ruling }).ok).toBe(true);
   });
 });
@@ -333,7 +333,7 @@ describe('fake GM: levitation', () => {
     const parsed = parseGmRuling(up);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    const proposed = applyCommand({ ...s, ap: { white: 3, black: 0, red: 0 } }, { type: 'proposeSpecial', action: 'd1 퀸이 떠오른다', ruling: parsed.ruling });
+    const proposed = applyCommand({ ...s, ap: { white: 3, black: 0, red: 0, gray: 0 } }, { type: 'proposeSpecial', action: 'd1 퀸이 떠오른다', ruling: parsed.ruling });
     if (!proposed.ok) throw new Error(proposed.reason);
     const after = applyCommand(proposed.state, { type: 'attemptSpecial', roll: 12 });
     if (!after.ok) throw new Error(after.reason);

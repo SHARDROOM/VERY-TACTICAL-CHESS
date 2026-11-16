@@ -29,30 +29,30 @@ const endTurn = (state: GameState) => applyCommand(state, { type: 'endTurn' });
 const pass = (state: GameState) => passTurn(state);
 
 /** Initial position with plenty of AP for white. */
-const rich = (ap = 5): GameState => ({ ...createInitialState(), ap: { white: ap, black: 0, red: 0 } });
+const rich = (ap = 5): GameState => ({ ...createInitialState(), ap: { white: ap, black: 0, red: 0, gray: 0 } });
 
 describe('AP', () => {
   it('white begins with 1 AP (start 0 + first turn), black with 0', () => {
-    expect(createInitialState().ap).toEqual({ white: 1, black: 0, red: 0 });
+    expect(createInitialState().ap).toEqual({ white: 1, black: 0, red: 0, gray: 0 });
   });
 
   it('gains AP at the start of your own turn', () => {
     const s = play(createInitialState(), 'e2e4');
-    expect(s.ap).toEqual({ white: 1, black: 1, red: 0 });
-    expect(play(s, 'e7e5').ap).toEqual({ white: 2, black: 1, red: 0 });
+    expect(s.ap).toEqual({ white: 1, black: 1, red: 0, gray: 0 });
+    expect(play(s, 'e7e5').ap).toEqual({ white: 2, black: 1, red: 0, gray: 0 });
   });
 
   it('caps at the maximum', () => {
     let s = createInitialState();
     for (let i = 0; i < 12; i++) s = pass(s);
-    expect(s.ap).toEqual({ white: 5, black: 5, red: 0 });
+    expect(s.ap).toEqual({ white: 5, black: 5, red: 0, gray: 0 });
   });
 
   it('uses the configured numbers', () => {
     const rules = { ...DEFAULT_RULES, apStart: 2, apPerTurn: 2, apMax: 3 };
     const s = createInitialState(rules);
-    expect(s.ap).toEqual({ white: 3, black: 2, red: 0 });
-    expect(pass(s).ap).toEqual({ white: 3, black: 3, red: 0 });
+    expect(s.ap).toEqual({ white: 3, black: 2, red: 0, gray: 0 });
+    expect(pass(s).ap).toEqual({ white: 3, black: 3, red: 0, gray: 0 });
   });
 });
 
@@ -249,7 +249,7 @@ describe('attempting and cancelling', () => {
         e8: { color: 'black', type: 'king' },
       },
       'white',
-      { ap: { white: 3, black: 0, red: 0 } },
+      { ap: { white: 3, black: 0, red: 0, gray: 0 } },
     );
     const p = ok(propose(s, ruling({ effects: [{ type: 'move', from: sq('a1'), to: sq('a8') }] }))).state;
     expect(ok(attempt(p, 6)).events).toContainEqual({ type: 'check', color: 'black' });

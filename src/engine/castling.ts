@@ -7,8 +7,8 @@ export const kingStart = (c: Color): Square => backRank(c, 4);
 export const rookStart = (c: Color, side: 'king' | 'queen'): Square => backRank(c, side === 'king' ? 7 : 0);
 
 const both = { kingSide: true, queenSide: true };
-export const FULL_CASTLING: CastlingRights = { white: both, black: both, red: both };
-export const NO_CASTLING: CastlingRights = { white: { kingSide: false, queenSide: false }, black: { kingSide: false, queenSide: false }, red: { kingSide: false, queenSide: false } };
+export const FULL_CASTLING: CastlingRights = { white: both, black: both, red: both, gray: { kingSide: false, queenSide: false } };
+export const NO_CASTLING: CastlingRights = { white: { kingSide: false, queenSide: false }, black: { kingSide: false, queenSide: false }, red: { kingSide: false, queenSide: false }, gray: { kingSide: false, queenSide: false } };
 
 /**
  * Revoke rights for every start square that a change touched. Works for any board

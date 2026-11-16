@@ -99,22 +99,25 @@ function ShakeGroup({ shake, children }: { shake: Props['shake']; children: Reac
  * dice tray. Black pieces (taken by white) wait near white's edge, white pieces near black's.
  */
 export function graveyardLayout(captured: CapturedPiece[], side: 1 | -1): { piece: CapturedPiece; position: [number, number, number] }[] {
-  const counts = { white: 0, black: 0, red: 0 };
+  const counts = { white: 0, black: 0, red: 0, gray: 0 };
   return captured.map((piece) => {
     const i = counts[piece.color]++;
     const col = i % 7;
     const row = Math.floor(i / 7);
     if (isHex()) {
       // The hexagon: along the flank to the owner's left (no one's back rank), rows outward.
-      const flank = { white: 5, black: 1, red: 3 }[piece.color];
+      // Gray (chaos's wanderers) shares the flank by the dice tray, further out.
+      const flank = { white: 5, black: 1, red: 3, gray: 1 }[piece.color];
       const mid = ((-90 + 60 * flank) * Math.PI) / 180;
       const apothem = HEX_FRAME_R * Math.cos(Math.PI / 6);
       const [nx, nz] = [Math.cos(mid), -Math.sin(mid)];
       const [tx, tz] = [-nz, nx];
-      const out = apothem + 0.75 + row * 0.95;
+      const out = apothem + 0.75 + (row + (piece.color === 'gray' ? 3 : 0)) * 0.95;
       const along = -2.6 + col * 0.86;
       return { piece, position: [nx * out + tx * along, TABLE_TOP_Y, nz * out + tz * along] as [number, number, number] };
     }
+    // Gray waits in the middle, between the two sides' rows.
+    if (piece.color === 'gray') return { piece, position: [side * (5.8 + col * 0.86), TABLE_TOP_Y, (row - 0.5) * 0.95] as [number, number, number] };
     const towardWhite = piece.color === 'black' ? 1 : -1;
     // Spaced for pieces at their own size.
     return {

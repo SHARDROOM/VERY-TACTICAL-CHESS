@@ -40,6 +40,7 @@ const TINT: Record<Color, { body: string; ink: string }> = {
   white: { body: '#efe5cf', ink: '#1d1b22' },
   black: { body: '#2e2b31', ink: '#f0e6d2' },
   red: { body: '#9b2f26', ink: '#f6e3c8' },
+  gray: { body: '#8a8a86', ink: '#f2f0ea' },
 };
 
 const LOOK: Record<Outcome, { body: string; emissive: string; glow: number; text: string }> = {

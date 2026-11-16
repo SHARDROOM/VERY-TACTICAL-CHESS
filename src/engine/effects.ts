@@ -1,6 +1,7 @@
 import type { Exit } from './staging';
 import {
   BURN,
+  GRAY,
   LEVITATE,
   RIDE,
   TERRAIN_KINDS,
@@ -29,7 +30,7 @@ import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, clashSkill, resolveCl
 import { cleanProp } from './props';
 import { startFalls } from './levitation';
 
-const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑', red: '적' };
+const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
 const PIECE_NAME: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
 
 export interface EffectContext {
@@ -49,6 +50,8 @@ export interface EffectContext {
    * outcome nobody can know yet), or the dice to play it out with.
    */
   clash?: { mode: 'check' } | { mode: 'play'; rolls: readonly number[] };
+  /** A chaos event: only it may bring a gray wanderer onto the board (or make anything gray). */
+  chaos?: boolean;
 }
 
 export type EffectResult =
@@ -76,7 +79,7 @@ const onBoard = (sq: unknown): sq is Square => isInt(sq) && sq >= 0 && sq < SQUA
 /** Things that only happen on the ground (walls, pits, bridges, new pieces). */
 const onGround = (sq: unknown): sq is Square => onBoard(sq) && !isAir(sq);
 const AIR_ONLY_LEVITATE = '공중 칸에는 공중부양 중인 기물만 있을 수 있음: 땅의 기물에 공중부양 태그를 붙여 띄우세요';
-const isColor = (c: unknown): c is Color => playersOf().includes(c as Color);
+const isColor = (c: unknown): c is Color => playersOf().includes(c as Color) || c === GRAY;
 const isPieceType = (t: unknown): t is PieceType => PIECE_TYPES.includes(t as PieceType);
 const isTerrainKind = (k: unknown): k is TerrainKind => TERRAIN_KINDS.includes(k as TerrainKind);
 const MAX_TAG_LENGTH = 20;
@@ -331,6 +334,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         const blocked = blockedLanding(e.at);
         if (blocked) return fail(blocked);
         if (!isColor(e.color)) return fail('기물 색이 올바르지 않음');
+        if (e.color === GRAY && !ctx.chaos) return fail('회색(떠돌이) 기물은 혼돈 사건만 데려올 수 있음');
         if (!isPieceType(e.piece) || e.piece === 'king') return fail('킹은 만들 수 없음');
         if (e.piece === 'pawn' && pawnStuckAt(e.at, e.color)) return fail('폰은 그 편의 마지막 줄에 만들 수 없음');
         const piece: Piece = { id: `spawn-${nextSpawnId++}`, color: e.color, type: e.piece };
@@ -344,6 +348,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (!piece) return fail(onBoard(e.at) ? `${squareName(e.at)}에 기물이 없음` : '보드 밖의 칸');
         if (piece.type === 'king') return fail('킹은 편을 바꿀 수 없음');
         if (!isColor(e.color)) return fail('기물 색이 올바르지 않음');
+        if (e.color === GRAY && !ctx.chaos) return fail('회색(떠돌이)으로 바꾸는 것은 혼돈 사건만 할 수 있음');
         if (piece.color === e.color) return fail(`${squareName(e.at)}의 기물은 이미 그 편임`);
         // Everyone riding it goes over too.
         board[e.at as Square] = mapStack(piece, (p) => ({ ...p, color: e.color }));

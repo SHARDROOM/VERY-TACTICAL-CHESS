@@ -13,7 +13,7 @@ const PIECE_WORDS: [RegExp, Exclude<PieceType, 'king'>][] = [
   [/폰|병사/, 'pawn'],
 ];
 const PIECE_KO: Record<Exclude<PieceType, 'king'>, string> = { queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
-const COLOR_KO: Record<Color, string> = { white: '백', black: '흑', red: '적' };
+const COLOR_KO: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
 
 /** The piece type named last in the text ("a2 폰을 퀸으로" → queen). */
 function lastPieceWord(text: string): Exclude<PieceType, 'king'> | null {

@@ -54,19 +54,19 @@ function effectSchema<A extends z.ZodTypeAny, B extends z.ZodTypeAny, C extends 
     z.object({
       type: z.literal('spawn'),
       at: square('기물을 만들 빈 칸'),
-      color: z.enum(['white', 'black', 'red']).describe('(red는 3인 맵에서만) 만들 기물의 편'),
+      color: z.enum(['white', 'black', 'red', 'gray']).describe('(red는 3인 맵에서만, gray는 혼돈의 떠돌이 인물만) 만들 기물의 편'),
       piece: pieceType.describe('만들 기물 종류 (킹 불가)'),
     }),
     z.object({
       type: z.literal('convert'),
       at: square('편을 바꿀 기물의 칸 (킹 불가)'),
-      color: z.enum(['white', 'black', 'red']).describe('(red는 3인 맵에서만) 새로 속할 편'),
+      color: z.enum(['white', 'black', 'red', 'gray']).describe('(red는 3인 맵에서만, gray는 혼돈의 떠돌이 인물만) 새로 속할 편'),
     }),
     z.object({ type: z.literal('swap'), a: square('자리를 바꿀 기물 하나의 칸'), b: square('자리를 바꿀 다른 기물의 칸') }),
     z.object({
       type: z.literal('revive'),
       at: square('되살린 기물을 놓을 빈 칸'),
-      color: z.enum(['white', 'black', 'red']).describe('(red는 3인 맵에서만) 되살릴 잡힌 기물의 편'),
+      color: z.enum(['white', 'black', 'red', 'gray']).describe('(red는 3인 맵에서만, gray는 혼돈의 떠돌이 인물만) 되살릴 잡힌 기물의 편'),
       piece: pieceType.describe('되살릴 잡힌 기물의 종류'),
     }),
     z.object({

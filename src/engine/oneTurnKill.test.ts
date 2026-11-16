@@ -30,7 +30,7 @@ const kingHanging = (ap = 3) =>
       h7: { color: 'black', type: 'pawn' },
     },
     'white',
-    { ap: { white: ap, black: 0, red: 0 } },
+    { ap: { white: ap, black: 0, red: 0, gray: 0 } },
   );
 
 /** Nothing is attacking the black king yet; a special action could change that. */
@@ -44,7 +44,7 @@ const quiet = (ap = 3) =>
       h7: { color: 'black', type: 'pawn' },
     },
     'white',
-    { ap: { white: ap, black: 0, red: 0 } },
+    { ap: { white: ap, black: 0, red: 0, gray: 0 } },
   );
 
 describe('no king capture on a turn where AP was used', () => {
@@ -88,7 +88,7 @@ describe('no king capture on a turn where AP was used', () => {
         h7: { color: 'black', type: 'pawn' },
       },
       'white',
-      { ap: { white: 3, black: 0, red: 0 } },
+      { ap: { white: 3, black: 0, red: 0, gray: 0 } },
     );
     const r = attempt(propose(s, [{ type: 'move', from: sq('a4'), to: sq('c5') }]), 6);
     expect(r.state.turn).toBe('black');
@@ -146,7 +146,7 @@ describe('automatic turn end when a special action leaves the opponent in check'
         a8: { color: 'black', type: 'king' },
       },
       'white',
-      { ap: { white: 5, black: 0, red: 0 } },
+      { ap: { white: 5, black: 0, red: 0, gray: 0 } },
     );
     // Shield the black king (white can tag enemy pieces), then bring the rook to the a-file.
     const shielded = attempt(propose(s, [{ type: 'tag', at: sq('a8'), tag: '보호막', turns: 0 }]), 6).state;

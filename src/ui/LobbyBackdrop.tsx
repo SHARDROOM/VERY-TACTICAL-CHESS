@@ -23,7 +23,7 @@ export function LobbyBackdrop({ inset, map = 'classic' }: { inset: TourInset; ma
   setBoardMap(map);
   const board = useMemo(() => createInitialState(undefined, map).board, [map]);
   const [roll, setRoll] = useState<ActiveRoll | null>(null);
-  const [ap, setAp] = useState<Record<Color, number>>({ white: 0, black: 0, red: 0 });
+  const [ap, setAp] = useState<Record<Color, number>>({ white: 0, black: 0, red: 0, gray: 0 });
   const timers = useRef<number[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 

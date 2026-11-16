@@ -1,4 +1,4 @@
-import type { Board, Color, GameState, MoveSpecial, Square, TerrainCell } from './types';
+import { GRAY, type Board, type Color, type GameState, type MoveSpecial, type Square, type TerrainCell } from './types';
 import { SQUARES, backRank, isAir, pawnForward, pawnStart, step, type Dir } from './squares';
 import { kingStart, rookStart } from './castling';
 import { isStunned, movePatterns } from './tags';
@@ -96,6 +96,11 @@ export function movesFrom(board: Board, from: Square, terrain?: readonly Terrain
       slides([...ORTHO, ...DIAG]);
       break;
     case 'pawn': {
+      // A gray (wandering) pawn has no side to march toward: it steps one square any way.
+      if (piece.color === GRAY) {
+        for (const d of [...ORTHO, ...DIAG]) for (const s of step(from, d)) if (canLand(s.sq)) out.push(s.sq);
+        break;
+      }
       const fwd = pawnForward(piece.color, from);
       const one = step(from, { df: 0, dr: fwd })[0];
       if (one && !board[one.sq] && !noPass.has(one.sq)) {
@@ -135,7 +140,8 @@ export function isInCheck(board: Board, color: Color, terrain?: readonly Terrain
   if (king === null) return false;
   for (let sq = 0; sq < SQUARES; sq++) {
     const p = board[sq];
-    if (p && p.color !== color && movesFrom(board, sq, terrain).includes(king)) return true;
+    // Gray wanderers never take a king, so they never give check either.
+    if (p && p.color !== color && p.color !== GRAY && movesFrom(board, sq, terrain).includes(king)) return true;
   }
   return false;
 }

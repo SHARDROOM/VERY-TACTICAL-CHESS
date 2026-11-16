@@ -108,7 +108,7 @@ describe('prompt shows tags and riders', () => {
   it('lists tags with turns left and who rides whom', async () => {
     const { applyCommand, parseSquare } = await import('../engine');
     const sq = (n: string) => parseSquare(n)!;
-    let state = { ...createInitialState(), ap: { white: 5, black: 0, red: 0 } };
+    let state = { ...createInitialState(), ap: { white: 5, black: 0, red: 0, gray: 0 } };
     const ruling = {
       interpretation: 'x',
       feasible: true,

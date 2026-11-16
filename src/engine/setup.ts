@@ -7,7 +7,7 @@ const BACK_RANK: PieceType[] = ['rook', 'knight', 'bishop', 'queen', 'king', 'bi
 
 /** AP at game start: everyone starts at apStart, and white's first turn has already begun. */
 function initialAp(rules: RuleConfig, map: BoardMap): Record<Color, number> {
-  return { white: Math.min(rules.apMax, rules.apStart + rules.apPerTurn), black: rules.apStart, red: map === 'hex3' ? rules.apStart : 0 };
+  return { white: Math.min(rules.apMax, rules.apStart + rules.apPerTurn), black: rules.apStart, red: map === 'hex3' ? rules.apStart : 0, gray: 0 };
 }
 
 /** A new game on `map` (the classic board by default; it also becomes the board in play). */
@@ -75,7 +75,7 @@ export function createStateFrom(
     status: { kind: 'playing' },
     castling: NO_CASTLING,
     enPassant: null,
-    ap: { white: 0, black: 0, red: 0 },
+    ap: { white: 0, black: 0, red: 0, gray: 0 },
     nextSpawnId: 1,
     usedApThisTurn: false,
     pending: null,

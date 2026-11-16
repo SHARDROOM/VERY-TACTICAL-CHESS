@@ -25,12 +25,12 @@ const ruling = (effects: Effect[]): Ruling => ({
 
 /** Proposes and succeeds (roll 6) a special action for the side to move. */
 const act = (state: GameState, ...effects: Effect[]) => {
-  const proposed = applyCommand({ ...state, ap: { white: 9, black: 9, red: 0 } }, { type: 'proposeSpecial', action: 'act', ruling: ruling(effects) });
+  const proposed = applyCommand({ ...state, ap: { white: 9, black: 9, red: 0, gray: 0 } }, { type: 'proposeSpecial', action: 'act', ruling: ruling(effects) });
   if (!proposed.ok) throw new Error(`proposal rejected: ${proposed.detail ?? proposed.reason}`);
   return ok(applyCommand(proposed.state, { type: 'attemptSpecial', roll: 6 }));
 };
 const proposeFails = (state: GameState, ...effects: Effect[]) => {
-  const r = applyCommand({ ...state, ap: { white: 9, black: 9, red: 0 } }, { type: 'proposeSpecial', action: 'act', ruling: ruling(effects) });
+  const r = applyCommand({ ...state, ap: { white: 9, black: 9, red: 0, gray: 0 } }, { type: 'proposeSpecial', action: 'act', ruling: ruling(effects) });
   expect(r).toMatchObject({ ok: false, reason: 'invalidRuling' });
   return r.ok ? '' : r.detail ?? '';
 };
@@ -204,7 +204,7 @@ describe('terrain (벽, 구덩이)', () => {
 
   it('a wall blocks a check, and castling past it', () => {
     const s = createStateFrom({ e1: { color: 'white', type: 'king' }, h1: { color: 'white', type: 'rook' }, e8: { color: 'black', type: 'rook' }, a8: { color: 'black', type: 'king' } }, 'white', {
-      castling: { white: { kingSide: true, queenSide: false }, black: { kingSide: false, queenSide: false }, red: { kingSide: false, queenSide: false } },
+      castling: { white: { kingSide: true, queenSide: false }, black: { kingSide: false, queenSide: false }, red: { kingSide: false, queenSide: false }, gray: { kingSide: false, queenSide: false } },
     });
     expect(isInCheck(s.board, 'white')).toBe(true);
     const walled = { ...s, terrain: [{ at: sq('e5'), kind: 'wall' as const, turnsLeft: 2, owner: 'white' as const, appliedOnTurn: 1 }] };

@@ -101,7 +101,8 @@ export const pawnStart = (c: Color, sq: Square): boolean =>
   !isAir(sq) && (MAP === 'hex3' ? halfOf(sq) === homeHalf(c) && rankOf(sq) === 1 : rankOf(sq) === (c === 'black' ? 6 : 1));
 /** A pawn of `c` reaching `sq` promotes: the far side's back rank (on the hexagon, any other player's). */
 export const promotesOn = (c: Color, sq: Square): boolean =>
-  MAP === 'hex3' ? halfOf(sq) !== homeHalf(c) && rankOf(sq) === 0 : rankOf(sq) === (c === 'black' ? 0 : 7);
+  c !== 'gray' &&
+  (MAP === 'hex3' ? halfOf(sq) !== homeHalf(c) && rankOf(sq) === 0 : rankOf(sq) === (c === 'black' ? 0 : 7));
 
 const SIDE_NAME = '백흑적';
 /** "e4", or "e4^" for the air above e4; on the hexagon "흑e4" (the half's owner, then the square as they name it). */

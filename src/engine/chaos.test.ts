@@ -7,7 +7,7 @@ const chaos = (state: GameState, ...effects: Effect[]) =>
 
 describe('running out of time', () => {
   it('costs the timeout penalty in AP and passes the turn', () => {
-    const s = { ...createInitialState({ ...DEFAULT_RULES, timeoutPenalty: 2 }), ap: { white: 3, black: 0, red: 0 } };
+    const s = { ...createInitialState({ ...DEFAULT_RULES, timeoutPenalty: 2 }), ap: { white: 3, black: 0, red: 0, gray: 0 } };
     const r = ok(applyCommand(s, { type: 'timeout' }));
     expect(r.state.ap.white).toBe(1);
     expect(r.state.turn).toBe('black');
@@ -15,13 +15,13 @@ describe('running out of time', () => {
   });
 
   it('never takes more AP than the player has', () => {
-    const s = { ...createInitialState(), ap: { white: 0, black: 0, red: 0 } };
+    const s = { ...createInitialState(), ap: { white: 0, black: 0, red: 0, gray: 0 } };
     expect(ok(applyCommand(s, { type: 'timeout' })).events[0]).toEqual({ type: 'timedOut', color: 'white', apLost: 0 });
   });
 
   it('cancels a ruling that was waiting for the player', () => {
     const ruling = { interpretation: 'x', feasible: true, dc: 4, cost: 1, effects: [], narration: { success: 's', failure: 'f' } };
-    const s = ok(applyCommand({ ...createInitialState(), ap: { white: 2, black: 0, red: 0 } }, { type: 'proposeSpecial', action: '춤', ruling }));
+    const s = ok(applyCommand({ ...createInitialState(), ap: { white: 2, black: 0, red: 0, gray: 0 } }, { type: 'proposeSpecial', action: '춤', ruling }));
     const r = ok(applyCommand(s.state, { type: 'timeout' }));
     expect(r.state.pending).toBeNull();
     expect(r.events.map((e) => e.type)).toEqual(['specialCancelled', 'timedOut', 'turnPassed']);

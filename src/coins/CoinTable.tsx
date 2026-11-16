@@ -299,12 +299,12 @@ let nextCoinId = 1;
  */
 export function CoinTable({ ap, side }: { ap: Record<Color, number>; side: 1 | -1 }) {
   const layout = useMemo(() => coinLayout(side), [side]);
-  const [piles, setPiles] = useState<Record<Color, { id: number; pose: Pose }[]>>({ white: [], black: [], red: [] });
+  const [piles, setPiles] = useState<Record<Color, { id: number; pose: Pose }[]>>({ white: [], black: [], red: [], gray: [] });
   const [flight, setFlight] = useState<Flight | null>(null);
   const [collect, setCollect] = useState<Collect | null>(null);
   const busy = useRef(false);
   const queue = useRef<Op[]>([]);
-  const planned = useRef<Record<Color, number>>({ white: 0, black: 0, red: 0 });
+  const planned = useRef<Record<Color, number>>({ white: 0, black: 0, red: 0, gray: 0 });
   const pilesRef = useRef(piles);
   pilesRef.current = piles;
   const coinRefs = useRef(new Map<number, Group>());

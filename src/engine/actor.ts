@@ -52,7 +52,7 @@ export function checkActor(board: Board, ruling: Ruling, color: Color, ctx: Effe
   if (ruling.actor === null) return '행동하는 내 기물(주체)이 없음: 누가 하는지 정해야 함';
   const at = ruling.actor;
   const piece = board[at];
-  if (!piece || piece.color !== color) return `주체 칸 ${squareName(at)}에 ${{ white: '백', black: '흑', red: '적' }[color]} 기물이 없음`;
+  if (!piece || piece.color !== color) return `주체 칸 ${squareName(at)}에 ${{ white: '백', black: '흑', red: '적', gray: '회색' }[color]} 기물이 없음`;
   if (isStunned(piece)) return `주체 ${squareName(at)}의 기물은 기절해서 행동할 수 없음`;
   const means: Means | undefined = ruling.means;
   if (!means || !MEANS.includes(means)) return '수단(means)이 올바르지 않음';

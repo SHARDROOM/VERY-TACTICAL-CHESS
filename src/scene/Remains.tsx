@@ -21,6 +21,7 @@ const LOOK = {
   white: { body: '#efe5cf', accent: '#5a4632' },
   black: { body: '#2e2b31', accent: '#b89a5e' },
   red: { body: '#8e2a22', accent: '#e3c27a' },
+  gray: { body: '#8d8c88', accent: '#4f4c47' },
 } as const;
 
 /** A small seeded random, so a pile looks the same on every screen and after a reload. */

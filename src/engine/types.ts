@@ -3,8 +3,13 @@ import type { Aura, Exit, Staging } from './staging';
 import type { Prop } from './props';
 import type { BoardMap } from './squares';
 
-/** The players' sides: white and black, and red on the three-player hexagon. */
-export type Color = 'white' | 'black' | 'red';
+/**
+ * The sides: white and black, red on the three-player hexagon, and gray: nobody's, the wanderers a
+ * chaos event brings onto the board (a merchant, a mysterious knight). Gray never takes a turn.
+ */
+export type Color = 'white' | 'black' | 'red' | 'gray';
+/** Nobody's side: chaos's wanderers (see wander.ts). */
+export const GRAY = 'gray' as const;
 export type PieceType = 'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn';
 export type PromotionType = 'queen' | 'rook' | 'bishop' | 'knight';
 export const PROMOTION_TYPES: readonly PromotionType[] = ['queen', 'rook', 'bishop', 'knight'];
@@ -315,7 +320,9 @@ export type Command =
    */
   | { type: 'land'; seed: number; landings: Landing[] }
   /** The surrendering player keeps the piece on `at` (see GameState.surrender). */
-  | { type: 'exile'; at: Square };
+  | { type: 'exile'; at: Square }
+  /** Chaos's gray wanderers each make the move given (picked at random outside the engine), after a turn passes. */
+  | { type: 'wander'; moves: { from: Square; to: Square }[] };
 
 export type MoveSpecial =
   | { kind: 'castle'; side: 'king' | 'queen' }
@@ -394,6 +401,8 @@ export type GameEvent =
   | { type: 'surrendered'; loser: Color; to: Color; keepsOne: boolean }
   /** The kept piece goes into exile under a ragged hood; everything else of `loser` now serves `to`. */
   | { type: 'exiled'; loser: Color; to: Color; piece: Piece; at: Square }
+  /** A gray wanderer (chaos's) moves of its own accord; the `moved` event follows. */
+  | { type: 'wandered'; pieceId: string; from: Square; to: Square }
   /** An exile took a king: it becomes its side's king again. */
   | { type: 'crowned'; pieceId: string; at: Square; color: Color }
   /** The given color's king is attacked after the change. */
@@ -453,7 +462,9 @@ export type RejectReason =
   | 'surrenderPending'
   | 'noSurrender'
   /** The exile must be one of the surrendering player's pieces. */
-  | 'notExiledPiece';
+  | 'notExiledPiece'
+  /** A wander move that is not a gray piece's own move (or would take a king or a piece that stands its ground). */
+  | 'illegalWander';
 
 export type CommandResult =
   | { ok: true; state: GameState; events: GameEvent[] }

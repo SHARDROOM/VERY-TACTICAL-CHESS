@@ -700,3 +700,20 @@ describe('the three-player board through a session', () => {
     setBoardMap('classic');
   });
 });
+
+describe('chaos\'s wanderers through a session', () => {
+  it('every time a turn passes, each gray piece takes a step of its own', async () => {
+    const { createStateFrom } = await import('../engine');
+    const base = createStateFrom({ e1: { color: 'white', type: 'king' }, e8: { color: 'black', type: 'king' }, a2: { color: 'white', type: 'pawn' } });
+    const board = [...base.board];
+    board[parseSquare('d4')!] = { id: 'gray-1', color: 'gray', type: 'knight', tags: [{ name: '의문의 기사', turnsLeft: null, appliedOnTurn: 1 }] };
+    const s = new LocalSession(new TestGm(), { roll: () => 6, initialState: { ...base, board }, phase: 'playing', chance: () => 0.99 });
+    const rec = record(s);
+    s.request({ type: 'move', from: parseSquare('a2')!, to: parseSquare('a3')! });
+    const events = rec.events.flatMap((e) => (e.kind === 'events' ? e.events : []));
+    expect(events.find((e) => e.type === 'wandered')).toMatchObject({ pieceId: 'gray-1', from: parseSquare('d4') });
+    expect(s.view().state.board[parseSquare('d4')!]).toBeNull();
+    expect(s.view().state.board.find((p) => p?.id === 'gray-1')).toBeTruthy();
+    s.dispose();
+  });
+});

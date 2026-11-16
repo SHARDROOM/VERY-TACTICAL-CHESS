@@ -15,13 +15,13 @@ import {
   type TerrainCell,
 } from './types';
 import type { Exit, Staging } from './staging';
-import { enPassantVictim, isInCheck, legalTargets } from './moves';
+import { enPassantVictim, isInCheck, legalTargets, movesFrom } from './moves';
 import { backRank, setBoardMap, isAir, isHex, pawnForward, pawnStart, playersOf, promotesOn, step } from './squares';
 import { revokeCastling } from './castling';
 import { DIE_SIDES, ROLL_MAX, ROLL_MIN } from './config';
 import { applyEffects, validateRuling, type EffectContext } from './effects';
 import { extinguish, hasTag, isShielded, mapStack, moveTimesOf, ridersOf, stackOf, tickTags, unseat, withTag, withoutTag } from './tags';
-import { HOOD, SHIELD, type Tag } from './types';
+import { GRAY, HOOD, SHIELD, type Tag } from './types';
 import { dropFromBridges, tickTerrain } from './terrain';
 import { capturedAfter } from './captured';
 import { playFalls, startFalls } from './levitation';
@@ -72,6 +72,8 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
     }
     case 'chaos':
       return chaos(state, cmd.chaos);
+    case 'wander':
+      return wander(state, cmd.moves);
   }
 }
 
@@ -110,7 +112,7 @@ function chaos(state: GameState, event: ChaosEvent): CommandResult {
   const bad = (detail: string): CommandResult => ({ ok: false, reason: 'invalidChaos', detail });
   if (typeof event?.title !== 'string' || typeof event.narration !== 'string' || !Array.isArray(event.effects)) return bad('형식이 올바르지 않음');
   if (event.effects.length > state.rules.maxEffects) return bad(`효과가 너무 많음 (최대 ${state.rules.maxEffects}개)`);
-  const applied = applyEffects(state.board, event.effects, effectContext(state));
+  const applied = applyEffects(state.board, event.effects, { ...effectContext(state), chaos: true });
   if (!applied.ok) return bad(applied.detail);
   if (playersOf().some((c) => isInCheck(applied.board, c, applied.terrain))) return bad('혼돈 뒤에 킹이 공격받는 상태가 됨');
   const title = event.title.trim().slice(0, 40);
@@ -228,6 +230,48 @@ function exile(state: GameState, at: Square): CommandResult {
   const { surrender: _done, ...rest } = state;
   void _done;
   return { ok: true, state: { ...rest, board }, events };
+}
+
+/** The moves a gray wanderer on `from` may make: its own moves, never onto a king or a piece that would stand its ground. */
+export function wanderTargets(board: Board, from: Square, terrain?: readonly TerrainCell[]): Square[] {
+  const piece = board[from];
+  if (piece?.color !== GRAY) return [];
+  return movesFrom(board, from, terrain).filter((to) => {
+    const there = board[to];
+    return !there || (there.type !== 'king' && !canResist(there));
+  });
+}
+
+/**
+ * Chaos's gray wanderers move of their own accord (docs/SPEC.md, "떠돌이"): each move in turn, as
+ * given (picked at random by whoever runs the game), taking whatever it lands on. They never take
+ * a king or a piece that would stand its ground, and nobody's turn changes.
+ */
+function wander(state: GameState, moves: { from: Square; to: Square }[]): CommandResult {
+  if (!Array.isArray(moves)) return { ok: false, reason: 'illegalWander' };
+  const board: (Piece | null)[] = [...state.board];
+  const events: GameEvent[] = [];
+  const touched: Square[] = [];
+  let falls: GameState['falling'] = [];
+  for (const m of moves) {
+    if (!m || !Number.isInteger(m.from) || !Number.isInteger(m.to) || !wanderTargets(board, m.from, state.terrain).includes(m.to)) {
+      return { ok: false, reason: 'illegalWander' };
+    }
+    const piece = board[m.from]!;
+    const captured = board[m.to];
+    const fireOut: GameEvent[] = [];
+    board[m.to] = extinguish(piece, m.to, fireOut);
+    board[m.from] = null;
+    touched.push(m.from, m.to);
+    events.push({ type: 'wandered', pieceId: piece.id, from: m.from, to: m.to });
+    events.push({ type: 'moved', pieceId: piece.id, from: m.from, to: m.to, captured });
+    // Whoever rode what it took tumbles off.
+    if (captured) falls = [...(falls ?? []), ...unseat(captured, m.to, events, m.from)];
+    events.push(...fireOut);
+  }
+  for (const c of playersOf()) if (isInCheck(board, c, state.terrain)) events.push({ type: 'check', color: c });
+  const after = withCaptured({ ...state, board, castling: revokeCastling(state.castling, touched), ...withFalls(state, falls) }, events);
+  return { ok: true, state: after, events };
 }
 
 /** Who moves after the player now to move: the next in turn order who still has pieces. */

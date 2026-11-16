@@ -88,7 +88,7 @@ describe('the three-player board', () => {
     }
     // Castling on its own back rank.
     const c = hex({ '흑e1': { color: 'black', type: 'king' }, '흑h1': { color: 'black', type: 'rook' } }, 'black', {
-      castling: { white: { kingSide: false, queenSide: false }, black: { kingSide: true, queenSide: false }, red: { kingSide: false, queenSide: false } },
+      castling: { white: { kingSide: false, queenSide: false }, black: { kingSide: true, queenSide: false }, red: { kingSide: false, queenSide: false }, gray: { kingSide: false, queenSide: false } },
     });
     expect(legalTargets(c, sq('흑e1')).find((t) => t.special?.kind === 'castle')?.to).toBe(sq('흑g1'));
   });

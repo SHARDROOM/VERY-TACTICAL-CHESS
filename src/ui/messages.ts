@@ -1,7 +1,7 @@
 import { josa } from './josa';
 import { BURN, COVER_NAME, TERRAIN_NAME, clashScore, squareName, type Color, type GameEvent, type Outcome, type PieceType, type RejectReason } from '../engine';
 
-export const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑', red: '적' };
+export const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
 
 export const PIECE_NAME: Record<PieceType, string> = {
   king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰',
@@ -32,6 +32,7 @@ export const REJECT_MESSAGE: Record<RejectReason, string> = {
   surrenderPending: '항복한 쪽이 남길 기물을 고르는 중입니다.',
   noSurrender: '항복한 플레이어가 없습니다.',
   notExiledPiece: '항복한 쪽의 기물만 남길 수 있습니다.',
+  illegalWander: '떠돌이 기물이 그렇게 움직일 수 없습니다.',
   chainInProgress: '연속 이동 중에는 특수 행동을 할 수 없습니다. 기물을 한 번 더 움직이거나 턴을 넘기세요.',
 };
 
@@ -201,6 +202,9 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
           const particle = josa(name, '이/가').slice(name.length);
           add(`${COLOR_NAME[e.loser]}의 ${name}(${squareName(e.at)})${particle} 누더기 후드를 뒤집어쓰고 망명합니다… 나머지는 모두 ${COLOR_NAME[e.to]}의 지휘를 받습니다.`, 'warn');
         }
+        break;
+      case 'wandered':
+        add(`🚶 떠돌이가 제멋대로 움직입니다: ${squareName(e.from)} → ${squareName(e.to)}`);
         break;
       case 'crowned':
         add(`👑 망명자가 킹을 잡고 ${COLOR_NAME[e.color]}의 새 킹이 되었습니다!`, 'warn');
