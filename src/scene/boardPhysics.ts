@@ -4,6 +4,7 @@ import { loadPhysics } from '../dice3d/simulate';
 import { addPieceColliders, ballistic, hullPoints } from './piecePhysics';
 import { PIECE_HEIGHT } from './pieceGeometry';
 import { AIR_Y, squareToWorld, worldToBoard } from './coords';
+import { CHUNK } from './debris';
 import { TABLE_TOP_Y } from './WoodTable';
 
 /*
@@ -54,8 +55,18 @@ export function seeded(seed: number): () => number {
   };
 }
 
+/** A chunk of a shattered piece lying about (debris.ts), as a body for the board simulations. */
+export interface DebrisBody {
+  key: string;
+  hull: Float32Array;
+  p: Vector3;
+  q: Quaternion;
+}
+
 export interface RompOptions {
   board: Board;
+  /** Chunks lying on the board: pieces moving past push them about (tracks keyed CHUNK + key). */
+  debris?: readonly DebrisBody[];
   movers: Mover[];
   /** Pieces left out (they go their own way, e.g. a victim with a staged exit). */
   exclude?: ReadonlySet<string>;
@@ -153,6 +164,25 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
       );
       hull(m.type, b, 0.35, m.rider);
       bodies.push({ id: m.id, body: b });
+    }
+
+    // The chunks lying about, light and loose (one under a piece standing on its square stays out:
+    // it would only be squeezed out of it).
+    const standing = bodies.map(({ body }) => body.translation());
+    for (const c of o.debris ?? []) {
+      if (standing.some((t) => Math.hypot(t.x - c.p.x, t.z - c.p.z) < 0.34 && c.p.y < 1.2)) continue;
+      const b = world.createRigidBody(
+        RAPIER.RigidBodyDesc.dynamic()
+          .setTranslation(c.p.x, c.p.y, c.p.z)
+          .setRotation({ x: c.q.x, y: c.q.y, z: c.q.z, w: c.q.w })
+          .setLinearDamping(0.15)
+          .setAngularDamping(0.5)
+          .setCcdEnabled(true),
+      );
+      const hull = RAPIER.ColliderDesc.convexHull(c.hull);
+      if (!hull) continue;
+      world.createCollider(hull.setDensity(0.8).setFriction(0.55).setRestitution(0.25), b);
+      bodies.push({ id: CHUNK + c.key, body: b });
     }
 
     const maxSeconds = o.movers.some((m) => m.mode === 'throw') ? 2.6 : 2.2;

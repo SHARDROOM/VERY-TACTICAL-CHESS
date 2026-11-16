@@ -52,6 +52,7 @@ import { prefersReducedMotion, useStagingLook } from './stagingLook';
 import type { FxShow } from '../scene/FxLayer';
 import { duelLength, planDuel, simulateDuel, type DuelPlan, type DuelRun } from '../scene/duel';
 import { runLength, simulateFalls, simulateRomp, type BoardRun, type Mover } from '../scene/boardPhysics';
+import { playChunkTracks, restingChunks } from '../scene/debris';
 import type { PieceDirection } from '../scene/pieceMotion';
 
 interface LogLine extends LogEntry {
@@ -372,7 +373,10 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       const lead = !resumed && batch.rolled ? SHOW_LEAD_IN : 0;
       const t0 = resumed ? show.timeline.effectStarts[from] ?? 0 : 0;
       setFrozen(show.steps[from]);
-      setStage({ show, startedAt: performance.now() + (lead - t0) * 1000, from, romps });
+      const startedAt = performance.now() + (lead - t0) * 1000;
+      setStage({ show, startedAt, from, romps });
+      // Chunks of shattered pieces the flights push about go along.
+      for (const r of romps) if (r.effect >= from) playChunkTracks(r.run.tracks, r.run.steps, r.run.dt, startedAt + (show.timeline.effectStarts[r.effect] ?? 0) * 1000);
       if (!resumed) setCaption({ kind: show.kind, title: show.title, text: show.caption, outcome: show.outcome });
       // A clash (합) stops the show at its effect for the dice and the duel, then it goes on from there.
       const next = show.clashes.find((c) => (resumed ? c.effect > from : c.effect >= from));
@@ -453,10 +457,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     const startRomp = (batch: Batch, done: () => void) => {
       const ev = batch.events.find((e): e is Extract<GameEvent, { type: 'moved' }> => e.type === 'moved')!;
       const movers = moversOf(ev, batch.before.board);
-      void simulateRomp({ board: batch.before.board, movers, terrain: batch.before.terrain, seed: moveSeed(batch.before.turnNumber, ev.from, ev.to) })
+      void simulateRomp({ board: batch.before.board, movers, terrain: batch.before.terrain, debris: restingChunks(), seed: moveSeed(batch.before.turnNumber, ev.from, ev.to) })
         .then((run) => {
           const start = performance.now();
           setRomp({ run, start });
+          playChunkTracks(run.tracks, run.steps, run.dt, start);
           setTimeout(done, Math.max(0, runLength(run) * 1000 - 60));
           setTimeout(() => setRomp((r) => (r?.run === run ? null : r)), runLength(run) * 1000 + 450);
         })
@@ -499,6 +504,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             movers: [{ id: piece.id, type: piece.type, ...(piece.rider && { rider: piece.rider.type }), from: e.from, to: e.to, mode: 'throw' }],
             exclude: new Set(victim ? [victim.id] : []),
             terrain: before.terrain,
+            debris: restingChunks(),
             seed: moveSeed(before.turnNumber, e.from, e.to) + i,
           });
           out.push({ effect: i, run });

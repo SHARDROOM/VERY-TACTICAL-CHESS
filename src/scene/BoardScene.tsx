@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import { CanvasTexture, SRGBColorSpace, Vector3, type Group } from 'three';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { CameraControls, Environment, Lightformer } from '@react-three/drei';
 import { fileOf, isAir, rankOf, type Board, type CapturedPiece, type Color, type FallingPiece, type Square, type TerrainCell } from '../engine';
 import { squareToWorld } from './coords';
 import { fallStart } from './boardPhysics';
+import { TableContext, type TableHands } from './tableDrag';
+import { clearChunks, restingChunks } from './debris';
 import { PieceMesh, PiecePhysicsContext, type PiecePhysics } from './PieceMesh';
 import type { Obstacle } from './piecePhysics';
 import { TABLE_TOP_Y, WoodTable } from './WoodTable';
@@ -223,8 +225,38 @@ function ClashOdds({ at, chance, height }: { at: Square; chance: number; height:
 const LIGHT = '#d4bf98';
 const DARK = '#7d5a3b';
 
-function CameraRig({ camera, diceSide, locked }: { camera: CameraRequest; diceSide: 1 | -1; locked: boolean }) {
+/**
+ * Development only: lets a test script find things on screen (window.__vtcProbe): the camera,
+ * the chunks lying about and the taken pieces beside the board, as screen points.
+ */
+function DevProbe({ resting }: { resting: Map<string, Obstacle> }) {
+  const { camera, size } = useThree();
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const screen = (p: Vector3) => {
+      const v = p.clone().project(camera);
+      return [Math.round(((v.x + 1) / 2) * size.width), Math.round(((1 - v.y) / 2) * size.height)];
+    };
+    (window as unknown as Record<string, unknown>).__vtcProbe = () => ({
+      camera: camera.position.toArray().map((n) => Math.round(n * 100) / 100),
+      chunks: restingChunks().map((c) => ({ key: c.key, at: c.p.toArray().map((n) => Math.round(n * 100) / 100), screen: screen(c.p) })),
+      taken: [...resting.entries()].map(([id, o]) => ({ id, at: o.pose.position.toArray().map((n) => Math.round(n * 100) / 100), screen: screen(o.pose.position.clone().setY(o.pose.position.y + 0.25)) })),
+    });
+  }, [camera, size, resting]);
+  return null;
+}
+
+function CameraRig({ camera, diceSide, locked, holdNow }: { camera: CameraRequest; diceSide: 1 | -1; locked: boolean; holdNow?: MutableRefObject<(on: boolean) => void> }) {
   const ref = useRef<CameraControls>(null);
+  // Something picked up: stop turning the camera at once (the same touch must not turn it).
+  if (holdNow) {
+    holdNow.current = (on) => {
+      const c = ref.current;
+      if (!c) return;
+      if (on) c.cancel();
+      c.enabled = !on && !locked;
+    };
+  }
   const aspect = useThree((st) => st.size.width / Math.max(1, st.size.height));
   // Portrait screens (phones) need the camera further back to fit the board's width.
   const zoom = aspect < 1 ? Math.min(2.4, 0.95 / aspect) : 1;
@@ -327,9 +359,27 @@ export function BoardScene({
     e.stopPropagation();
     onSquareClick(sq);
   };
+  // Picking things up off the table: the camera holds still meanwhile (see CameraRig).
+  const [holding, setHolding] = useState(false);
+  const holdNow = useRef<(on: boolean) => void>(() => {});
+  const boardNow = useRef(board);
+  boardNow.current = board;
+  const hands = useMemo<TableHands>(
+    () => ({
+      hold: (on) => {
+        holdNow.current(on);
+        setHolding(on);
+      },
+      board: () => boardNow.current,
+    }),
+    [],
+  );
+  // Leaving the table (a new game, the menu): the chunks lying about go with it.
+  useEffect(() => () => clearChunks(), []);
 
   return (
-    <Canvas shadows camera={{ position: [0, 8.5, 8], fov: 45 }}>
+    // No long-press menu on the table (it would open while drawing or dragging).
+    <Canvas shadows camera={{ position: [0, 8.5, 8], fov: 45 }} onContextMenu={(e) => e.preventDefault()}>
       <color attach="background" args={['#15161b']} />
       <ambientLight intensity={0.35} />
       {/* Procedural studio reflections: no downloaded HDR files. */}
@@ -348,8 +398,9 @@ export function BoardScene({
       {tour ? (
         <TourCamera diceSide={diceSide} inset={tour.inset} onPhase={tour.onPhase} />
       ) : (
-        <CameraRig camera={camera} diceSide={diceSide} locked={!!doodle?.tool} />
+        <CameraRig camera={camera} diceSide={diceSide} locked={!!doodle?.tool || holding} holdNow={holdNow} />
       )}
+      {import.meta.env.DEV && <DevProbe resting={resting.current} />}
 
       <ShakeGroup shake={shake}>
       <WoodTable />
@@ -388,6 +439,7 @@ export function BoardScene({
         <ClashOdds key={c.at} at={c.at} chance={c.chance} height={squareToWorld(c.at)[1] + (board[c.at] ? PIECE_HEIGHT[board[c.at]!.type] : 1)} />
       ))}
 
+      <TableContext.Provider value={hands}>
       <PiecePhysicsContext.Provider value={physics}>
       {/* One list for the board and the side, so a taken piece stays the same object and travels from its square. */}
       {[
@@ -417,12 +469,13 @@ export function BoardScene({
             selected={false}
             captured
             exit={piece.exit}
-            shardsAt={piece.exit === 'shatter' && piece.at !== undefined ? squareToWorld(piece.at) : undefined}
+            shards={piece.exit === 'shatter' && piece.at !== undefined ? { square: piece.at, world: squareToWorld(piece.at) } : undefined}
             direction={directions?.get(piece.id)}
           />
         )),
       ]}
       </PiecePhysicsContext.Provider>
+      </TableContext.Provider>
       <FxLayer show={fx} pieceAt={pieceAt} auras={auras} light={lightFx} />
       </ShakeGroup>
     </Canvas>

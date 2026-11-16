@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useFrame } from '@react-three/fiber';
-import { IcosahedronGeometry, LatheGeometry, MeshBasicMaterial, Vector2, type Group, type Mesh } from 'three';
+import { useFrame, type ThreeEvent } from '@react-three/fiber';
+import { IcosahedronGeometry, LatheGeometry, MeshBasicMaterial, Quaternion, Vector2, Vector3, type Group, type Mesh } from 'three';
 import type { Color, PieceType } from '../engine';
 import { featureParts } from './pieceGeometry';
-import { fragmentsOf, simulateShatter, type ShatterRun } from './shatter';
+import { fragmentsOf, simulateChunkThrow, simulateShatter } from './shatter';
+import { addChunk, chunkKey, chunkPose, chunkWaiting, chunksOf, getChunk, playChunk, removeChunks } from './debris';
+import { Fling, carryPoint, tableObstacles, useTable } from './tableDrag';
 
 /*
  * What is left of a piece after a staged exit (docs/SPEC.md, "GM 연출"): beside the board a
@@ -70,43 +72,111 @@ export function AshPile({ type, color, id }: { type: PieceType; color: Color; id
 const FLECK = new IcosahedronGeometry(1, 0).scale(0.03, 0.02, 0.03);
 
 /**
- * What is left of a shattered piece on the board: the piece itself in chunks (shatter.ts), burst
- * apart by the physics and lying where they came to rest, for the rest of the game. Placed in a
- * group at the square's centre `center` (world). With `burst` (from performance.now() ms `start`)
- * the burst plays; without, they simply lie there. Nothing shows until the physics is ready.
+ * What is left of a shattered piece: the piece itself in chunks (shatter.ts), burst apart by the
+ * physics, bouncing off the pieces around, and lying where they came to rest for the rest of the
+ * game, in the chunk registry (debris.ts): pieces moving past push them about, and the player can
+ * drag and throw them. The square's centre is `center` (world); with `burst` (from
+ * performance.now() ms `start`) the burst plays, without it they just lie there. Drawn in world
+ * space. A tap on a chunk goes through to the square under it.
  */
-export function ShardScatter({ type, color, id, center, burst }: { type: PieceType; color: Color; id: string; center: [number, number, number]; burst?: { start: number } | null }) {
+export function ShardScatter({ type, color, id, center, square, burst }: {
+  type: PieceType;
+  color: Color;
+  id: string;
+  center: [number, number, number];
+  square: number;
+  burst?: { start: number } | null;
+}) {
   const fragments = useMemo(() => fragmentsOf(type), [type]);
+  const table = useTable();
   const [cx, cy, cz] = center;
-  const [run, setRun] = useState<ShatterRun | null>(null);
+  const [ready, setReady] = useState(() => chunksOf(id).length > 0);
   useEffect(() => {
+    // Already lying about (shown before): they stay where they are.
+    if (chunksOf(id).length) return setReady(true);
     let alive = true;
-    simulateShatter(type, id, [cx, cy, cz])
-      .then((r) => alive && setRun(r))
+    const board = table?.board();
+    simulateShatter(type, id, [cx, cy, cz], board ? tableObstacles(board, { square }) : undefined)
+      .then((run) => {
+        if (!alive) return;
+        if (!chunksOf(id).length) {
+          fragments.forEach((f, i) => {
+            const frames = run.tracks[i];
+            if (!frames) return;
+            const c = { key: chunkKey(id, i), pieceId: id, index: i, hull: f.hull, p: new Vector3(), q: new Quaternion() };
+            playChunk(c, frames, run.steps, run.dt, burst?.start ?? 0);
+            addChunk(c);
+          });
+        }
+        setReady(true);
+      })
       .catch(() => {});
     return () => {
       alive = false;
     };
+    // The burst's moment is read once, when it starts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, id, cx, cy, cz]);
   const refs = useRef<(Mesh | null)[]>([]);
   const look = LOOK[color];
+  const drag = useRef<{ key: string; x: number; y: number; moved: boolean; fling: Fling } | null>(null);
 
   useFrame(() => {
-    if (!run) return;
-    const t = burst ? (performance.now() - burst.start) / 1000 : Infinity;
-    const step = t < 0 ? -1 : Math.min(run.steps - 1, Math.floor(t / run.dt));
-    run.tracks.forEach((f, i) => {
+    if (!ready) return;
+    const now = performance.now();
+    fragments.forEach((_, i) => {
       const m = refs.current[i];
+      const c = getChunk(chunkKey(id, i));
       if (!m) return;
-      m.visible = step >= 0;
-      if (step < 0) return;
-      const k = step * 7;
-      m.position.set(f[k] - cx, f[k + 1] - cy, f[k + 2] - cz);
-      m.quaternion.set(f[k + 3], f[k + 4], f[k + 5], f[k + 6]);
+      m.visible = !!c && !chunkWaiting(c, now);
+      if (!c || !m.visible) return;
+      if (c.held) {
+        m.position.copy(c.p);
+        m.quaternion.copy(c.q);
+      } else chunkPose(c, now, m.position, m.quaternion);
     });
   });
 
-  if (!run) return null;
+  if (!ready) return null;
+  const down = (i: number) => (e: ThreeEvent<PointerEvent>) => {
+    const c = getChunk(chunkKey(id, i));
+    // Still flying (its burst, a shove): it cannot be caught.
+    if (!c || (c.track && performance.now() < c.track.start + c.track.steps * c.track.dt * 1000)) return;
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    table?.hold(true);
+    drag.current = { key: c.key, x: e.clientX, y: e.clientY, moved: false, fling: new Fling() };
+  };
+  const move = (e: ThreeEvent<PointerEvent>) => {
+    const d = drag.current;
+    const c = d && getChunk(d.key);
+    if (!d || !c) return;
+    if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
+    d.moved = true;
+    c.held = true;
+    if (carryPoint(e.ray, TMP_P)) {
+      c.p.copy(TMP_P);
+      d.fling.add(TMP_P);
+    }
+  };
+  const up = (e: ThreeEvent<PointerEvent>) => {
+    const d = drag.current;
+    drag.current = null;
+    table?.hold(false);
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    const c = d && getChunk(d.key);
+    if (!d || !c || !d.moved) return;
+    // Let go: it falls (or flies, if it was swung) onto whatever is below.
+    const board = table?.board();
+    simulateChunkThrow(c.hull, c.p.clone(), c.q.clone(), d.fling.velocity(), board ? tableObstacles(board, { chunkKey: c.key }) : undefined)
+      .then((run) => {
+        c.held = false;
+        playChunk(c, run.tracks[0], run.steps, run.dt, performance.now());
+      })
+      .catch(() => {
+        c.held = false;
+      });
+  };
   return (
     <group>
       {fragments.map((f, i) => (
@@ -117,9 +187,79 @@ export function ShardScatter({ type, color, id, center, burst }: { type: PieceTy
           visible={false}
           castShadow
           receiveShadow
-          // Only to look at: clicks go through to the square underneath.
-          raycast={() => null}
+          onPointerDown={down(i)}
+          onPointerMove={move}
+          onPointerUp={up}
+          onPointerCancel={up}
         >
+          <meshPhysicalMaterial color={f.accent ? look.accent : look.body} roughness={0.38} clearcoat={0.5} flatShading />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+const TMP_P = new Vector3();
+
+/** Seconds the chunks of a revived piece take to fly back together. */
+export const GATHER_SECONDS = 1.0;
+
+/**
+ * A shattered piece revived: its chunks fly back from wherever they lie and fit together again
+ * on `to` (world), turned `turn` about the vertical; then they are gone and the piece stands there.
+ * From performance.now() ms `start`, over `seconds`.
+ */
+export function ShardGather({ type, color, id, to, turn, start, seconds }: {
+  type: PieceType;
+  color: Color;
+  id: string;
+  to: [number, number, number];
+  turn: number;
+  start: number;
+  seconds: number;
+}) {
+  const fragments = useMemo(() => fragmentsOf(type), [type]);
+  // Where each chunk is now (taken out of the registry: from here on they are this piece's again).
+  const from = useMemo(() => {
+    const now = performance.now();
+    const out = fragments.map((f, i) => {
+      const c = getChunk(chunkKey(id, i));
+      const p = new Vector3();
+      const q = new Quaternion();
+      if (c) chunkPose(c, now, p, q);
+      else p.set(to[0] + f.center[0] * 3, to[1], to[2] + f.center[2] * 3);
+      return { p, q };
+    });
+    removeChunks(id);
+    return out;
+  }, [id, fragments, to]);
+  const targets = useMemo(() => {
+    const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), turn);
+    return fragments.map((f) => ({ p: new Vector3(...f.center).applyQuaternion(q).add(new Vector3(...to)), q }));
+  }, [fragments, to, turn]);
+  const refs = useRef<(Mesh | null)[]>([]);
+  const look = LOOK[color];
+
+  useFrame(() => {
+    const t = (performance.now() - start) / 1000;
+    fragments.forEach((_, i) => {
+      const m = refs.current[i];
+      if (!m) return;
+      // Each sets off a moment after the last, and they all click into place together.
+      const begin = (i / fragments.length) * 0.25 * seconds;
+      const u = Math.max(0, Math.min(1, (t - begin) / (seconds * 0.85 - begin)));
+      const e = u < 0.5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2;
+      m.visible = t < seconds * 0.9;
+      m.position.lerpVectors(from[i].p, targets[i].p, e);
+      m.position.y += Math.sin(Math.PI * e) * (0.6 + 0.08 * i);
+      m.quaternion.slerpQuaternions(from[i].q, targets[i].q, e);
+    });
+  });
+
+  return (
+    <group>
+      {fragments.map((f, i) => (
+        <mesh key={i} ref={(m) => void (refs.current[i] = m)} geometry={f.geometry} castShadow raycast={() => null}>
           <meshPhysicalMaterial color={f.accent ? look.accent : look.body} roughness={0.38} clearcoat={0.5} flatShading />
         </mesh>
       ))}

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
-import { Euler, Quaternion, Vector3, type Group, type Mesh, type MeshPhysicalMaterial } from 'three';
+import { Euler, Quaternion, Vector2, Vector3, type Group, type Mesh, type MeshPhysicalMaterial } from 'three';
 import { BURN, CORE_TAGS, RIDE, SHIELD, STUN, hasTag, type Color, type Entrance, type Exit, type MotionStyle, type Piece, type PieceType } from '../engine';
 import { PIECE_HEIGHT, pieceParts } from './pieceGeometry';
 import { FoldingBadges, ShieldBubble, StunStars, type Chip } from './TagEffects';
@@ -10,7 +10,9 @@ import { TABLE_TOP_Y } from './WoodTable';
 import { actPose, easeInOut, entrancePose, stylePose, swapPose, swerve, type PieceDirection, type Pose } from './pieceMotion';
 import { AIR_Y, squareToWorld } from './coords';
 import { finishMaterial, type Finish } from './pieceFinish';
-import { AshPile, Relic, SHATTER_SECONDS, ShardScatter, SmokeWisp } from './Remains';
+import { AshPile, GATHER_SECONDS, Relic, SHATTER_SECONDS, ShardGather, ShardScatter, SmokeWisp } from './Remains';
+import { chunksOf } from './debris';
+import { Fling, carryPoint, useTable } from './tableDrag';
 import { PropOnPiece } from './PropMesh';
 
 /** What the pieces share for physics: which side the dice are on, and where taken pieces lie. */
@@ -117,8 +119,8 @@ interface Props {
   direction?: PieceDirection;
   /** Beside the board: how it left (as the GM staged it). */
   exit?: Exit;
-  /** Shattered: the square (world centre) its shards lie strewn around. */
-  shardsAt?: [number, number, number];
+  /** Shattered: the square its shards burst on (and its centre, in world units). */
+  shards?: { square: number; world: [number, number, number] };
   onClick?: (e: ThreeEvent<MouseEvent>) => void;
   onHover?: (hovering: boolean) => void;
 }
@@ -129,7 +131,8 @@ const LANDING = { restitution: 0.02, friction: 1.2, angularDamping: 3 };
 
 /** A recorded physics flight being played back, then (for pieces on the board) a glide upright. */
 interface PhysicsMotion {
-  purpose: 'toss' | 'drop' | 'fling';
+  /** 'fidget': a taken piece the player picked up and let go of (or threw). */
+  purpose: 'toss' | 'drop' | 'fling' | 'fidget';
   run: PieceRun | null;
   startedAt: number | null;
   delay: number;
@@ -157,7 +160,8 @@ interface Motion {
   /** For 'settle': the tilt it starts from (it stands up on the way). */
   fromQ?: Quaternion;
   /** For 'styled' trips, 'entrance's, 'exit's and 'revive's. */
-  style?: MotionStyle | Entrance | Exit;
+  /** ('gather': a shattered piece's chunks fly back together, and then it is there.) */
+  style?: MotionStyle | Entrance | Exit | 'gather';
   /** Trading squares: swerve to this side of the line so the two pieces pass each other. */
   side?: 1 | -1;
   /** What comes right after (a piece thrown into a pit falls in once it gets there). */
@@ -186,6 +190,7 @@ const UP = new Vector3(0, 1, 0);
 const TMP_AXIS = new Vector3();
 const TMP_Q = new Quaternion();
 const TMP_Q2 = new Quaternion();
+const TMP_V = new Vector3();
 const TMP_E = new Euler();
 
 /** A pose's turn and lean as a rotation; `dirX/dirZ` is the direction of travel. */
@@ -225,7 +230,7 @@ function planMove(from: Vector3, to: Vector3, captured: boolean): Omit<Motion, '
  * visuals live here and in pieceGeometry, so they can later be swapped for
  * model files without touching the rest of the scene.
  */
-export function PieceMesh({ piece, position, selected, captured = false, popIn = false, direction, exit, shardsAt, onClick, onHover }: Props) {
+export function PieceMesh({ piece, position, selected, captured = false, popIn = false, direction, exit, shards, onClick, onHover }: Props) {
   const group = useRef<Group>(null);
   const riderRef = useRef<Group>(null);
   /** Which of this show's trips comes next. */
@@ -234,10 +239,24 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const glowOn = useRef(false);
   const flourish = useRef<Flourish | null>(null);
   const riderHop = useRef<{ from: Vector3; start: number } | null>(null);
+  /**
+   * The rider's sway: it is held on loosely, so it leans against the carrier's every start, stop
+   * and knock (its feet stay put) and springs back, wobbling a little. Tilt (radians) about the
+   * carrier's x and z axes, their rates, and the carrier's last world position and velocity.
+   */
+  const sway = useRef({ tilt: new Vector2(), rate: new Vector2(), last: null as Vector3 | null, vel: new Vector3() });
   const shownSquash = useRef(1);
   const travel = useRef({ x: 0, z: 0 });
   const prev = useRef({ type: piece.type, color: piece.color, rider: piece.rider?.id ?? null });
   const wasCaptured = useRef(captured);
+  /** How it last left the board (a shattered piece comes back by gathering its chunks). */
+  const lastExit = useRef(exit);
+  if (captured) lastExit.current = exit;
+  /** A shattered piece being revived: its chunks flying back together (from performance.now() ms). */
+  const [gather, setGather] = useState<{ start: number; seconds: number; to: [number, number, number] } | null>(null);
+  const table = useTable();
+  /** Being dragged about beside the board (a taken piece, for fun). */
+  const held = useRef<{ x: number; y: number; moved: boolean; fling: Fling } | null>(null);
   /** An exit being played (the remains show once it is over). */
   /** A staged exit playing: how, from when (performance.now() ms), and where it stood (world). */
   const [exiting, setExiting] = useState<{ kind: Exit; start: number; from: [number, number, number] } | null>(null);
@@ -295,7 +314,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       .then((run) => {
         if (phys.current !== m) return;
         m.run = run;
-        if (purpose === 'toss' && physics) physics.resting.set(piece.id, { type: piece.type, scale: opts.scale, pose: run.final });
+        if ((purpose === 'toss' || purpose === 'fidget') && physics) physics.resting.set(piece.id, { type: piece.type, scale: opts.scale, pose: run.final });
       })
       .catch(() => {
         if (phys.current !== m) return;
@@ -303,6 +322,50 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         phys.current = null;
         motion.current = fallback;
       });
+  };
+
+  // A taken piece beside the board can be picked up, carried about and let go of (or thrown).
+  const pickUp = (e: ThreeEvent<PointerEvent>) => {
+    if (!captured || !table || !physics || phys.current || motion.current || exitingRef.current) return;
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    table.hold(true);
+    held.current = { x: e.clientX, y: e.clientY, moved: false, fling: new Fling() };
+  };
+  const carry = (e: ThreeEvent<PointerEvent>) => {
+    const h = held.current;
+    if (!h) return;
+    if (!h.moved && Math.hypot(e.clientX - h.x, e.clientY - h.y) < 6) return;
+    h.moved = true;
+    if (carryPoint(e.ray, TMP_V)) {
+      shownAt.current.copy(TMP_V);
+      h.fling.add(TMP_V);
+    }
+  };
+  const letGo = (e: ThreeEvent<PointerEvent>) => {
+    const h = held.current;
+    held.current = null;
+    table?.hold(false);
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    if (!h?.moved || !physics) return;
+    const velocity = h.fling.velocity();
+    const at = shownAt.current.clone();
+    const still: Motion = { from: at, to: at, fromScale: shownScale.current, toScale: shownScale.current, delay: 0, duration: 0.2, arc: 0, startedAt: null, kind: 'captured' };
+    launch(
+      'fidget',
+      still,
+      {
+        type: piece.type,
+        scale: shownScale.current,
+        start: { position: at, quaternion: shownQ.current.clone() },
+        velocity,
+        spin: tumble(velocity.lengthSq() > 0.01 ? velocity : new Vector3(0.2, 0, 0), 0.5 + velocity.length() * 0.6),
+        obstacles: [...physics.resting.entries()].filter(([id]) => id !== piece.id).map(([, o]) => o),
+        diceSide: physics.diceSide,
+        maxSeconds: 4,
+      },
+      null,
+    );
   };
 
   /** Burns down, shatters, vanishes or sinks on the spot `from`, then turns up beside the board at `to`. */
@@ -447,6 +510,14 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       setExiting(null);
       const style = direction?.revive?.style ?? 'default';
       const duration = Math.max(0.4, direction?.revive?.duration ?? 1.3);
+      if (lastExit.current === 'shatter' && chunksOf(piece.id).length) {
+        // Shattered: its chunks fly back from where they lie and fit together on its square.
+        const seconds = Math.max(GATHER_SECONDS, duration);
+        setGather({ start: performance.now(), seconds, to: [to.x, to.y, to.z] });
+        motion.current = { ...scripted, from: to.clone(), delay: 0, duration: seconds, arc: 0, kind: 'revive', style: 'gather' };
+        glow.current = { color: '#fff1c9', peak: 1.5, start: performance.now() + seconds * 800, duration: seconds * 400 };
+        return;
+      }
       motion.current = { ...scripted, delay: 0, duration, arc: 2, kind: 'revive', style };
       glow.current = { color: '#fff1c9', peak: 1.5, start: performance.now(), duration: duration * 1000 };
       return;
@@ -604,6 +675,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
           g.position.copy(shownAt.current);
           g.quaternion.copy(shownQ.current);
           g.scale.setScalar(shownScale.current);
+          swayRider(dt);
           return;
         }
       }
@@ -661,6 +733,12 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         poseRotation(ps, travel.current.x / len, travel.current.z / len, shownQ.current);
         shownScale.current = (m.fromScale + (m.toScale - m.fromScale) * easeInOut(p)) * ps.scale;
         squash = ps.squashY;
+      } else if (m.kind === 'revive' && m.style === 'gather') {
+        // Not there while its chunks fly together; whole the moment they meet.
+        shownAt.current.copy(m.to);
+        shownQ.current.identity();
+        shownScale.current = p < 0.86 ? 0.0001 : m.toScale * Math.max(0.0001, easeOutBack((p - 0.86) / 0.14));
+        if (p >= 1) setGather(null);
       } else if (m.kind === 'revive') {
         const style = m.style as Entrance;
         if (style === 'rise' || style === 'materialize') {
@@ -791,9 +869,49 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         r.position.set(0, base, 0);
         r.scale.setScalar(RIDER_SCALE);
         playSfx('move', { strength: 0.6 });
+        // It lands with a wobble.
+        sway.current.rate.set((Math.random() - 0.5) * 2.4, (Math.random() - 0.5) * 2.4);
       }
     }
+    swayRider(dt);
   });
+
+  /** Moves the rider's sway on by `dt` seconds from how the carrier moved, and leans it. */
+  function swayRider(dt: number) {
+    const g = group.current;
+    const r = riderRef.current;
+    const sw = sway.current;
+    if (!g || !r || !piece.rider || riderHop.current || dt <= 0) {
+      sw.last = null;
+      return;
+    }
+    const step = Math.min(dt, 1 / 30);
+    const at = g.getWorldPosition(TMP_V);
+    if (sw.last) {
+      // The carrier's acceleration, in its own frame: the rider lags behind it (leans back on a
+      // start, forward on a stop, away from a knock).
+      const vel = at.clone().sub(sw.last).divideScalar(step);
+      const acc = vel.clone().sub(sw.vel).divideScalar(step).applyQuaternion(g.getWorldQuaternion(TMP_Q2).invert());
+      sw.vel.copy(vel);
+      const ax = Math.max(-150, Math.min(150, acc.x));
+      const az = Math.max(-150, Math.min(150, acc.z));
+      // A soft spring with little damping: a few visible wobbles, then still. A hard knock
+      // (a sudden 3 squares a second) leans it about 7 degrees; a slide easing to a stop, 4.
+      const K = 140;
+      const C = 5.5;
+      const PUSH = 0.45;
+      // Its top swings against the push: about x a positive tilt leans it toward +z, about z toward -x.
+      sw.rate.x += (-K * sw.tilt.x - C * sw.rate.x - PUSH * az) * step;
+      sw.rate.y += (-K * sw.tilt.y - C * sw.rate.y + PUSH * ax) * step;
+      sw.tilt.x = Math.max(-0.35, Math.min(0.35, sw.tilt.x + sw.rate.x * step));
+      sw.tilt.y = Math.max(-0.35, Math.min(0.35, sw.tilt.y + sw.rate.y * step));
+    } else {
+      sw.vel.set(0, 0, 0);
+    }
+    sw.last = (sw.last ?? new Vector3()).copy(at);
+    // About its feet (the rider group's origin): forward/back about x, sideways about z.
+    r.rotation.set(sw.tilt.x, 0, sw.tilt.y);
+  }
 
   /** Plays a recorded flight, then (on the board) glides the piece upright onto its square. */
   function playPhysics(pm: PhysicsMotion, now: number) {
@@ -819,7 +937,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     const step = Math.min(last, Math.floor(t / run.dt));
     for (const hit of run.impacts) {
       if (hit.step <= pm.sounded || hit.step > step) continue;
-      if (pm.purpose === 'toss') playSfx('land', { strength: Math.min(1, 0.3 + hit.strength) });
+      if (pm.purpose === 'toss' || pm.purpose === 'fidget') playSfx('land', { strength: Math.min(1, 0.3 + hit.strength) });
       else playSfx('move', { strength: Math.min(1, 0.4 + hit.strength) });
     }
     pm.sounded = step;
@@ -862,15 +980,18 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   return (
     <>
     {remains === 'burn' && <SmokeWisp follow={group} height={height} />}
-    {captured && exit === 'shatter' && shardsAt && (
-      <group position={shardsAt}>
-        <ShardScatter type={piece.type} color={piece.color} id={piece.id} center={shardsAt} burst={exiting?.kind === 'shatter' ? { start: exiting.start } : null} />
-      </group>
+    {captured && exit === 'shatter' && shards && (
+      <ShardScatter type={piece.type} color={piece.color} id={piece.id} center={shards.world} square={shards.square} burst={exiting?.kind === 'shatter' ? { start: exiting.start } : null} />
     )}
+    {gather && <ShardGather type={piece.type} color={piece.color} id={piece.id} to={gather.to} turn={facing(piece)} start={gather.start} seconds={gather.seconds} />}
     <group
       ref={group}
       position={position}
       onClick={captured ? undefined : onClick}
+      onPointerDown={captured ? pickUp : undefined}
+      onPointerMove={captured ? carry : undefined}
+      onPointerUp={captured ? letGo : undefined}
+      onPointerCancel={captured ? letGo : undefined}
       onPointerOver={(e) => {
         if (captured) return;
         e.stopPropagation();
@@ -884,6 +1005,13 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       }}
     >
       {body}
+      {captured && (
+        // Something to get hold of: what is left beside the board can be small (a relic, a heap).
+        <mesh position={[0, 0.4, 0]}>
+          <cylinderGeometry args={[0.5, 0.5, 0.8, 12]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
+        </mesh>
+      )}
       {!captured && (
         <TagDecorations
           piece={piece}
