@@ -1,24 +1,42 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { CanvasTexture, CylinderGeometry, Quaternion, SRGBColorSpace, Vector3, type Group, type Mesh, type MeshStandardMaterial } from 'three';
-import type { Color } from '../engine';
+import { isHex, playersOf, type Color } from '../engine';
+import { HEX_FRAME_R } from '../scene/coords';
 import { TABLE_TOP_Y } from '../scene/WoodTable';
 import { COIN, DISH, simulateCoinThrow, type CoinThrow, type Pose } from './coinSim';
 import { playSfx } from '../audio/sfx';
 
 /** Where things sit, for a dealer standing on `side` (+1 = +x) of the table. */
 export function coinLayout(side: 1 | -1) {
+  if (isHex()) {
+    // The hexagon: each dish just beyond the right-hand end of its player's back rank (the corner
+    // there), the tally between it and the board, the dealer further out the same way.
+    const dish = {} as Record<Color, [number, number]>;
+    const tally = {} as Record<Color, [number, number]>;
+    const dealer = {} as Record<Color, number>;
+    for (const [color, corner] of [['white', 300], ['black', 60], ['red', 180]] as const) {
+      const a = (corner * Math.PI) / 180;
+      // The corner on the table (the board's plane has y toward black and red; the table's z is the other way).
+      const [cx, cz] = [Math.cos(a), -Math.sin(a)];
+      dish[color] = [cx * (HEX_FRAME_R + 1.3), cz * (HEX_FRAME_R + 1.3)];
+      tally[color] = [cx * (HEX_FRAME_R + 0.2) + (color === 'red' ? 0 : 0.9), cz * (HEX_FRAME_R + 0.2)];
+      dealer[color] = dish[color][0] + Math.sign(cx || 1) * 5;
+    }
+    return { dealerX: dealer, dish, tally };
+  }
   const dishX = side * 6.9;
   // Kept toward the middle of the table so the default camera (and the side panel) leave them in view.
   const whiteZ = 1.5;
   const blackZ = -1.9;
   const redZ = -0.2;
   const tallyX = side * 5.3;
+  const dealer = dishX + side * 5;
   return {
-    dealerX: dishX + side * 5,
-    dish: { white: [dishX, whiteZ] as [number, number], black: [dishX, blackZ] as [number, number], red: [dishX, redZ] as [number, number] },
+    dealerX: { white: dealer, black: dealer, red: dealer } as Record<Color, number>,
+    dish: { white: [dishX, whiteZ], black: [dishX, blackZ], red: [dishX, redZ] } as Record<Color, [number, number]>,
     /** Tally marks carved between the board and each dish. */
-    tally: { white: [tallyX, whiteZ] as [number, number], black: [tallyX, blackZ] as [number, number], red: [tallyX, redZ] as [number, number] },
+    tally: { white: [tallyX, whiteZ], black: [tallyX, blackZ], red: [tallyX, redZ] } as Record<Color, [number, number]>,
   };
 }
 
@@ -309,7 +327,7 @@ export function CoinTable({ ap, side }: { ap: Record<Color, number>; side: 1 | -
     busy.current = true;
     if (op.kind === 'throw') {
       const [dishX, dishZ] = layout.dish[op.color];
-      simulateCoinThrow({ count: op.count, dishX, dishZ, fromX: layout.dealerX, pile: pilesRef.current[op.color].map((c) => c.pose) })
+      simulateCoinThrow({ count: op.count, dishX, dishZ, fromX: layout.dealerX[op.color], pile: pilesRef.current[op.color].map((c) => c.pose) })
         .then((t) => setFlight({ color: op.color, throw: t, startedAt: null, ids: t.coins.map(() => nextCoinId++), sounded: -1 }))
         .catch(() => {
           // No physics: drop the coins straight into the dish.
@@ -381,7 +399,7 @@ export function CoinTable({ ap, side }: { ap: Record<Color, number>; side: 1 | -
         if (!g) return;
         const p = Math.min(1, Math.max(0, t - k * 0.12));
         // Flicked up, then flying back over to the dealer.
-        const to = new Vector3(layout.dealerX, TABLE_TOP_Y + 2.2, c.from.position.z);
+        const to = new Vector3(layout.dealerX[collect.color], TABLE_TOP_Y + 2.2, c.from.position.z);
         g.position.lerpVectors(c.from.position, to, p * p);
         g.position.y += Math.sin(p * Math.PI) * 1.2;
         g.rotation.x += 0.35;
@@ -402,7 +420,7 @@ export function CoinTable({ ap, side }: { ap: Record<Color, number>; side: 1 | -
 
   return (
     <group>
-      {(['white', 'black'] as const).map((color) => (
+      {playersOf().map((color) => (
         <group key={color}>
           <Dish x={layout.dish[color][0]} z={layout.dish[color][1]} />
           <Tally count={ap[color]} x={layout.tally[color][0]} z={layout.tally[color][1]} flip={color === 'black'} />

@@ -1,9 +1,8 @@
 import { Quaternion, Vector3 } from 'three';
 import { DUEL_TIMING, clashSkill, type Board, type GameEvent, type Piece, type PieceType } from '../engine';
 import { loadPhysics } from '../dice3d/simulate';
-import { addPieceColliders, riderTypes } from './piecePhysics';
+import { addFloor, addPieceColliders, riderTypes } from './piecePhysics';
 import { squareToWorld } from './coords';
-import { TABLE_TOP_Y } from './WoodTable';
 
 /*
  * The duel of a clash (합) on screen: the attacker steps up to the defender, they meet as many
@@ -141,11 +140,10 @@ export async function simulateDuel(plan: DuelPlan): Promise<DuelRun> {
   try {
     const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
     // The board (top at y = 0) and the table around it.
-    world.createCollider(RAPIER.ColliderDesc.cuboid(4.6, 0.1, 4.6).setTranslation(0, -0.1, 0).setFriction(0.7).setRestitution(0.15), fixed);
     // A fight in the air (공중부양) stands on the air layer.
     const floor = plan.defender.home.y;
     if (floor > 0.5) world.createCollider(RAPIER.ColliderDesc.cuboid(4, 0.05, 4).setTranslation(0, floor - 0.05, 0).setFriction(0.7).setRestitution(0.15), fixed);
-    world.createCollider(RAPIER.ColliderDesc.cuboid(14, 0.3, 9).setTranslation(0, TABLE_TOP_Y - 0.3, 0).setFriction(0.7).setRestitution(0.15), fixed);
+    addFloor(RAPIER, world, fixed);
     // A weighted base: they rock and stand rather than topple at every touch; a rider rides along, glued on.
     const body = (side: { type: PieceType; riders?: PieceType[] }, at: Vector3) => {
       const b = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(at.x, at.y, at.z).setLinearDamping(0.2).setAngularDamping(1.2).setCcdEnabled(true));

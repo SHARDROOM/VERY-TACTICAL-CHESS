@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
 import { CanvasTexture, RepeatWrapping, SRGBColorSpace } from 'three';
+import { tableHalf } from './coords';
 
 /** Top surface height: the board frame's underside rests on it. */
 export const TABLE_TOP_Y = -0.22;
-const TABLE = { width: 26, depth: 17, thickness: 0.7 };
+const TABLE = { thickness: 0.7 };
 
 /** Long planks with grain, knots and seams, painted once into a texture (no image downloads). */
 function useWoodTexture() {
@@ -66,7 +67,11 @@ function useWoodTexture() {
 /** A big wooden table under the board (and the dice tray), on a dark floor. */
 export function WoodTable() {
   const wood = useWoodTexture();
-  const { width, depth, thickness } = TABLE;
+  const [hw, hd] = tableHalf();
+  const { thickness } = TABLE;
+  // A little wider than the reach of things on it (see tableHalf).
+  const width = hw * 2;
+  const depth = hd * 2;
   const legX = width / 2 - 1.2;
   const legZ = depth / 2 - 1.2;
   return (

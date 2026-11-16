@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { CanvasTexture, Quaternion, SRGBColorSpace, Vector3, type Group } from 'three';
-import type { Color, Outcome } from '../engine';
+import { isHex, type Color, type Outcome } from '../engine';
+import { HEX_FRAME_R } from '../scene/coords';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { D6_FACES, d6Corners, faceWithNumber } from './d6';
 import { DIE_HALF, DIE_ROUNDING, TRAY, type DiceRun } from './simulate';
@@ -14,7 +15,9 @@ export const TRAY_SCALE = 0.7;
 
 /** World x of the tray's centre: beside the board, on the given side. */
 export function trayCenterX(side: 1 | -1): number {
-  return side * (4.6 + 0.55 + TRAY.halfX * TRAY_SCALE + 0.35);
+  // Beside the board's edge: the classic board's side, or the hexagon's corner.
+  const edge = isHex() ? HEX_FRAME_R + 0.1 : 4.6;
+  return side * (edge + 0.55 + TRAY.halfX * TRAY_SCALE + 0.35);
 }
 
 export interface ActiveRoll {

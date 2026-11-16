@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Quaternion } from 'three';
 import {
   AIR,
+  setBoardMap,
+  isHex,
   findKing,
   hasAnyMove,
   isAir,
@@ -246,9 +248,11 @@ interface Props {
 
 export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSettings = false, startNotice = null }: Props) {
   const [view, setView] = useState<SessionView>(() => session.view());
+  // Every square helper (names, the scene's geometry) follows the board this game is played on.
+  setBoardMap(view.state.map);
   const seat = view.seat;
   const online = view.connection.kind !== 'local';
-  const homeSide: Color = seat === 'black' ? 'black' : 'white';
+  const homeSide: Color = seat === 'black' || seat === 'red' ? seat : 'white';
   const spectator = seat === 'spectator';
 
   const [selected, setSelected] = useState<Square | null>(null);
@@ -793,7 +797,17 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     if (!stage || !strength || at === null) return null;
     return { at: stage.startedAt + at * 1000, strength };
   }, [stage, duel, look]);
-  const targets = useMemo(() => (selected === null ? [] : legalTargets(game, selected).map((t) => t.to)), [game, selected]);
+  // The 3-player board: a player whose king fell picks the one piece it keeps (its pieces light up).
+  const surrender = game.surrender ?? null;
+  const choosingExile = !!surrender && (seat === 'both' || seat === surrender.loser);
+  const exileChoices = useMemo(
+    () => (choosingExile && surrender ? game.board.flatMap((p, sq) => (p?.color === surrender.loser ? [sq] : [])) : []),
+    [game, choosingExile, surrender?.loser],
+  );
+  const targets = useMemo(
+    () => (exileChoices.length ? exileChoices : selected === null ? [] : legalTargets(game, selected).map((t) => t.to)),
+    [game, selected, exileChoices],
+  );
   // Captures that would be clashes (합), with the selected piece's chance of winning each.
   const clashOdds = useMemo(() => {
     const mover = selected === null ? null : game.board[selected];
@@ -841,6 +855,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   };
 
   const onSquareClick = (sq: Square) => {
+    if (surrender) {
+      // Only the surrendering side's pick counts until it is made.
+      if (choosingExile && game.board[sq]?.color === surrender.loser) session.request({ type: 'exile', at: sq });
+      return;
+    }
     if (locked || doodleTool) return;
     if (writeHelp) {
       const r = tapToWrite(game, sq, text);
@@ -932,7 +951,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         camera={camera}
         onSquareClick={onSquareClick}
         onHoverSquare={setHovered}
-        diceSide={seat === 'black' ? 1 : -1}
+        diceSide={isHex() || seat === 'black' ? 1 : -1}
         diceRoll={diceRoll}
         onDiceLanded={onDiceLanded}
         onDiceFirstLanded={() => setDice((d) => (d ? { ...d, firstLanded: true } : d))}
@@ -1284,6 +1303,19 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       )}
 
       <ConnectionOverlay connection={view.connection} onLeave={onLeave} />
+
+      {surrender && !dice && (
+        <div className="hud surrender-banner" role="status">
+          <strong>
+            {COLOR_NAME[surrender.loser]}의 킹이 {COLOR_NAME[surrender.to]}에게 항복했습니다.
+          </strong>
+          <span>
+            {choosingExile
+              ? `망명시킬 기물 하나를 고르세요. 나머지는 모두 ${COLOR_NAME[surrender.to]}의 지휘를 받습니다.`
+              : `${COLOR_NAME[surrender.loser]}이(가) 망명시킬 기물을 고르는 중입니다…`}
+          </span>
+        </div>
+      )}
 
       {caption && !dice && (
         <div className={`hud show-caption show-${caption.kind} ${caption.outcome ?? ''}`} role="status">

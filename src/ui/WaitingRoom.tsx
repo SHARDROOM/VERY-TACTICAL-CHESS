@@ -123,7 +123,10 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
                     {host && online && !m.host && (
                       <span className="member-actions">
                         {m.role === 'spectator' ? (
-                          <button onClick={() => session.assignRole(m.key, 'black')}>흑으로</button>
+                          <>
+                            <button onClick={() => session.assignRole(m.key, 'black')}>흑으로</button>
+                            {rules.map === 'hex3' && <button onClick={() => session.assignRole(m.key, 'red')}>적으로</button>}
+                          </>
                         ) : (
                           <button onClick={() => session.assignRole(m.key, 'spectator')}>관전으로</button>
                         )}
@@ -165,6 +168,13 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
               <h2>게임 규칙</h2>
               {host ? (
                 <div className="rules-form">
+                  <label className="field">
+                    <span>판</span>
+                    <select value={rules.map} onChange={(e) => set({ map: e.target.value === 'hex3' ? 'hex3' : 'classic' })}>
+                      <option value="classic">보통 체스판 (2인)</option>
+                      <option value="hex3">육각 판 (3인)</option>
+                    </select>
+                  </label>
                   <label className="field">
                     <span>수 제한시간</span>
                     <select value={rules.turnSeconds} onChange={(e) => set({ turnSeconds: Number(e.target.value) })}>

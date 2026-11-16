@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject, type React
 import { CanvasTexture, Quaternion, SRGBColorSpace, Vector3, type Group } from 'three';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { CameraControls, Environment, Lightformer } from '@react-three/drei';
-import { fileOf, isAir, rankOf, type Board, type CapturedPiece, type Color, type FallingPiece, type Square, type TerrainCell } from '../engine';
-import { squareToWorld } from './coords';
+import { AIR, fileOf, isAir, isHex, rankOf, type Board, type CapturedPiece, type Color, type FallingPiece, type Square, type TerrainCell } from '../engine';
+import { HEX_FRAME_R, sideDir, squareToWorld } from './coords';
+import { HexFrame, tileGeometry } from './HexBoard';
 import { fallStart } from './boardPhysics';
 import { TableContext, depthMoved, holdingSomething, type TableHands } from './tableDrag';
 import { diceObstacles, setTakenSource } from './toys';
@@ -103,6 +104,17 @@ export function graveyardLayout(captured: CapturedPiece[], side: 1 | -1): { piec
     const i = counts[piece.color]++;
     const col = i % 7;
     const row = Math.floor(i / 7);
+    if (isHex()) {
+      // The hexagon: along the flank to the owner's left (no one's back rank), rows outward.
+      const flank = { white: 5, black: 1, red: 3 }[piece.color];
+      const mid = ((-90 + 60 * flank) * Math.PI) / 180;
+      const apothem = HEX_FRAME_R * Math.cos(Math.PI / 6);
+      const [nx, nz] = [Math.cos(mid), -Math.sin(mid)];
+      const [tx, tz] = [-nz, nx];
+      const out = apothem + 0.75 + row * 0.95;
+      const along = -2.6 + col * 0.86;
+      return { piece, position: [nx * out + tx * along, TABLE_TOP_Y, nz * out + tz * along] as [number, number, number] };
+    }
     const towardWhite = piece.color === 'black' ? 1 : -1;
     // Spaced for pieces at their own size.
     return {
@@ -306,9 +318,18 @@ function CameraRig({ camera, diceSide, locked, holdNow }: { camera: CameraReques
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
-    const s = camera.side === 'white' ? 1 : -1;
+    const s = camera.side === 'black' ? -1 : 1;
+    const [dx, dz] = sideDir(camera.side);
     if (camera.custom) c.setLookAt(...camera.custom, true);
-    else if (camera.mode === 'side') c.setLookAt(0, 7.2 * zoom, 8.8 * s * zoom, 0, 0, 0.6 * s, true);
+    else if (isHex()) {
+      // The hexagon: the same views, from wherever this player sits, further back for the bigger board.
+      if (camera.mode === 'side') c.setLookAt(dx * 15 * zoom, 12.5 * zoom, dz * 15 * zoom, dx * 1, 0, dz * 1, true);
+      else if (camera.mode === 'top') c.setLookAt(0, 23 * zoom, 0, 0, 0, 0, true);
+      else {
+        const x = trayCenterX(diceSide);
+        c.setLookAt(x * 0.8, 6.5 * zoom, 5.5 * zoom, x, -0.2, 0, true);
+      }
+    } else if (camera.mode === 'side') c.setLookAt(0, 7.2 * zoom, 8.8 * s * zoom, 0, 0, 0.6 * s, true);
     else if (camera.mode === 'top') c.setLookAt(0, 13 * zoom, 0.001 * s, 0, 0, 0, true);
     else {
       const x = trayCenterX(diceSide);
@@ -316,7 +337,7 @@ function CameraRig({ camera, diceSide, locked, holdNow }: { camera: CameraReques
       c.setLookAt(x * 0.85, 5.2 * zoom, 4.6 * s * zoom, x, -0.2, 0, true);
     }
   }, [camera.mode, camera.side, camera.nonce, zoom, diceSide]);
-  return <CameraControls ref={ref} enabled={!locked} minDistance={4} maxDistance={30} maxPolarAngle={Math.PI / 2.2} />;
+  return <CameraControls ref={ref} enabled={!locked} minDistance={4} maxDistance={isHex() ? 45 : 30} maxPolarAngle={Math.PI / 2.2} />;
 }
 
 /** Frame with file/rank labels painted into a texture (stays under the pieces, unlike DOM overlays). */
@@ -392,6 +413,8 @@ export function BoardScene({
   const objects = useRef(new Map<string, Group>());
   const physics = useMemo<PiecePhysics>(() => ({ diceSide, resting: resting.current, objects: objects.current }), [diceSide]);
   const pieceAt = useMemo(() => (id: string) => objects.current.get(id)?.getWorldPosition(new Vector3()) ?? null, []);
+  // The hexagon's squares are quadrilaterals of their own (made once per game).
+  const hexTiles = useMemo(() => (isHex() ? Array.from({ length: AIR }, (_, sq) => tileGeometry(sq)) : null), []);
   // Pieces that were not on the table when the scene opened (spawned by a special action or
   // chaos) drop in. Not a "mounted yet?" flag: the 3D children render after this component's
   // first effect, so such a flag would make every starting piece drop in too.
@@ -456,7 +479,7 @@ export function BoardScene({
       </Environment>
       <directionalLight position={[4, 10, 6]} intensity={1.4} castShadow shadow-mapSize={[2048, 2048]}>
         {/* Covers the board and the dice tray on either side. */}
-        <orthographicCamera attach="shadow-camera" args={[-11, 11, 7, -7, 0.5, 30]} />
+        <orthographicCamera attach="shadow-camera" args={isHex() ? [-16, 16, 11, -11, 0.5, 40] : [-11, 11, 7, -7, 0.5, 30]} />
       </directionalLight>
       {/* Warm lamp over the table. */}
       <pointLight position={[0, 9, 0]} intensity={18} distance={30} decay={1.6} color="#ffdcae" />
@@ -472,10 +495,10 @@ export function BoardScene({
       <WoodTable />
       <DiceTray side={diceSide} roll={diceRoll} onLanded={onDiceLanded} onFirstLanded={onDiceFirstLanded} />
       <CoinTable ap={ap} side={diceSide === 1 ? -1 : 1} />
-      <LabeledFrame />
+      {isHex() ? <HexFrame /> : <LabeledFrame />}
       {doodle && <DoodleLayer {...doodle} />}
 
-      {Array.from({ length: 64 }, (_, sq) => {
+      {Array.from({ length: AIR }, (_, sq) => {
         const [x, , z] = squareToWorld(sq);
         const dark = (fileOf(sq) + rankOf(sq)) % 2 === 0;
         let color: string = dark ? DARK : LIGHT;
@@ -485,10 +508,16 @@ export function BoardScene({
         else if (marks?.targets.includes(sq)) color = dark ? '#a8573a' : '#c98058';
         return (
           <group key={sq}>
-            <mesh position={[x, -0.025, z]} receiveShadow onClick={click(sq)}>
-              <boxGeometry args={[1, 0.05, 1]} />
-              <meshStandardMaterial color={color} roughness={0.7} />
-            </mesh>
+            {hexTiles ? (
+              <mesh geometry={hexTiles[sq]} receiveShadow onClick={click(sq)}>
+                <meshStandardMaterial color={color} roughness={0.7} />
+              </mesh>
+            ) : (
+              <mesh position={[x, -0.025, z]} receiveShadow onClick={click(sq)}>
+                <boxGeometry args={[1, 0.05, 1]} />
+                <meshStandardMaterial color={color} roughness={0.7} />
+              </mesh>
+            )}
             {targets.includes(sq) && (
               <mesh position={[x, 0.006, z]} rotation={[-Math.PI / 2, 0, 0]} onClick={click(sq)}>
                 {board[sq] ? <ringGeometry args={[0.36, 0.46, 32]} /> : <circleGeometry args={[0.14, 24]} />}

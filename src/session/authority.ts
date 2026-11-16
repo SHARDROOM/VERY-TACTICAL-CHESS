@@ -94,12 +94,12 @@ export class Authority {
   /** Waiting room only: the rules for the next game. */
   setRules(rules: RuleConfig): void {
     if (this.phase !== 'waiting') return;
-    this.replace(createInitialState(rules));
+    this.replace(createInitialState(rules, rules.map));
   }
 
   start(): void {
     if (this.phase !== 'waiting') return;
-    this.replace(createInitialState(this.state.rules));
+    this.replace(createInitialState(this.state.rules, this.state.rules.map));
     this.phase = 'playing';
     this.emit({ kind: 'phase', phase: 'playing' });
     this.restartClock();
@@ -108,7 +108,7 @@ export class Authority {
   /** Back to the waiting room with a fresh board and the same rules. */
   reset(): void {
     this.phase = 'waiting';
-    this.replace(createInitialState(this.state.rules));
+    this.replace(createInitialState(this.state.rules, this.state.rules.map));
     this.emit({ kind: 'phase', phase: 'waiting' });
     this.restartClock();
   }
@@ -132,6 +132,14 @@ export class Authority {
     const notice = (text: string, tone: NoticeTone = 'error') => this.emit({ kind: 'notice', to: actor, text, tone });
     if (this.phase !== 'playing') return notice('게임이 아직 시작되지 않았습니다.', 'warn');
     if (this.busy) return notice('GM이 판정 중입니다. 잠시 기다려 주세요.', 'warn');
+    // A surrendering player picks its exile, whoever's turn it is.
+    if (req.type === 'exile') {
+      const s = this.state.surrender;
+      if (!s) return notice('항복한 플레이어가 없습니다.', 'warn');
+      if (actor !== 'any' && actor !== s.loser) return notice('항복한 쪽이 남길 기물을 고르는 중입니다.', 'warn');
+      this.apply({ type: 'exile', at: req.at }, actor);
+      return;
+    }
     if (actor !== 'any' && actor !== this.state.turn && this.state.status.kind === 'playing') {
       return notice('상대의 차례입니다.', 'warn');
     }
@@ -202,6 +210,8 @@ export class Authority {
   /** Keeps the clock in step with the game and sets off chaos when a round begins. */
   private afterChange(events: GameEvent[]): void {
     if (this.state.status.kind !== 'playing') return this.restartClock();
+    // The exile is picked: the player to move gets a fresh clock (it stood still meanwhile).
+    if (events.some((e) => e.type === 'exiled')) return this.restartClock();
     // A clash's dice (and its duel) do not eat the time of whoever moves next.
     const clashTime = events.reduce((t, e) => t + (e.type === 'clash' ? CLASH_DICE_GRACE_MS + Math.round(duelSeconds(e.exchanges) * 1000) : 0), 0);
     const passed = events.find((e) => e.type === 'turnPassed');
@@ -328,7 +338,8 @@ export class Authority {
   }
 
   private clockActive(): boolean {
-    return this.phase === 'playing' && this.state.status.kind === 'playing' && this.limitMs() > 0;
+    // A surrendering player's pick (the 3-player board) is not anyone's turn: no clock meanwhile.
+    return this.phase === 'playing' && this.state.status.kind === 'playing' && this.limitMs() > 0 && !this.state.surrender;
   }
 
   timer(): TimerSnapshot | null {

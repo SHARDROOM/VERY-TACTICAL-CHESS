@@ -1,13 +1,12 @@
 import { Quaternion, Vector3 } from 'three';
 import { isAir, type Board, type FallingPiece, type Landing, type PieceType, type Square, type TerrainCell } from '../engine';
 import { loadPhysics } from '../dice3d/simulate';
-import { addPieceColliders, ballistic, hullPoints, riderTypes } from './piecePhysics';
+import { addFloor, addPieceColliders, ballistic, hullPoints, riderTypes } from './piecePhysics';
 import { PIECE_HEIGHT } from './pieceGeometry';
-import { AIR_Y, squareToWorld, worldToBoard } from './coords';
+import { AIR_Y, overBoard, squareToWorld, worldToBoard } from './coords';
 import { CHUNK } from './debris';
 import { TAKEN } from './toys';
 import type { Obstacle } from './piecePhysics';
-import { TABLE_TOP_Y } from './WoodTable';
 
 /*
  * A move as a romp: the moving piece is shoved along its way (or flung in a rough arc), and
@@ -99,9 +98,7 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
   world.timestep = DT;
   try {
     const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
-    world.createCollider(RAPIER.ColliderDesc.cuboid(14, 0.3, 9).setTranslation(0, TABLE_TOP_Y - 0.3, 0).setFriction(0.7).setRestitution(0.15), fixed);
-    const boardH = -TABLE_TOP_Y / 2;
-    world.createCollider(RAPIER.ColliderDesc.cuboid(4.6, boardH, 4.6).setTranslation(0, TABLE_TOP_Y + boardH, 0).setFriction(0.55).setRestitution(0.2), fixed);
+    addFloor(RAPIER, world, fixed);
     // Walls are solid; pieces bounce off them.
     for (const c of o.terrain ?? []) {
       if (c.kind !== 'wall') continue;
@@ -199,7 +196,7 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
     // Taken pieces lying within reach of the board (one under a standing piece stays out, as above).
     for (const t of o.taken ?? []) {
       const p = t.pose.position;
-      if (Math.abs(p.x) > 6.5 || Math.abs(p.z) > 6.5) continue;
+      if (!overBoard(p.x, p.z, 2)) continue;
       if (standing.some((s) => Math.hypot(s.x - p.x, s.z - p.z) < 0.4 && p.y < 1.2)) continue;
       const q = t.pose.quaternion;
       const b = world.createRigidBody(
@@ -294,9 +291,7 @@ export async function simulateFalls(o: FallOptions): Promise<{ run: BoardRun; la
   world.timestep = DT;
   try {
     const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
-    world.createCollider(RAPIER.ColliderDesc.cuboid(14, 0.3, 9).setTranslation(0, TABLE_TOP_Y - 0.3, 0).setFriction(0.7).setRestitution(0.15), fixed);
-    const boardH = -TABLE_TOP_Y / 2;
-    world.createCollider(RAPIER.ColliderDesc.cuboid(4.6, boardH, 4.6).setTranslation(0, TABLE_TOP_Y + boardH, 0).setFriction(0.55).setRestitution(0.2), fixed);
+    addFloor(RAPIER, world, fixed);
     for (const c of o.terrain ?? []) {
       if (c.kind !== 'wall') continue;
       const [x, , z] = squareToWorld(c.at);

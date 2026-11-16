@@ -179,13 +179,14 @@ export class HostSession implements Session {
         setTimeout(() => channel.close(), 200);
         return;
       }
-      const blackTaken = this.members.some((m) => m.role === 'black');
+      // The first free seat (black, then red on the 3-player board), else watching.
+      const free = this.freeSeat();
       member = {
         key: this.newKey(),
         id: id ?? null,
         channel,
         name: name || `손님 ${this.nextKey - 1}`,
-        role: blackTaken ? 'spectator' : 'black',
+        role: free ?? 'spectator',
         online: true,
         host: false,
       };
@@ -204,7 +205,7 @@ export class HostSession implements Session {
       doodles: this.doodles.doodles,
     } satisfies HostMessage);
     this.roomChanged(member);
-    const role = member.role === 'spectator' ? '관전' : '흑';
+    const role = member.role === 'spectator' ? '관전' : member.role === 'red' ? '적' : '흑';
     const text = returning ? `${member.name}님이 다시 들어왔습니다.` : `${member.name}님이 들어왔습니다 (${role}).`;
     this.emitter.emit({ kind: 'notice', text, tone: 'normal' });
     this.broadcast({ t: 'notice', text, tone: 'normal' }, member);
@@ -244,10 +245,18 @@ export class HostSession implements Session {
     this.authority.setRules(cleanRules(this.authority.state.rules, rules));
   }
 
-  /** Needs someone in the black seat who is here. */
+  /** A guest's seat still empty: black, then red on the 3-player board. */
+  private freeSeat(): Role | null {
+    const seats: Role[] = this.authority.state.rules.map === 'hex3' ? ['black', 'red'] : ['black'];
+    return seats.find((s) => !this.members.some((m) => m.role === s)) ?? null;
+  }
+
+  /** Needs someone in every guest seat (black, and red on the 3-player board) who is here. */
   start(): void {
-    if (!this.members.some((m) => m.role === 'black' && m.online)) {
-      this.emitter.emit({ kind: 'notice', text: '흑 자리에 앉은 사람이 있어야 시작할 수 있습니다.', tone: 'warn' });
+    const seats: Role[] = this.authority.state.rules.map === 'hex3' ? ['black', 'red'] : ['black'];
+    const empty = seats.find((s) => !this.members.some((m) => m.role === s && m.online));
+    if (empty) {
+      this.emitter.emit({ kind: 'notice', text: `${empty === 'red' ? '적' : '흑'} 자리에 앉은 사람이 있어야 시작할 수 있습니다.`, tone: 'warn' });
       return;
     }
     this.authority.start();
@@ -260,8 +269,9 @@ export class HostSession implements Session {
   assignRole(key: string, role: Role): void {
     const target = this.members.find((m) => m.key === key && !m.host);
     if (!target || role === 'white' || target.role === role) return;
-    if (role === 'black') {
-      const current = this.members.find((m) => m.role === 'black');
+    if (role === 'red' && this.authority.state.rules.map !== 'hex3') return;
+    if (role === 'black' || role === 'red') {
+      const current = this.members.find((m) => m.role === role);
       if (current) {
         if (current.online) current.role = 'spectator';
         else this.members.splice(this.members.indexOf(current), 1);

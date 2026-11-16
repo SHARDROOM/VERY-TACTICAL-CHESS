@@ -195,3 +195,17 @@ describe('surrender and exile on the hexagon', () => {
     expect(r.events).toContainEqual({ type: 'kingCaptured', winner: 'white', loser: 'black' });
   });
 });
+
+describe('move text on the hexagon', () => {
+  beforeAll(() => setBoardMap('hex3'));
+  afterAll(() => setBoardMap('classic'));
+  it('reads squares with their halves', async () => {
+    const { parseMoveText } = await import('../notation');
+    expect(parseMoveText('백e2 백e4')).toEqual({ from: sq('백e2'), to: sq('백e4') });
+    expect(parseMoveText('백e2백e4')).toEqual({ from: sq('백e2'), to: sq('백e4') });
+    expect(parseMoveText('흑d2d4')).toEqual({ from: sq('흑d2'), to: sq('흑d4') });
+    expect(parseMoveText('백d1-적e1')).toEqual({ from: sq('백d1'), to: sq('적e1') });
+    expect(parseMoveText('적b2 적b1 퀸')).toEqual({ from: sq('적b2'), to: sq('적b1'), promotion: 'queen' });
+    expect(parseMoveText('e2e4')).toBeNull();
+  });
+});

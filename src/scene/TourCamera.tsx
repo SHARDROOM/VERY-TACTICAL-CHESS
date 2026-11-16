@@ -42,7 +42,7 @@ export function TourCamera({ diceSide, inset, onPhase }: Props) {
     return {
       tray: new Vector3(trayCenterX(diceSide), TABLE_TOP_Y, 0),
       dishes: new Vector3(coins.dish.white[0], TABLE_TOP_Y, (coins.dish.white[1] + coins.dish.black[1]) / 2),
-      coinSide: Math.sign(coins.dealerX),
+      coinSide: Math.sign(coins.dealerX.white),
     };
   }, [diceSide]);
 

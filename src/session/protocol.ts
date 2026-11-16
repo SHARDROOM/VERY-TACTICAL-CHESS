@@ -99,6 +99,8 @@ export function parseGuestMessage(raw: unknown): GuestMessage | null {
     case 'attempt':
     case 'cancel':
       return { t: 'req', req: { type: r.type } };
+    case 'exile':
+      return isSquare(r.at) ? { t: 'req', req: { type: 'exile', at: r.at as number } } : null;
     default:
       return null;
   }

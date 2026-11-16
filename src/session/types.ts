@@ -26,7 +26,9 @@ export type Request =
   | { type: 'endTurn' }
   | { type: 'declare'; action: string }
   | { type: 'attempt' }
-  | { type: 'cancel' };
+  | { type: 'cancel' }
+  /** The 3-player board: the surrendering player keeps the piece on `at` (see GameState.surrender). */
+  | { type: 'exile'; at: Square };
 
 /** A player's side, or watching. */
 export type Role = Color | 'spectator';
@@ -153,6 +155,7 @@ export function cleanRules(base: RuleConfig, change: Partial<RuleConfig>): RuleC
   if ('apPerTurn' in change) next.apPerTurn = pick(change.apPerTurn, AP_PER_TURN, base.apPerTurn);
   if ('chaosChance' in change) next.chaosChance = pick(change.chaosChance, CHAOS_CHANCES.map((c) => c.value), base.chaosChance);
   if ('doodle' in change && typeof change.doodle === 'boolean') next.doodle = change.doodle;
+  if ('map' in change) next.map = change.map === 'hex3' ? 'hex3' : 'classic';
   next.apMax = Math.max(next.apMax, next.apPerTurn);
   return next;
 }

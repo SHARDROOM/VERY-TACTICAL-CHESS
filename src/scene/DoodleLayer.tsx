@@ -1,3 +1,4 @@
+import { overBoard } from './coords';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useThree } from '@react-three/fiber';
 import { BufferGeometry, CanvasTexture, DoubleSide, Float32BufferAttribute, Plane, Raycaster, SRGBColorSpace, Vector2, Vector3 } from 'three';
@@ -15,8 +16,7 @@ export interface DoodleTool {
 }
 
 /** The board (frame included) sits higher than the table around it. */
-const BOARD_HALF = 4.6;
-const onBoard = (x: number, z: number) => Math.abs(x) <= BOARD_HALF && Math.abs(z) <= BOARD_HALF;
+const onBoard = (x: number, z: number) => overBoard(x, z, 0.05);
 /** Height of the drawing surface under (x, z), just above it. */
 export const surfaceY = (x: number, z: number) => (onBoard(x, z) ? 0.008 : TABLE_TOP_Y + 0.006);
 

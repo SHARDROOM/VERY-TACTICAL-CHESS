@@ -26,6 +26,8 @@ export interface RuleConfig {
   chaosChance: number;
   /** Whether anyone in the room may draw and write on the table. */
   doodle: boolean;
+  /** The board: the classic 8×8 for two, or the three-player hexagon (docs/SPEC.md, "3인 육각 맵"). */
+  map: 'classic' | 'hex3';
 }
 
 export const DEFAULT_RULES: RuleConfig = {
@@ -43,11 +45,13 @@ export const DEFAULT_RULES: RuleConfig = {
   rerollCost: 1,
   chaosChance: 0,
   doodle: true,
+  map: 'classic',
 };
 
 /** Rules from a save or another version: anything missing takes the default. */
 export function withDefaultRules(rules: Partial<RuleConfig> | undefined): RuleConfig {
   const out = { ...DEFAULT_RULES, ...(rules ?? {}) };
+  if (out.map !== 'hex3') out.map = 'classic';
   // From the days of the d20: its DCs mean nothing on a d6.
   if (out.dcMax > DIE_SIDES || out.dcMin > DIE_SIDES) {
     out.dcMin = DEFAULT_RULES.dcMin;

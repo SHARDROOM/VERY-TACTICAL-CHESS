@@ -162,7 +162,7 @@ export function loadSavedGame(storage?: Storage): SavedGame | null {
   // Saves from before a rule existed get its default; from before the air, an empty air layer.
   // From before critical successes were dropped: those count as plain successes now.
   const precedents = game.state.precedents.map((p) => ((p.outcome as string) === 'critSuccess' ? { ...p, outcome: 'success' as const } : p));
-  return { ...game, black, state: { ...game.state, precedents, rules: withDefaultRules(game.state.rules), board: withAir(game.state.board) } };
+  return { ...game, black, state: { ...game.state, precedents, rules: withDefaultRules(game.state.rules), board: withAir(game.state.board, game.state.map) } };
 
   function bad() {
     clearSavedGame(storage);

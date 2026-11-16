@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 import { Plane, Vector3, type Camera, type Ray } from 'three';
-import { isAir, squareAt, type Board } from '../engine';
-import { squareToWorld, worldToBoard } from './coords';
+import { isAir, type Board } from '../engine';
+import { overBoard, squareToWorld, tableHalf, worldToSquare } from './coords';
 import { diceObstacles } from './toys';
 import { TABLE_TOP_Y } from './WoodTable';
 import { restingChunks } from './debris';
@@ -30,7 +30,6 @@ export interface TableHands {
 export const TableContext = createContext<TableHands | null>(null);
 export const useTable = () => useContext(TableContext);
 
-const BOARD_HALF = 4.55;
 /** How high above the surface a thing slid along it is held (and above whatever stands there). */
 export const LIFT = 0.12;
 /** How high above the table a thing slid along it is held (clear of the tray's floor). */
@@ -42,7 +41,7 @@ const flat = new Plane(new Vector3(0, 1, 0), 0);
 
 /** The lowest a held thing may be at (x, z): just above the board (and what stands there) or the table. */
 function floorAt(x: number, z: number, board?: Board): number {
-  if (Math.abs(x) < BOARD_HALF && Math.abs(z) < BOARD_HALF) {
+  if (overBoard(x, z)) {
     const top = board ? topAt(board, x, z) : 0;
     return top > 0 ? top + 0.15 : LIFT;
   }
@@ -55,23 +54,23 @@ export function carryPoint(ray: Ray, out: Vector3, board?: Board): boolean {
     flat.constant = -h;
     return ray.intersectPlane(flat, out) !== null;
   };
-  if (over(LIFT) && Math.abs(out.x) < BOARD_HALF && Math.abs(out.z) < BOARD_HALF) {
+  if (over(LIFT) && overBoard(out.x, out.z)) {
     const min = floorAt(out.x, out.z, board);
     if (min > LIFT) over(min);
     return true;
   }
   if (!over(TABLE_TOP_Y + TABLE_LIFT)) return false;
-  out.x = Math.max(-13, Math.min(13, out.x));
-  out.z = Math.max(-8.5, Math.min(8.5, out.z));
+  const [hw, hd] = tableHalf();
+  out.x = Math.max(-hw, Math.min(hw, out.x));
+  out.z = Math.max(-hd, Math.min(hd, out.z));
   // Back over the board from the table: up onto it.
-  if (Math.abs(out.x) < BOARD_HALF && Math.abs(out.z) < BOARD_HALF) out.y = floorAt(out.x, out.z, board);
+  if (overBoard(out.x, out.z)) out.y = floorAt(out.x, out.z, board);
   return true;
 }
 
 /** How tall what stands on the square under (x, z) is, rider and all (0: nothing). */
 function topAt(board: Board, x: number, z: number): number {
-  const { file, rank } = worldToBoard(x, z);
-  const sq = squareAt(Math.round(file), Math.round(rank));
+  const sq = worldToSquare(x, z);
   const p = sq === null ? null : board[sq];
   if (!p) return 0;
   return stackHeight(p);

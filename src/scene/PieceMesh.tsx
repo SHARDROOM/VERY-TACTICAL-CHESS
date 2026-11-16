@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { Euler, Quaternion, Vector2, Vector3, type Group, type Mesh, type MeshPhysicalMaterial } from 'three';
-import { BURN, CORE_TAGS, RIDE, SHIELD, STUN, hasTag, ridersOf, type Color, type Entrance, type Exit, type MotionStyle, type Piece, type PieceType } from '../engine';
+import { BURN, CORE_TAGS, RIDE, SHIELD, STUN, hasTag, isHex, ridersOf, type Color, type Entrance, type Exit, type MotionStyle, type Piece, type PieceType } from '../engine';
 import { PIECE_HEIGHT, pieceParts } from './pieceGeometry';
 import { FoldingBadges, ShieldBubble, StunStars, type Chip } from './TagEffects';
 import { playSfx } from '../audio/sfx';
@@ -70,7 +70,9 @@ const ON_SQUARE = 0.72;
 const easeOutBack = (t: number) => 1 + 2.7 * (t - 1) ** 3 + 1.7 * (t - 1) ** 2;
 
 /** Knights look toward the opponent, turned toward the board centre so players see their profile. */
-function knightFacing(color: Color, x: number): number {
+function knightFacing(color: Color, x: number, z = 0): number {
+  // The hexagon: every knight looks toward the middle of the board (its model faces +x).
+  if (isHex()) return Math.abs(x) + Math.abs(z) < 0.01 ? 0 : Math.atan2(z, -x);
   const turn = 0.9;
   const inward = x < 0 ? 1 : -1;
   return color === 'white' ? Math.PI / 2 - inward * turn : -Math.PI / 2 + inward * turn;
@@ -1150,7 +1152,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     }
   }
 
-  const facing = (p: Piece) => (p.type === 'knight' ? knightFacing(p.color, position[0]) : 0);
+  const facing = (p: Piece) => (p.type === 'knight' ? knightFacing(p.color, position[0], position[2]) : 0);
   const height = PIECE_HEIGHT[piece.type];
   const riders = ridersOf(piece);
   // Everyone's tag chips go above the top of the stack, one row each (riders would hide them
