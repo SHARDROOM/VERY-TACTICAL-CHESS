@@ -68,7 +68,8 @@ export function HexFrame() {
   }, []);
   return (
     <group>
-      <mesh position={[0, -0.12, 0]} rotation={[0, 0, 0]} receiveShadow>
+      {/* A cylinder's first corner is on +z; the board's are on ±x: a sixth of a turn round. */}
+      <mesh position={[0, -0.12, 0]} rotation={[0, Math.PI / 6, 0]} receiveShadow>
         <cylinderGeometry args={[HEX_FRAME_R, HEX_FRAME_R, 0.2, 6]} />
         <meshStandardMaterial color="#3a2a1e" roughness={0.8} />
       </mesh>
