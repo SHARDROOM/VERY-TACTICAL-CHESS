@@ -15,7 +15,9 @@ import {
   DUEL_TIMING,
   canResist,
   clashMultiplier,
+  clashScore,
   clashWinChance,
+  DIE_SIDES,
   type Color,
   type Fx,
   type GameEvent,
@@ -36,7 +38,7 @@ import { SettingsMenu, useFullscreen } from './SettingsMenu';
 import { playSfx } from '../audio/sfx';
 import { successChance } from '../dice';
 import { loadPhysics, simulateRoll, simulateRollsInTurn } from '../dice3d/simulate';
-import { skinRotationFor } from '../dice3d/d20';
+import { skinRotationFor } from '../dice3d/d6';
 import type { ActiveRoll } from '../dice3d/DiceTray';
 import { CHAT_MAX_LENGTH, timeLeft, type Session, type SessionView, type TurnTimer } from '../session/types';
 import { ConnectionOverlay } from './ConnectionOverlay';
@@ -180,8 +182,8 @@ function pieceName(game: GameState, id: string): string {
   return type ? PIECE_NAME[type] : '기물';
 }
 
-/** A clash's score as shown big: the die times the multiplier, to two decimals at most. */
-const total = (roll: number, mult: number) => String(Math.round(roll * mult * 100) / 100);
+/** A clash's score as shown small: the die times the multiplier, exact (to two decimals at most). */
+const exact = (roll: number, mult: number) => Math.round(roll * mult * 100) / 100;
 
 /**
  * A clash's deciding round, side by side: each side's final score big (its die and multiplier
@@ -209,8 +211,10 @@ function ClashResult({ clash, name, defenderRolling = false }: { clash: ClashEve
           <span className="clash-total">…</span>
         ) : (
           <>
-            <span className="clash-total">{total(roll, mult)}</span>
-            <span className="clash-formula">{mult === 1 ? `주사위 ${roll}` : `주사위 ${roll} × ${mult}`}</span>
+            <span className="clash-total">{clashScore(roll, mult)}</span>
+            <span className="clash-formula">
+              {mult === 1 ? `주사위 ${roll}` : `주사위 ${roll} × ${mult}${exact(roll, mult) === clashScore(roll, mult) ? '' : ` = ${exact(roll, mult)} 반올림`}`}
+            </span>
           </>
         )}
         {won && <span className="clash-win">승</span>}
@@ -1180,7 +1184,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             </div>
             {pending.ruling.feasible ? (
               <>
-                <D20Odds dc={pending.ruling.dc} />
+                <DieOdds dc={pending.ruling.dc} />
                 <dl className="ruling-facts">
                   <div>
                     <dt>{retry ? '다시 굴리는 비용' : '비용'}</dt>
@@ -1197,7 +1201,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
                   </div>
                 </dl>
                 <ul className="crit-notes">
-                  <li>20이 나오면 대성공: {pending.ruling.critSuccessEffects?.length ? '성공보다 더 좋은 결과가 납니다.' : '성공과 같은 결과입니다.'}</li>
+                  <li>6이 나오면 대성공: {pending.ruling.critSuccessEffects?.length ? '성공보다 더 좋은 결과가 납니다.' : '성공과 같은 결과입니다.'}</li>
                   <li>1이 나오면 대실패: {pending.ruling.critFailureEffects?.length ? '역효과가 있습니다.' : '아무 일도 일어나지 않습니다.'}</li>
                 </ul>
                 {!canAfford && <p className="infeasible">AP가 부족해서 {retry ? '다시 굴릴' : '시도할'} 수 없습니다.</p>}
@@ -1379,10 +1383,10 @@ function TimerBadge({ timer, mine }: { timer: TurnTimer; mine: boolean }) {
   );
 }
 
-/** The twenty faces of the die, marking which of them succeed against this DC. */
-function D20Odds({ dc }: { dc: number }) {
-  const faces = Array.from({ length: 20 }, (_, i) => i + 1);
-  const kind = (n: number) => (n === 20 ? 'crit' : n === 1 ? 'fumble' : n >= dc ? 'win' : '');
+/** The six faces of the die, marking which of them succeed against this DC. */
+function DieOdds({ dc }: { dc: number }) {
+  const faces = Array.from({ length: DIE_SIDES }, (_, i) => i + 1);
+  const kind = (n: number) => (n === DIE_SIDES ? 'crit' : n === 1 ? 'fumble' : n >= dc ? 'win' : '');
   return (
     <div className="odds">
       <div className="odds-faces" aria-hidden>
@@ -1392,7 +1396,7 @@ function D20Odds({ dc }: { dc: number }) {
           </span>
         ))}
       </div>
-      <div className="odds-caption">d20에서 {Math.min(dc, 20)} 이상이면 성공{dc > 20 ? ' (20만 성공)' : ''}</div>
+      <div className="odds-caption">{dc >= DIE_SIDES ? `주사위 ${DIE_SIDES}이 나와야만 성공` : `주사위 ${dc} 이상이면 성공`}</div>
     </div>
   );
 }

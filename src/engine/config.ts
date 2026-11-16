@@ -1,3 +1,6 @@
+/** Every die in the game is a six-sided one (사용자 요청): special actions and clashes alike. */
+export const DIE_SIDES = 6;
+
 /** Balance numbers. Tune these from playtests; everything else reads them from the game state. */
 export interface RuleConfig {
   /** AP each player has before their first turn starts. */
@@ -31,8 +34,8 @@ export const DEFAULT_RULES: RuleConfig = {
   apMax: 5,
   costMin: 1,
   costMax: 3,
-  dcMin: 5,
-  dcMax: 25,
+  dcMin: 2,
+  dcMax: 6,
   actionMaxLength: 200,
   maxEffects: 8,
   turnSeconds: 0,
@@ -44,5 +47,11 @@ export const DEFAULT_RULES: RuleConfig = {
 
 /** Rules from a save or another version: anything missing takes the default. */
 export function withDefaultRules(rules: Partial<RuleConfig> | undefined): RuleConfig {
-  return { ...DEFAULT_RULES, ...(rules ?? {}) };
+  const out = { ...DEFAULT_RULES, ...(rules ?? {}) };
+  // From the days of the d20: its DCs mean nothing on a d6.
+  if (out.dcMax > DIE_SIDES || out.dcMin > DIE_SIDES) {
+    out.dcMin = DEFAULT_RULES.dcMin;
+    out.dcMax = DEFAULT_RULES.dcMax;
+  }
+  return out;
 }

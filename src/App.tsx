@@ -12,7 +12,7 @@ import type { FallSimulator } from './session/authority';
 import { browserId, clearSavedGame, gmForSave, gmFromSave, loadSavedGame, rememberGm, rememberedGm, saveGame, savedName, type SavedGame } from './session/storage';
 import type { Session, SessionView } from './session/types';
 import { WaitingRoom } from './ui/WaitingRoom';
-import { rollD20 } from './dice';
+import { rollDie } from './dice';
 import { playSfx, unlockAudio } from './audio/sfx';
 import './App.css';
 
@@ -89,7 +89,7 @@ export default function App() {
   const hotseat = (resume: SavedGame | null = null) => {
     const config = resumeGm(resume);
     start(
-      new LocalSession(createGm(config), { roll: rollD20, initialState: resume?.state, phase: resume ? 'playing' : 'waiting', fall: landFalls }),
+      new LocalSession(createGm(config), { roll: rollDie, initialState: resume?.state, phase: resume ? 'playing' : 'waiting', fall: landFalls }),
       { kind: 'hotseat' },
       resume ? `저장된 게임을 이어 갑니다.${keyNotice(config)}` : null,
     );

@@ -109,7 +109,7 @@ const tag = (
 const MOVE_LIKE: [RegExp, PieceType][] = [[/퀸|여왕/, 'queen'], [/룩|성탑/, 'rook'], [/비숍|주교/, 'bishop'], [/나이트|기사/, 'knight'], [/킹/, 'king'], [/폰|병사/, 'pawn']];
 const MOVE_KIND_KO: Record<PieceType, string> = { king: '킹', ...PIECE_KO };
 
-/** A bigger version of a success look, for a natural 20. */
+/** A bigger version of a success look, for a natural 6. */
 function grander(s: StagingJson): StagingJson {
   return { ...s, shake: Math.min(3, s.shake + 1), fx: s.fx.map((f) => ({ ...f, strength: Math.min(5, f.strength + 1), radius: Math.min(3, f.radius + 0.5) })) };
 }
@@ -120,7 +120,7 @@ function grander(s: StagingJson): StagingJson {
  */
 export function fakeRuling(action: string, color: Color = 'white', board?: Board): GmRulingJson {
   const base = fakeBaseRuling(action, color, board);
-  // The fake GM keeps crits simple: a 20 does the same thing, a 1 stuns the acting piece for a turn.
+  // The fake GM keeps crits simple: a 6 does the same thing, a 1 stuns the acting piece for a turn.
   const actorSquare = base.feasible && base.actor ? base.actor : null;
   const success = base.look ?? look();
   const { look: _look, ...rest } = base;
@@ -201,7 +201,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor,
       means: far <= 1 ? 'touch' : 'move',
       feasible: true,
-      dc: 8,
+      dc: 3,
       cost: 1,
       effects: [{ type: 'board', rider, carrier }],
       look: look({ beats: [beat(1, { motion: 'hop' })], fx: [fx('arcane', 'burst', carrier, { strength: 2, withEffect: 1, delay: 0.3 })] }),
@@ -217,7 +217,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor,
       means: 'magic',
       feasible: true,
-      dc: 12,
+      dc: 4,
       cost: 2,
       effects: [{ type: 'swap', a, b }],
       look: look({ beats: [beat(1)], fx: [fx('arcane', 'burst', a, { strength: 3, radius: 0.7 }), fx('arcane', 'burst', b, { strength: 3, radius: 0.7 })] }),
@@ -236,7 +236,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
         actor: actor!,
         means: far <= 1 ? 'touch' : 'ranged',
         feasible: true,
-        dc: 10,
+        dc: 4,
         cost: 1,
         effects: [{ type: 'clearCover', at: last }],
         look: look({ fx: [fx('wind', 'burst', last, { strength: 2, withEffect: 1 })] }),
@@ -248,7 +248,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor: actor!,
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
-      dc: 10,
+      dc: 4,
       cost: 1,
       effects: [{ type: 'cover', at: last, kind: ladder ? 'ladder' : 'bridge', turns: 2, prop: look3d() }],
       look: look({ fx: [fx(ladder ? 'wind' : 'earth', 'burst', last, { strength: 2, withEffect: 1 })] }),
@@ -269,7 +269,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor,
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
-      dc: strong ? 15 : 11,
+      dc: strong ? 5 : 4,
       cost: strong ? 3 : 2,
       effects: [tag(last, `${kinds}의 걸음`, 2, { moveAs: likeKinds, aura: 'wind', auraStrength: 1 })],
       look: look({ fx: [fx('wind', 'burst', last, { strength: 3, radius: 0.7, withEffect: 1 })], acts: [{ at: last, act: 'spin', delay: 0.2 }] }),
@@ -286,7 +286,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor,
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
-      dc: times === 3 ? 17 : 13,
+      dc: times === 3 ? 6 : 5,
       cost: times === 3 ? 3 : 2,
       effects: [tag(last, '질주', 1, { moveTimes: times, aura: 'wind', auraStrength: 2 })],
       look: look({ fx: [fx('wind', 'burst', last, { strength: 3, radius: 0.8, withEffect: 1 })], acts: [{ at: last, act: 'hop', delay: 0.2 }] }),
@@ -303,7 +303,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor,
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
-      dc: 15,
+      dc: 5,
       cost: 3,
       effects: [tag(last, spear ? '창술' : '검술', 0, { clash: 1.5, prop: look3d(spear ? 'spear' : 'sword', 'rightHand') })],
       look: look({ fx: [fx('light', 'burst', last, { strength: 3, radius: 0.7, withEffect: 1 })], acts: [{ at: last, act: 'spin', delay: 0.3 }] }),
@@ -321,7 +321,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor: actor!,
       ...r,
       feasible: true,
-      dc: 9,
+      dc: 3,
       cost: 1,
       effects: [{ type: 'clearTerrain', at: last }],
       look: look({ fx: [fx('earth', 'burst', last, { strength: 3, radius: 0.8, withEffect: 1 }), fx('wind', 'burst', last, { strength: 2, withEffect: 1, delay: 0.2 })] }),
@@ -338,7 +338,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor: actor!,
       means: 'magic',
       feasible: true,
-      dc: 9 + at.length * 2,
+      dc: Math.min(6, 3 + at.length),
       cost: at.length > 1 ? 2 : 1,
       effects: at.map((sq) => ({ type: 'terrain' as const, at: sq, kind: 'wall' as const, turns: 2, prop: look3d() })),
       look: look({ shake: 1, fx: at.map((sq, i) => fx('earth', 'burst', sq, { strength: 3, radius: 0.7, withEffect: i + 1 })) }),
@@ -354,7 +354,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor: actor!,
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
-      dc: 12,
+      dc: 4,
       cost: 2,
       effects: [{ type: 'terrain', at: last, kind: 'pit', turns: 2, prop: look3d() }],
       look: look({ shake: 2, beats: [beat(1, { exit: 'sink' })], fx: [fx('earth', 'burst', last, { strength: 4, radius: 0.9, withEffect: 1 })] }),
@@ -371,7 +371,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor: actor!,
       means,
       feasible: true,
-      dc: 12 + (far > 1 ? Math.min(4, far - 1) : 0),
+      dc: 4 + (far > 2 ? 1 : 0),
       cost: 1,
       effects: [tag(last, '기절', 1)],
       look: look({
@@ -391,7 +391,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor,
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
-      dc: 11 + (far > 1 ? 2 : 0),
+      dc: 4 + (far > 1 ? 1 : 0),
       cost: 2,
       effects: [tag(last, '보호막', 0, { prop: look3d('shield', 'leftHand') })],
       look: look({ fx: [fx('light', 'burst', last, { strength: 3, radius: 1, withEffect: 1 })] }),
@@ -407,7 +407,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor,
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
-      dc: 14,
+      dc: 5,
       cost: 2,
       effects: [{ type: 'untag', at: last, tag: '공중부양' }],
       look: look({ fx: [fx('wind', 'burst', last, { strength: 3, radius: 0.8, withEffect: 1 })] }),
@@ -425,7 +425,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor,
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
-      dc: enemy ? 15 : far > 1 ? 12 : 10,
+      dc: enemy ? 5 : far > 1 ? 4 : 3,
       cost: enemy ? 2 : 1,
       effects: [tag(target, '공중부양', 2, { aura: 'wind', auraStrength: 1 })],
       look: look({ fx: [fx('wind', 'burst', target, { strength: 2, radius: 0.8, withEffect: 1 })] }),
@@ -446,7 +446,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor: actor!,
       ...r,
       feasible: true,
-      dc: shot ? Math.min(20, 11 + far) : 10,
+      dc: shot ? Math.min(6, 4 + Math.floor(far / 2)) : 3,
       cost: 2,
       effects: [tag(last, '화상', 3, { aura: 'fire', auraStrength: 2 })],
       look: look({
@@ -467,7 +467,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor: actor!,
       means: 'magic',
       feasible: true,
-      dc: strong ? 18 : named === 'pawn' ? 10 : 14,
+      dc: strong ? 6 : named === 'pawn' ? 3 : 5,
       cost: strong ? 3 : 2,
       effects: [{ type: 'revive', at: last, color, piece: named }],
       look: look({ beats: [beat(1, { entrance: 'rise' })], fx: [fx('light', 'burst', last, { strength: 4, radius: 1, withEffect: 1 })] }),
@@ -484,7 +484,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor: actor!,
       means: 'magic',
       feasible: true,
-      dc: strong ? 18 : named === 'pawn' ? 9 : 13,
+      dc: strong ? 6 : named === 'pawn' ? 3 : 4,
       cost: strong ? 3 : named === 'pawn' ? 1 : 2,
       effects: [{ type: 'spawn', at: last, color, piece: named }],
       look: look({
@@ -505,7 +505,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor,
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
-      dc: strong ? 18 : 12,
+      dc: strong ? 6 : 4,
       cost: strong ? 3 : 2,
       effects: [{ type: 'transform', at: last, into: named }],
       look: look({ fx: [fx('arcane', 'burst', last, { strength: 4, withEffect: 1 })] }),
@@ -522,7 +522,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor: actor!,
       means: shot ? 'ranged' : 'touch',
       feasible: true,
-      dc: shot ? Math.min(20, 12 + far) : 13,
+      dc: shot ? Math.min(6, 4 + Math.floor(far / 2)) : 5,
       cost: 2,
       effects: [{ type: 'remove', at: last }],
       look: look({
@@ -541,7 +541,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
     if (!actor) return needsActor()!;
     const [from, to] = squares;
     const d = distance(from, to);
-    const dc = Math.min(20, 6 + d * 2);
+    const dc = Math.min(6, 2 + Math.ceil(d / 2));
     return {
       interpretation: `${names[0]}의 기물이 ${josa(names[1], '으로/로')} 비범한 방법으로 이동한다.`,
       actor,

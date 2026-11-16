@@ -18,6 +18,7 @@ import type { Exit, Staging } from './staging';
 import { isInCheck, legalTargets } from './moves';
 import { fileOf, isAir, opponent, rankOf, squareAt } from './squares';
 import { revokeCastling } from './castling';
+import { DIE_SIDES } from './config';
 import { applyEffects, validateRuling, type EffectContext } from './effects';
 import { extinguish, isShielded, moveTimesOf, ridersOf, tickTags, unseat, withoutTag } from './tags';
 import { SHIELD } from './types';
@@ -377,11 +378,11 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
   const cost = retry ? state.rules.rerollCost : ruling.cost;
   const reroll = retry ? retry.rerolls + 1 : 0;
   if (state.ap[color] < cost) return { ok: false, reason: 'notEnoughAp' };
-  if (!Number.isInteger(roll) || roll < 1 || roll > 20) return { ok: false, reason: 'invalidRoll' };
+  if (!Number.isInteger(roll) || roll < 1 || roll > DIE_SIDES) return { ok: false, reason: 'invalidRoll' };
 
-  // A natural 20 always succeeds and a natural 1 always fails, whatever the DC.
+  // A natural 6 always succeeds and a natural 1 always fails, whatever the DC.
   const outcome: Outcome =
-    roll === 20 ? 'critSuccess' : roll === 1 ? 'critFailure' : roll >= ruling.dc ? 'success' : 'failure';
+    roll === DIE_SIDES ? 'critSuccess' : roll === 1 ? 'critFailure' : roll >= ruling.dc ? 'success' : 'failure';
   const success = outcome === 'critSuccess' || outcome === 'success';
   const crit = ruling.critSuccessEffects?.length ? ruling.critSuccessEffects : ruling.effects;
   let toApply = outcome === 'critSuccess' ? crit : outcome === 'success' ? ruling.effects : outcome === 'critFailure' ? ruling.critFailureEffects ?? [] : [];

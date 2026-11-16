@@ -5,7 +5,7 @@ import { BoardScene } from '../scene/BoardScene';
 import type { TourInset, TourPhase } from '../scene/TourCamera';
 import type { ActiveRoll } from '../dice3d/DiceTray';
 import { simulateRoll } from '../dice3d/simulate';
-import { skinRotationFor } from '../dice3d/d20';
+import { skinRotationFor } from '../dice3d/d6';
 
 const NO_SQUARES: never[] = [];
 const noop = () => {};
@@ -15,7 +15,7 @@ const CUE_DELAY = { dice: 1.6, coins: 1.8 };
 
 /**
  * The title screen's background: the real table, board and pieces in their starting places,
- * toured by a slow camera. When the camera reaches the dice tray a d20 is thrown; at the
+ * toured by a slow camera. When the camera reaches the dice tray a d6 is thrown; at the
  * dishes the dealer throws gold coins in. Both are live physics, different every time.
  */
 export function LobbyBackdrop({ inset }: { inset: TourInset }) {
@@ -30,8 +30,8 @@ export function LobbyBackdrop({ inset }: { inset: TourInset }) {
   };
 
   const throwDie = () => {
-    const number = 1 + Math.floor(Math.random() * 20);
-    const outcome: Outcome = number === 20 ? 'critSuccess' : number === 1 ? 'critFailure' : 'success';
+    const number = 1 + Math.floor(Math.random() * 6);
+    const outcome: Outcome = number === 6 ? 'critSuccess' : number === 1 ? 'critFailure' : 'success';
     setRoll({ run: null, skin: new Quaternion(), outcome, skipped: false });
     simulateRoll()
       .then((run) => setRoll((r) => (r ? { ...r, run, skin: skinRotationFor(number, run.final) } : r)))

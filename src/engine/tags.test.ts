@@ -15,18 +15,18 @@ import { move, ok, okMove, passTurn, play, sq } from './testUtil';
 const ruling = (effects: Effect[], over: Partial<Ruling> = {}): Ruling => ({
   interpretation: 'x',
   feasible: true,
-  dc: 10,
+  dc: 4,
   cost: 1,
   effects,
   narration: { success: 's', failure: 'f' },
   ...over,
 });
 
-/** Proposes and succeeds (roll 20) a special action for the side to move. */
+/** Proposes and succeeds (roll 6) a special action for the side to move. */
 const act = (state: GameState, ...effects: Effect[]) => {
   const proposed = applyCommand(state, { type: 'proposeSpecial', action: 'act', ruling: ruling(effects) });
   if (!proposed.ok) throw new Error(`proposal rejected: ${proposed.detail ?? proposed.reason}`);
-  return ok(applyCommand(proposed.state, { type: 'attemptSpecial', roll: 20 }));
+  return ok(applyCommand(proposed.state, { type: 'attemptSpecial', roll: 6 }));
 };
 const proposeFails = (state: GameState, ...effects: Effect[]) => {
   const r = applyCommand(state, { type: 'proposeSpecial', action: 'act', ruling: ruling(effects) });
@@ -206,7 +206,7 @@ describe('shield (보호막)', () => {
 
   it('absorbs the first normal capture: the attacker wins the clash, the shield breaks, the target stays, the attacker stays, the turn ends', () => {
     const s = endTurn(shielded());
-    const r = okMove(s, 'd4', 'd7', { clashRolls: [20, 1] });
+    const r = okMove(s, 'd4', 'd7', { clashRolls: [6, 1] });
     expect(r.state.board[sq('d7')]).toMatchObject({ type: 'knight', color: 'black', tags: [] });
     expect(r.state.board[sq('d4')]).toMatchObject({ type: 'rook', color: 'white' });
     expect(r.state.turn).toBe('black');
@@ -234,7 +234,7 @@ describe('shield (보호막)', () => {
     );
     let t = act(s, { type: 'tag', at: sq('e8'), tag: '보호막', turns: 0 }).state;
     t = endTurn(t);
-    const r = okMove(t, 'e4', 'e8', { clashRolls: [20, 1] });
+    const r = okMove(t, 'e4', 'e8', { clashRolls: [6, 1] });
     expect(r.state.status).toEqual({ kind: 'playing' });
     expect(r.state.board[sq('e8')]).toMatchObject({ type: 'king', tags: [] });
   });

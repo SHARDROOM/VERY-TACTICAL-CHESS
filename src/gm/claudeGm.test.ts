@@ -8,7 +8,7 @@ import { fakeFetch, type Captured } from './fakeHttp';
 const ruling = {
   interpretation: '나이트가 투석기를 타고 날아간다',
   feasible: true,
-  dc: 13,
+  dc: 5,
   cost: 2,
   effects: [{ type: 'move', from: 'b1', to: 'e5' }],
   critSuccessEffects: [],
@@ -85,7 +85,7 @@ describe('ClaudeGameMaster errors (shown to the player; AP is never spent)', () 
 describe('prompt', () => {
   it('system prompt carries the configured ranges and the king rule', () => {
     const p = buildSystemPrompt(createInitialState().rules);
-    expect(p).toContain('5~25');
+    expect(p).toContain('2~6');
     expect(p).toContain('1~3');
     expect(p).toContain('킹은 어떤 효과로도 제거하거나 잡거나 변환하거나 편을 바꿀 수 없고');
   });
@@ -113,7 +113,7 @@ describe('prompt shows tags and riders', () => {
     const ruling = {
       interpretation: 'x',
       feasible: true,
-      dc: 10,
+      dc: 4,
       cost: 1,
       effects: [
         { type: 'tag' as const, at: sq('g8'), tag: '기절', turns: 1 },
@@ -124,7 +124,7 @@ describe('prompt shows tags and riders', () => {
     };
     const p = applyCommand(state, { type: 'proposeSpecial', action: 'x', ruling });
     if (!p.ok) throw new Error(p.reason);
-    const a = applyCommand(p.state, { type: 'attemptSpecial', roll: 20 });
+    const a = applyCommand(p.state, { type: 'attemptSpecial', roll: 6 });
     if (!a.ok) throw new Error(a.reason);
     state = a.state;
     const m = buildUserMessage('y', state);
@@ -139,19 +139,19 @@ describe('prompt shows precedents', () => {
     const state = {
       ...createInitialState(),
       precedents: [
-        { turnNumber: 3, color: 'white' as const, action: '나이트 <발사>', interpretation: '투석기', dc: 12, cost: 1, roll: 20, outcome: 'critSuccess' as const },
-        { turnNumber: 4, color: 'black' as const, action: '폰 저격', interpretation: '저격', dc: 14, cost: 2, roll: 1, outcome: 'critFailure' as const },
+        { turnNumber: 3, color: 'white' as const, action: '나이트 <발사>', interpretation: '투석기', dc: 4, cost: 1, roll: 6, outcome: 'critSuccess' as const },
+        { turnNumber: 4, color: 'black' as const, action: '폰 저격', interpretation: '저격', dc: 5, cost: 2, roll: 1, outcome: 'critFailure' as const },
       ],
     };
     const m = buildUserMessage('x', state);
-    expect(m).toContain('- 턴 3 백: "나이트 ‹발사›" → 투석기 / DC 12, AP 1, 주사위 20 (대성공)');
+    expect(m).toContain('- 턴 3 백: "나이트 ‹발사›" → 투석기 / DC 4, AP 1, 주사위 6 (대성공)');
     expect(m.indexOf('턴 3 백')).toBeLessThan(m.indexOf('턴 4 흑'));
     expect(m).toContain('주사위 1 (대실패)');
   });
 
   it('keeps only the most recent 20', () => {
     const precedents = Array.from({ length: 25 }, (_, i) => ({
-      turnNumber: i + 1, color: 'white' as const, action: `행동${i + 1}`, interpretation: 'i', dc: 10, cost: 1, roll: 10, outcome: 'success' as const,
+      turnNumber: i + 1, color: 'white' as const, action: `행동${i + 1}`, interpretation: 'i', dc: 4, cost: 1, roll: 4, outcome: 'success' as const,
     }));
     const m = buildUserMessage('x', { ...createInitialState(), precedents });
     expect(m).not.toContain('"행동5"');

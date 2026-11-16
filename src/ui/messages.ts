@@ -1,5 +1,5 @@
 import { josa } from './josa';
-import { BURN, COVER_NAME, TERRAIN_NAME, squareName, type Color, type GameEvent, type Outcome, type PieceType, type RejectReason } from '../engine';
+import { BURN, COVER_NAME, TERRAIN_NAME, clashScore, squareName, type Color, type GameEvent, type Outcome, type PieceType, type RejectReason } from '../engine';
 
 export const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑' };
 
@@ -53,9 +53,12 @@ export interface LogEntry {
   tone: LogTone;
 }
 
-/** A clash score as shown: "9×1.5=13.5", or just "12" without a multiplier. */
+/** A clash score as shown: "3×1.5=4.5→5" (rounded half up), "5×1.2=6", or just "4" without a multiplier. */
 export function score(roll: number, mult: number): string {
-  return mult === 1 ? String(roll) : `${roll}×${mult}=${Math.round(roll * mult * 100) / 100}`;
+  if (mult === 1) return String(roll);
+  const exact = Math.round(roll * mult * 100) / 100;
+  const whole = clashScore(roll, mult);
+  return `${roll}×${mult}=${exact}${exact === whole ? '' : `→${whole}`}`;
 }
 
 /** Log lines for the events of one command. `pieceType` resolves a moved piece's name. */
@@ -201,7 +204,7 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         add(e.afterFailure ? `${josa(COLOR_NAME[e.color], '은/는')} 다시 굴리지 않았습니다.` : `${josa(COLOR_NAME[e.color], '이/가')} 행동을 취소했습니다.`);
         break;
       case 'specialResolved':
-        add(`🎲 ${e.reroll ? `다시 굴림${e.reroll > 1 ? ` ${e.reroll}` : ''}: ` : ''}d20 = ${e.roll} (DC ${e.dc}) → ${OUTCOME_LABEL[e.outcome]} · AP -${e.cost}`, 'roll');
+        add(`🎲 ${e.reroll ? `다시 굴림${e.reroll > 1 ? ` ${e.reroll}` : ''}: ` : ''}d6 = ${e.roll} (DC ${e.dc}) → ${OUTCOME_LABEL[e.outcome]} · AP -${e.cost}`, 'roll');
         if (e.narration) add(e.narration, 'gm');
         break;
     }

@@ -1,6 +1,6 @@
 export * from './types';
 export { applyCommand, clashEventFor, exitsOf, hasAnyMove } from './game';
-export { BASE_CLASH, CLASH_MAX, CLASH_MIN, CLASH_ROLLS, DUEL_TIMING, duelSeconds, canResist, clashMultiplier, clashSkill, clashWinChance, exchangesFor, resolveClash } from './clash';
+export { BASE_CLASH, CLASH_MAX, CLASH_MIN, CLASH_ROLLS, DUEL_TIMING, duelSeconds, canResist, clashMultiplier, clashScore, clashSkill, clashWinChance, exchangesFor, resolveClash } from './clash';
 export { capturedAfter } from './captured';
 export { FOOTPRINT, footprint, restingPlace } from './levitation';
 export { blockedSquares, dropFromBridges, terrainAt, terrainBlocks, tickTerrain, MAX_TERRAIN } from './terrain';
@@ -11,7 +11,7 @@ export { squareName, parseSquare, fileOf, rankOf, squareAt, opponent, AIR, SQUAR
 export { applyEffects, validateRuling, type EffectContext } from './effects';
 export { checkActor, distance, targetsOf } from './actor';
 export { hasTag, isStunned, isShielded, isBurning, isFloating, CORE_TAGS, MAX_MOVE_TIMES, movePatterns, moveTimesOf, ridersOf, stackOf } from './tags';
-export { DEFAULT_RULES, withDefaultRules, type RuleConfig } from './config';
+export { DEFAULT_RULES, DIE_SIDES, withDefaultRules, type RuleConfig } from './config';
 export * from './staging';
 export { buildTimeline, effectDuration, moveDuration, ACT_DURATION, EXIT_DURATION, REVIVE_DURATION, SWAP_DURATION, type Timeline } from './timeline';
 export * from './props';

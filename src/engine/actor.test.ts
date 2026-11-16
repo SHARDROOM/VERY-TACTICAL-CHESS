@@ -5,7 +5,7 @@ import { ok, sq } from './testUtil';
 const ruling = (actor: string | null, means: Means, effects: Effect[], crit: Effect[] = []): Ruling => ({
   interpretation: 'x',
   feasible: true,
-  dc: 10,
+  dc: 4,
   cost: 1,
   actor: actor === null ? null : sq(actor),
   means,
@@ -54,7 +54,7 @@ describe('who does it (주체)', () => {
     ok(propose(board(), ruling('e6', 'touch', [burn('e7')])));
     ok(propose(board(), ruling('e6', 'touch', [burn('d7')])));
     expect(problem(board(), ruling('e2', 'touch', [burn('e7')]))).toContain('5칸');
-    // ...including the better result of a natural 20.
+    // ...including the better result of a natural 6.
     expect(problem(board(), ruling('e6', 'touch', [burn('e7')], [burn('e7'), burn('b7')]))).toContain('대성공 효과 2');
   });
 

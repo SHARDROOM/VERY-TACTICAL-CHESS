@@ -46,7 +46,7 @@ export interface EffectContext {
   /**
    * Whether a move effect into a piece that can stand its ground is a clash (special actions;
    * not chaos): 'check' while a ruling is only being checked (the attacker is taken to win, the
-   * outcome nobody can know yet), or the d20s to play it out with.
+   * outcome nobody can know yet), or the dice to play it out with.
    */
   clash?: { mode: 'check' } | { mode: 'play'; rolls: readonly number[] };
 }

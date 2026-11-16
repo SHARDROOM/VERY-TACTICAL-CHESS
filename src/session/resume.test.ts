@@ -46,8 +46,8 @@ class TestGm implements GameMaster {
 /** A mid-game state with tags, a rider, a pending ruling and precedents. */
 function busyState(): GameState {
   let s: GameState = { ...createInitialState(), ap: { white: 5, black: 5 } };
-  const act = (effects: Ruling['effects'], roll = 20) => {
-    const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 10, cost: 1, effects, narration: { success: 's', failure: 'f' } };
+  const act = (effects: Ruling['effects'], roll = 6) => {
+    const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 4, cost: 1, effects, narration: { success: 's', failure: 'f' } };
     const p = applyCommand(s, { type: 'proposeSpecial', action: 'act', ruling });
     if (!p.ok) throw new Error(p.reason);
     const a = applyCommand(p.state, { type: 'attemptSpecial', roll });
@@ -57,7 +57,7 @@ function busyState(): GameState {
   act([{ type: 'tag', at: sq('g8'), tag: '기절', turns: 1 }]);
   act([{ type: 'board', rider: sq('a2'), carrier: sq('b1') }]);
   act([{ type: 'tag', at: sq('b1'), tag: '불타는 중', turns: 0 }]);
-  const ruling: Ruling = { interpretation: 'pending', feasible: true, dc: 12, cost: 1, effects: [{ type: 'move', from: sq('g1'), to: sq('f3') }], narration: { success: 's', failure: 'f' } };
+  const ruling: Ruling = { interpretation: 'pending', feasible: true, dc: 4, cost: 1, effects: [{ type: 'move', from: sq('g1'), to: sq('f3') }], narration: { success: 's', failure: 'f' } };
   const p = applyCommand(s, { type: 'proposeSpecial', action: 'still deciding', ruling });
   if (!p.ok) throw new Error(p.reason);
   return p.state;
@@ -121,8 +121,8 @@ describe('saved games', () => {
     const state = busyState();
     saveGame({ kind: 'hotseat', state, gm: { provider: 'fake' } }, storage);
     const restored = loadSavedGame(storage)!.state;
-    const a = applyCommand(state, { type: 'attemptSpecial', roll: 15 });
-    const b = applyCommand(restored, { type: 'attemptSpecial', roll: 15 });
+    const a = applyCommand(state, { type: 'attemptSpecial', roll: 5 });
+    const b = applyCommand(restored, { type: 'attemptSpecial', roll: 5 });
     expect(b).toEqual(JSON.parse(JSON.stringify(a)));
   });
 
@@ -161,7 +161,7 @@ describe('saved games', () => {
 
   it('hotseat and host sessions resume from a saved state', () => {
     const state = busyState();
-    const local = new LocalSession(new TestGm(), { roll: () => 20, initialState: state, phase: 'playing' });
+    const local = new LocalSession(new TestGm(), { roll: () => 6, initialState: state, phase: 'playing' });
     expect(local.view()).toMatchObject({ state, phase: 'playing' });
     const host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', initialState: state, heartbeatMs: 0, black: { id: 'guest-1', name: '친구' } });
     expect(host.view()).toMatchObject({ state, phase: 'playing' });

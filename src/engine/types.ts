@@ -158,13 +158,13 @@ export interface Ruling {
   means?: Means;
   /** False when the action cannot be attempted at all. */
   feasible: boolean;
-  /** Difficulty: the d20 roll must be at least this. */
+  /** Difficulty: the d6 roll must be at least this. */
   dc: number;
   /** AP spent when attempting. */
   cost: number;
   /** Applied in order when the attempt succeeds. */
   effects: Effect[];
-  /** Applied instead of `effects` on a natural 20. Empty or missing: `effects` apply. */
+  /** Applied instead of `effects` on a natural 6. Empty or missing: `effects` apply. */
   critSuccessEffects?: Effect[];
   /** Backfire applied on a natural 1. Empty or missing: nothing happens. */
   critFailureEffects?: Effect[];
@@ -284,11 +284,11 @@ export interface Chain {
 }
 
 export type Command =
-  /** `clashRolls`: d20s rolled outside the engine, used in order if the capture becomes a clash. */
+  /** `clashRolls`: d6s rolled outside the engine, used in order if the capture becomes a clash. */
   | { type: 'move'; from: Square; to: Square; promotion?: PromotionType; clashRolls?: number[] }
   | { type: 'endTurn' }
   | { type: 'proposeSpecial'; action: string; ruling: Ruling }
-  /** `roll` is a d20 result produced outside the engine, keeping the engine deterministic. */
+  /** `roll` is a d6 result produced outside the engine, keeping the engine deterministic. */
   | { type: 'attemptSpecial'; roll: number; clashRolls?: number[] }
   | { type: 'cancelSpecial' }
   /** The side to move ran out of time: it loses AP and the turn passes. */

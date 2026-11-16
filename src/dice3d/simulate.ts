@@ -1,10 +1,11 @@
 import { Quaternion } from 'three';
-import { d20Vertices } from './d20';
 import { findImpacts } from '../audio/impacts';
 
 /** Size of the dice tray (inner half-extents, in die-sized units) and of the die. */
 export const TRAY = { halfX: 3.2, halfZ: 2.2, wallHeight: 3 };
-export const DIE_RADIUS = 0.6;
+/** The die is a cube with rounded edges: its faces are DIE_HALF from its centre. */
+export const DIE_HALF = 0.42;
+export const DIE_ROUNDING = 0.07;
 
 export interface DiceRun {
   /** 7 numbers per step: position x, y, z, then rotation quaternion x, y, z, w. */
@@ -32,9 +33,9 @@ export function loadPhysics() {
 }
 
 /**
- * Throws a d20 across the tray with real rigid-body physics (Rapier) and records the
+ * Throws a d6 across the tray with real rigid-body physics (Rapier) and records the
  * whole flight. The engine has already decided the number; the caller only uses the
- * resting orientation to pick which way to put the numbered skin on (see d20.ts).
+ * resting orientation to pick which way to put the pipped skin on (see d6.ts).
  * Rapier is loaded lazily so the main bundle stays small.
  */
 export async function simulateRoll(random: () => number = Math.random): Promise<DiceRun> {
@@ -42,7 +43,7 @@ export async function simulateRoll(random: () => number = Math.random): Promise<
 }
 
 /**
- * Throws `count` d20s together: they fly side by side, can knock into each other, and are
+ * Throws `count` dice together: they fly side by side, can knock into each other, and are
  * recorded until all of them rest, so every run has the same number of steps.
  */
 export async function simulateRolls(count: number, random: () => number = Math.random): Promise<DiceRun[]> {
@@ -50,7 +51,7 @@ export async function simulateRolls(count: number, random: () => number = Math.r
 }
 
 /**
- * Throws `count` d20s one after another (a clash: the attacker's, then the defender's): each is
+ * Throws `count` dice one after another (a clash: the attacker's, then the defender's): each is
  * thrown in its own lane once the ones before it rest, and lands among them (they stay put).
  */
 export async function simulateRollsInTurn(count: number, random: () => number = Math.random): Promise<DiceRun[]> {
@@ -91,7 +92,8 @@ async function throwDice(
     }
 
     const r = () => random() * 2 - 1;
-    const points = new Float32Array(d20Vertices(DIE_RADIUS).flatMap((v) => [v.x, v.y, v.z]));
+    const core = DIE_HALF - DIE_ROUNDING;
+    const cube = () => RAPIER.ColliderDesc.roundCuboid(core, core, core, DIE_ROUNDING);
     // Dice already thrown lie where they came to rest.
     for (const d of opts.resting ?? []) {
       const still = world.createRigidBody(
@@ -99,7 +101,7 @@ async function throwDice(
           .setTranslation(...d.position)
           .setRotation({ x: d.rotation.x, y: d.rotation.y, z: d.rotation.z, w: d.rotation.w }),
       );
-      world.createCollider(RAPIER.ColliderDesc.convexHull(points)!.setFriction(0.5).setRestitution(0.35), still);
+      world.createCollider(cube().setFriction(0.5).setRestitution(0.35), still);
     }
     const bodies = Array.from({ length: count }, (_, i) => {
       const start = new Quaternion(r(), r(), r(), r()).normalize();
@@ -121,7 +123,7 @@ async function throwDice(
           .setAngularDamping(0.35)
           .setCcdEnabled(true),
       );
-      world.createCollider(RAPIER.ColliderDesc.convexHull(points)!.setFriction(0.5).setRestitution(0.35).setDensity(1), body);
+      world.createCollider(cube().setFriction(0.5).setRestitution(0.35).setDensity(1), body);
       return body;
     });
 

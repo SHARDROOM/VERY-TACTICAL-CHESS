@@ -17,17 +17,17 @@ import { ok, okMove, passTurn, sq } from './testUtil';
 const ruling = (effects: Effect[]): Ruling => ({
   interpretation: 'x',
   feasible: true,
-  dc: 10,
+  dc: 4,
   cost: 1,
   effects,
   narration: { success: 's', failure: 'f' },
 });
 
-/** Proposes and succeeds (roll 20) a special action for the side to move. */
+/** Proposes and succeeds (roll 6) a special action for the side to move. */
 const act = (state: GameState, ...effects: Effect[]) => {
   const proposed = applyCommand({ ...state, ap: { white: 9, black: 9 } }, { type: 'proposeSpecial', action: 'act', ruling: ruling(effects) });
   if (!proposed.ok) throw new Error(`proposal rejected: ${proposed.detail ?? proposed.reason}`);
-  return ok(applyCommand(proposed.state, { type: 'attemptSpecial', roll: 20 }));
+  return ok(applyCommand(proposed.state, { type: 'attemptSpecial', roll: 6 }));
 };
 const proposeFails = (state: GameState, ...effects: Effect[]) => {
   const r = applyCommand({ ...state, ap: { white: 9, black: 9 } }, { type: 'proposeSpecial', action: 'act', ruling: ruling(effects) });

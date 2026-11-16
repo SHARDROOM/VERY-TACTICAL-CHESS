@@ -5,6 +5,7 @@ import {
   createInitialState,
   createStateFrom,
   legalTargets,
+  withDefaultRules,
   type GameState,
   type Ruling,
 } from './index';
@@ -13,7 +14,7 @@ import { move, ok, okMove, passTurn, play, sq } from './testUtil';
 const ruling = (over: Partial<Ruling> = {}): Ruling => ({
   interpretation: '나이트가 투석기를 타고 날아간다',
   feasible: true,
-  dc: 12,
+  dc: 4,
   cost: 1,
   effects: [{ type: 'move', from: sq('b1'), to: sq('e5') }],
   narration: { success: '성공 서술', failure: '실패 서술' },
@@ -61,7 +62,7 @@ describe('end turn', () => {
   });
 
   it('is allowed after a special action was attempted, even a failed one, and passes without moving', () => {
-    for (const roll of [20, 2]) {
+    for (const roll of [6, 2]) {
       let s = ok(attempt(ok(propose(rich())).state, roll)).state;
       // A failure first offers a second try; letting it go leaves the turn to end.
       if (s.pending?.retry) s = ok(cancel(s)).state;
@@ -116,9 +117,14 @@ describe('proposing a special action', () => {
   });
 
   it('rejects out-of-range DC and cost', () => {
-    for (const bad of [{ dc: 4 }, { dc: 26 }, { dc: 12.5 }, { cost: 0 }, { cost: 4 }]) {
+    for (const bad of [{ dc: 1 }, { dc: 7 }, { dc: 3.5 }, { cost: 0 }, { cost: 4 }]) {
       expect(propose(rich(), ruling(bad))).toMatchObject({ ok: false, reason: 'invalidRuling' });
     }
+  });
+
+  it('rules saved in the days of the d20 load with the d6 range', () => {
+    expect(withDefaultRules({ dcMin: 5, dcMax: 25, apMax: 7 })).toMatchObject({ dcMin: 2, dcMax: 6, apMax: 7 });
+    expect(withDefaultRules({ dcMin: 3, dcMax: 5 })).toMatchObject({ dcMin: 3, dcMax: 5 });
   });
 
   it('rejects effects outside the vocabulary', () => {
@@ -160,7 +166,7 @@ describe('proposing a special action', () => {
 
   it('accepts an infeasible ruling for display, but it cannot be attempted', () => {
     const s = ok(propose(rich(), ruling({ feasible: false, dc: 0, cost: 0, effects: [] }))).state;
-    expect(attempt(s, 20)).toMatchObject({ ok: false, reason: 'notFeasible' });
+    expect(attempt(s, 6)).toMatchObject({ ok: false, reason: 'notFeasible' });
     expect(ok(cancel(s)).state.pending).toBeNull();
   });
 });
@@ -176,36 +182,36 @@ describe('attempting and cancelling', () => {
   });
 
   it('attempt/cancel without a proposal is rejected', () => {
-    expect(attempt(rich(), 10)).toMatchObject({ ok: false, reason: 'noPendingAction' });
+    expect(attempt(rich(), 3)).toMatchObject({ ok: false, reason: 'noPendingAction' });
     expect(cancel(rich())).toMatchObject({ ok: false, reason: 'noPendingAction' });
   });
 
   it('cannot attempt without enough AP', () => {
     const s = ok(propose(rich(1), ruling({ cost: 2 }))).state;
-    expect(attempt(s, 20)).toMatchObject({ ok: false, reason: 'notEnoughAp' });
+    expect(attempt(s, 6)).toMatchObject({ ok: false, reason: 'notEnoughAp' });
   });
 
-  it('rejects rolls outside 1..20', () => {
+  it('rejects rolls outside 1..6', () => {
     const s = ok(propose(rich())).state;
-    for (const roll of [0, 21, 3.5]) expect(attempt(s, roll)).toMatchObject({ ok: false, reason: 'invalidRoll' });
+    for (const roll of [0, 7, 3.5]) expect(attempt(s, roll)).toMatchObject({ ok: false, reason: 'invalidRoll' });
   });
 
   it('success (roll >= DC) applies effects and spends AP; the turn continues', () => {
     const s = ok(propose(rich(3), ruling({ cost: 2 }))).state;
-    const r = ok(attempt(s, 12));
+    const r = ok(attempt(s, 4));
     expect(r.state.board[sq('e5')]).toMatchObject({ type: 'knight', color: 'white' });
     expect(r.state.board[sq('b1')]).toBeNull();
     expect(r.state.ap.white).toBe(1);
     expect(r.state.turn).toBe('white');
     expect(r.state.usedApThisTurn).toBe(true);
     expect(r.state.pending).toBeNull();
-    expect(r.events[0]).toMatchObject({ type: 'specialResolved', roll: 12, dc: 12, success: true, narration: '성공 서술' });
+    expect(r.events[0]).toMatchObject({ type: 'specialResolved', roll: 4, dc: 4, success: true, narration: '성공 서술' });
     expect(r.events[1]).toMatchObject({ type: 'moved', from: sq('b1'), to: sq('e5') });
   });
 
   it('failure (roll < DC) only spends AP; the turn continues', () => {
     const s = ok(propose(rich(3))).state;
-    const r = ok(attempt(s, 11));
+    const r = ok(attempt(s, 3));
     expect(r.state.board).toEqual(s.board);
     expect(r.state.ap.white).toBe(2);
     expect(r.state.turn).toBe('white');
@@ -215,13 +221,13 @@ describe('attempting and cancelling', () => {
 
   it('allows several special actions per turn while AP lasts, then a normal move ends the turn', () => {
     let s = rich(2);
-    s = ok(attempt(ok(propose(s)).state, 15)).state;
+    s = ok(attempt(ok(propose(s)).state, 5)).state;
     const second = ruling({ effects: [{ type: 'remove', at: sq('d7') }] });
     s = ok(attempt(ok(propose(s, second, '폰을 저격한다')).state, 3)).state;
     expect(s.ap.white).toBe(0);
     expect(s.board[sq('d7')]).not.toBeNull();
     const third = ok(propose(s, ruling({ effects: [{ type: 'remove', at: sq('d7') }] }))).state;
-    expect(attempt(third, 20)).toMatchObject({ ok: false, reason: 'notEnoughAp' });
+    expect(attempt(third, 6)).toMatchObject({ ok: false, reason: 'notEnoughAp' });
     const after = okMove(ok(cancel(third)).state, 'e2', 'e4');
     expect(after.state.turn).toBe('black');
     expect(after.state.usedApThisTurn).toBe(false);
@@ -229,7 +235,7 @@ describe('attempting and cancelling', () => {
 
   it('removing a piece reports it and can capture enemy pieces via move', () => {
     const s = ok(propose(rich(), ruling({ effects: [{ type: 'move', from: sq('b1'), to: sq('d7') }] }))).state;
-    const r = ok(attempt(s, 20));
+    const r = ok(attempt(s, 6));
     expect(r.events[1]).toMatchObject({ type: 'moved', captured: { type: 'pawn', color: 'black' } });
   });
 
@@ -244,40 +250,40 @@ describe('attempting and cancelling', () => {
       { ap: { white: 3, black: 0 } },
     );
     const p = ok(propose(s, ruling({ effects: [{ type: 'move', from: sq('a1'), to: sq('a8') }] }))).state;
-    expect(ok(attempt(p, 20)).events).toContainEqual({ type: 'check', color: 'black' });
+    expect(ok(attempt(p, 6)).events).toContainEqual({ type: 'check', color: 'black' });
   });
 
   it('special-action effects revoke castling rights', () => {
     const s = ok(propose(rich(), ruling({ effects: [{ type: 'remove', at: sq('h8') }] }))).state;
-    expect(ok(attempt(s, 20)).state.castling.black.kingSide).toBe(false);
+    expect(ok(attempt(s, 6)).state.castling.black.kingSide).toBe(false);
   });
 });
 
 describe('rolling again after a failure', () => {
-  const failed = (ap = 3, over: Partial<Ruling> = {}) => ok(attempt(ok(propose(rich(ap), ruling(over))).state, 5));
+  const failed = (ap = 3, over: Partial<Ruling> = {}) => ok(attempt(ok(propose(rich(ap), ruling(over))).state, 3));
 
   it('a plain failure keeps the action open for a second try', () => {
     const r = failed();
     expect(r.state.ap.white).toBe(2);
-    expect(r.state.pending).toMatchObject({ color: 'white', action: '나이트를 투석기로 날린다', retry: { roll: 5, narration: '실패 서술', rerolls: 0 } });
+    expect(r.state.pending).toMatchObject({ color: 'white', action: '나이트를 투석기로 날린다', retry: { roll: 3, narration: '실패 서술', rerolls: 0 } });
     expect(r.state.precedents).toHaveLength(1);
   });
 
   it('a second try costs the reroll price, uses the same ruling and replaces the precedent', () => {
     const s = failed(5, { cost: 3 });
     expect(s.state.ap.white).toBe(2);
-    const r = ok(attempt(s.state, 15));
-    expect(r.events[0]).toMatchObject({ type: 'specialResolved', roll: 15, cost: DEFAULT_RULES.rerollCost, reroll: 1, success: true });
+    const r = ok(attempt(s.state, 5));
+    expect(r.events[0]).toMatchObject({ type: 'specialResolved', roll: 5, cost: DEFAULT_RULES.rerollCost, reroll: 1, success: true });
     expect(r.state.ap.white).toBe(2 - DEFAULT_RULES.rerollCost);
     expect(r.state.board[sq('e5')]).toMatchObject({ type: 'knight' });
     expect(r.state.pending).toBeNull();
-    expect(r.state.precedents).toEqual([expect.objectContaining({ roll: 15, outcome: 'success', rerolls: 1, cost: 3 })]);
+    expect(r.state.precedents).toEqual([expect.objectContaining({ roll: 5, outcome: 'success', rerolls: 1, cost: 3 })]);
   });
 
   it('failing again keeps it open, counting the tries, until the AP runs out', () => {
     const s = failed(3);
-    const second = ok(attempt(s.state, 4));
-    expect(second.state.pending?.retry).toEqual({ roll: 4, narration: '실패 서술', rerolls: 1 });
+    const second = ok(attempt(s.state, 2));
+    expect(second.state.pending?.retry).toEqual({ roll: 2, narration: '실패 서술', rerolls: 1 });
     expect(second.state.ap.white).toBe(1);
     const third = ok(attempt(second.state, 6));
     expect(third.events[0]).toMatchObject({ reroll: 2 });
@@ -304,12 +310,12 @@ describe('rolling again after a failure', () => {
     expect(ok(attempt(ok(propose(rich(3))).state, 1)).state.pending).toBeNull();
     expect(failed(1).state.pending).toBeNull();
     const off = { ...rich(3), rules: { ...DEFAULT_RULES, rerollCost: 0 } };
-    expect(ok(attempt(ok(propose(off)).state, 5)).state.pending).toBeNull();
+    expect(ok(attempt(ok(propose(off)).state, 3)).state.pending).toBeNull();
   });
 
   it('a costlier reroll rule is charged', () => {
     const s = { ...rich(5), rules: { ...DEFAULT_RULES, rerollCost: 2 } };
-    const f = ok(attempt(ok(propose(s)).state, 5));
-    expect(ok(attempt(f.state, 15)).state.ap.white).toBe(2);
+    const f = ok(attempt(ok(propose(s)).state, 3));
+    expect(ok(attempt(f.state, 5)).state.ap.white).toBe(2);
   });
 });

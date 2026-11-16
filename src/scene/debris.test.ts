@@ -79,8 +79,8 @@ describe('chunks lying about', () => {
 describe('things thrown about the table hit the dice', () => {
   it('a taken piece thrown along the table stops against a die in its way', async () => {
     const { simulatePiece } = await import('./piecePhysics');
-    const { d20Vertices } = await import('../dice3d/d20');
-    const hull = Float32Array.from(d20Vertices(0.42).flatMap((v) => [v.x, v.y, v.z]));
+    const { d6Corners } = await import('../dice3d/d6');
+    const hull = Float32Array.from(d6Corners(0.3).flatMap((v) => [v.x, v.y, v.z]));
     const throwAt = (dice: { hull: Float32Array; p: Vector3; q: Quaternion }[]) =>
       simulatePiece({
         type: 'pawn',
@@ -94,7 +94,7 @@ describe('things thrown about the table hit the dice', () => {
       });
     const free = await throwAt([]);
     // Left alone it slides about a square and a bit; with a die there it stops short of it.
-    const blocked = await throwAt([{ hull, p: new Vector3(11.5, TABLE_TOP_Y + 0.42, 5), q: new Quaternion() }]);
+    const blocked = await throwAt([{ hull, p: new Vector3(11.5, TABLE_TOP_Y + 0.3, 5), q: new Quaternion() }]);
     expect(free.final.position.x).toBeLessThan(11.6);
     expect(blocked.final.position.x).toBeGreaterThan(11.9);
   });

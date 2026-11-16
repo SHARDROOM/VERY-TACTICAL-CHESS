@@ -5,7 +5,7 @@ import { ok, sq } from './testUtil';
 const ruling = (over: Partial<Ruling> = {}): Ruling => ({
   interpretation: '나이트가 투석기를 탄다',
   feasible: true,
-  dc: 12,
+  dc: 4,
   cost: 1,
   effects: [{ type: 'move', from: sq('b1'), to: sq('c4') }],
   critSuccessEffects: [{ type: 'move', from: sq('b1'), to: sq('d5') }],
@@ -20,33 +20,33 @@ const run = (r: Ruling, roll: number, state = rich()) => {
 };
 
 describe('critical results', () => {
-  it('20 is a critical success: crit effects replace the normal ones', () => {
-    const r = run(ruling(), 20);
+  it('6 is a critical success: crit effects replace the normal ones', () => {
+    const r = run(ruling(), 6);
     expect(r.events[0]).toMatchObject({ type: 'specialResolved', outcome: 'critSuccess', success: true, narration: '대성공' });
     expect(r.state.board[sq('d5')]).toMatchObject({ type: 'knight' });
     expect(r.state.board[sq('c4')]).toBeNull();
   });
 
-  it('20 succeeds even when the DC is above 20', () => {
-    const r = run(ruling({ dc: 25 }), 20);
+  it('6 succeeds even at the hardest DC', () => {
+    const r = run(ruling({ dc: 6 }), 6);
     expect(r.events[0]).toMatchObject({ outcome: 'critSuccess', success: true });
   });
 
-  it('20 falls back to the normal effects and narration when no crit effects are given', () => {
-    const r = run(ruling({ critSuccessEffects: [], narration: { success: '성공', failure: '실패' } }), 20);
+  it('6 falls back to the normal effects and narration when no crit effects are given', () => {
+    const r = run(ruling({ critSuccessEffects: [], narration: { success: '성공', failure: '실패' } }), 6);
     expect(r.state.board[sq('c4')]).toMatchObject({ type: 'knight' });
     expect(r.events[0]).toMatchObject({ narration: '성공' });
   });
 
   it('1 is a critical failure: the backfire applies', () => {
-    const r = run(ruling({ dc: 5 }), 1);
+    const r = run(ruling({ dc: 2 }), 1);
     expect(r.events[0]).toMatchObject({ outcome: 'critFailure', success: false, narration: '대실패' });
     expect(r.state.board[sq('b1')]?.tags).toEqual([{ name: '기절', turnsLeft: 1, appliedOnTurn: 1 }]);
   });
 
   it('a normal failure (2..DC-1) only costs AP', () => {
     const before = rich();
-    const r = run(ruling(), 11, before);
+    const r = run(ruling(), 3, before);
     expect(r.events).toEqual([expect.objectContaining({ outcome: 'failure', narration: '실패' })]);
     expect(r.state.board).toEqual(before.board);
   });
@@ -74,13 +74,13 @@ describe('critical results', () => {
 
 describe('precedents', () => {
   it('records every attempted special action with its ruling and result', () => {
-    let s = run(ruling(), 15).state;
+    let s = run(ruling(), 5).state;
     // b1 is empty now, so the second action uses the other knight.
     const g1 = [{ type: 'move' as const, from: sq('g1'), to: sq('f3') }];
-    s = run(ruling({ dc: 9, interpretation: '두 번째', effects: g1, critSuccessEffects: [], critFailureEffects: [] }), 3, s).state;
+    s = run(ruling({ dc: 5, interpretation: '두 번째', effects: g1, critSuccessEffects: [], critFailureEffects: [] }), 3, s).state;
     expect(s.precedents).toEqual([
-      { turnNumber: 1, color: 'white', action: 'b1 나이트 발사', interpretation: '나이트가 투석기를 탄다', dc: 12, cost: 1, roll: 15, outcome: 'success' },
-      { turnNumber: 1, color: 'white', action: 'b1 나이트 발사', interpretation: '두 번째', dc: 9, cost: 1, roll: 3, outcome: 'failure' },
+      { turnNumber: 1, color: 'white', action: 'b1 나이트 발사', interpretation: '나이트가 투석기를 탄다', dc: 4, cost: 1, roll: 5, outcome: 'success' },
+      { turnNumber: 1, color: 'white', action: 'b1 나이트 발사', interpretation: '두 번째', dc: 5, cost: 1, roll: 3, outcome: 'failure' },
     ]);
   });
 

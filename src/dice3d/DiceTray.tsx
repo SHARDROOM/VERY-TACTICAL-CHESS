@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { BufferGeometry, CanvasTexture, Float32BufferAttribute, Quaternion, SRGBColorSpace, Vector3, type Group } from 'three';
+import { CanvasTexture, Quaternion, SRGBColorSpace, Vector3, type Group } from 'three';
 import type { Color, Outcome } from '../engine';
-import { D20_FACES, d20Vertices, faceWithNumber } from './d20';
-import { DIE_RADIUS, TRAY, type DiceRun } from './simulate';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { D6_FACES, d6Corners, faceWithNumber } from './d6';
+import { DIE_HALF, DIE_ROUNDING, TRAY, type DiceRun } from './simulate';
 import { TABLE_TOP_Y } from '../scene/WoodTable';
 import { playSfx } from '../audio/sfx';
 import { setDie } from '../scene/toys';
@@ -19,7 +20,7 @@ export function trayCenterX(side: 1 | -1): number {
 export interface ActiveRoll {
   /** Null while the physics is still being computed. */
   run: DiceRun | null;
-  /** Rotation of the numbered skin that puts the engine's number on top (see d20.ts). */
+  /** Rotation of the numbered skin that puts the engine's number on top (see d6.ts). */
   skin: Quaternion;
   /** A special action's roll lights up by its outcome; a clash's dice have none. */
   outcome: Outcome | null;
@@ -44,49 +45,54 @@ const LOOK: Record<Outcome, { body: string; emissive: string; glow: number; text
   critFailure: { body: '#7a1f1f', emissive: '#ff3b2f', glow: 0.35, text: '#ff6b5e' },
 };
 
-/** Flat-shaded icosahedron with its faces in the same order as D20_FACES. */
+/** A cube with rounded edges, like the physics' (simulate.ts). */
 function useDieGeometry() {
-  return useMemo(() => {
-    const v = d20Vertices(DIE_RADIUS);
-    const pos: number[] = [];
-    for (const f of D20_FACES) for (const i of f.vertices) pos.push(v[i].x, v[i].y, v[i].z);
-    const g = new BufferGeometry();
-    g.setAttribute('position', new Float32BufferAttribute(pos, 3));
-    g.computeVertexNormals();
-    return g;
-  }, []);
+  return useMemo(() => new RoundedBoxGeometry(DIE_HALF * 2, DIE_HALF * 2, DIE_HALF * 2, 4, DIE_ROUNDING), []);
 }
 
-const labelCache = new Map<string, CanvasTexture>();
-function numberTexture(n: number, color: string): CanvasTexture {
+/** Where the pips of each number sit on a face, on a 3×3 grid (-1, 0, 1 across and down). */
+const PIPS: Record<number, [number, number][]> = {
+  1: [[0, 0]],
+  2: [[-1, -1], [1, 1]],
+  3: [[-1, -1], [0, 0], [1, 1]],
+  4: [[-1, -1], [1, -1], [-1, 1], [1, 1]],
+  5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]],
+  6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]],
+};
+
+const pipCache = new Map<string, CanvasTexture>();
+function pipTexture(n: number, color: string): CanvasTexture {
   const key = `${n}-${color}`;
-  let t = labelCache.get(key);
+  let t = pipCache.get(key);
   if (!t) {
     const c = document.createElement('canvas');
     c.width = c.height = 128;
     const ctx = c.getContext('2d')!;
     ctx.fillStyle = color;
-    ctx.font = '700 70px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(String(n), 64, 70);
-    if (n === 6 || n === 9) ctx.fillRect(40, 104, 48, 7); // tell 6 from 9
+    // The single pip is drawn bigger, like on a real die.
+    const r = n === 1 ? 17 : 11.5;
+    for (const [x, y] of PIPS[n]) {
+      ctx.beginPath();
+      ctx.arc(64 + x * 34, 64 + y * 34, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
     t = new CanvasTexture(c);
     t.colorSpace = SRGBColorSpace;
-    labelCache.set(key, t);
+    pipCache.set(key, t);
   }
   return t;
 }
 
-/** Number decals sitting on each face, upright toward the face's first vertex. */
-function Numbers({ ink }: { ink: string }) {
+/** Pip decals sitting on each face, square with its edges. */
+function Pips({ ink }: { ink: string }) {
   const decals = useMemo(() => {
-    const verts = d20Vertices(DIE_RADIUS);
+    const corners = d6Corners(1);
     const Z = new Vector3(0, 0, 1);
     const Y = new Vector3(0, 1, 0);
-    return D20_FACES.map((f) => {
-      const center = f.centroid.clone().multiplyScalar(DIE_RADIUS * 1.003);
-      const up = verts[f.vertices[0]].clone().sub(center).normalize();
+    return D6_FACES.map((f) => {
+      const center = f.normal.clone().multiplyScalar(DIE_HALF * 1.004);
+      // Toward the middle of the face's first edge: square with the face.
+      const up = corners[f.corners[0]].clone().add(corners[f.corners[1]]).multiplyScalar(0.5).sub(f.centroid).normalize();
       // A plane faces +z: turn +z onto the face normal, then twist about the normal so +y points at `up`.
       const face = new Quaternion().setFromUnitVectors(Z, f.normal);
       const decalUp = Y.clone().applyQuaternion(face);
@@ -98,19 +104,19 @@ function Numbers({ ink }: { ink: string }) {
     <>
       {decals.map((d) => (
         <mesh key={d.number} position={d.center} quaternion={d.rotation}>
-          <planeGeometry args={[DIE_RADIUS * 0.62, DIE_RADIUS * 0.62]} />
-          <meshBasicMaterial map={numberTexture(d.number, ink)} transparent depthWrite={false} polygonOffset polygonOffsetFactor={-2} />
+          <planeGeometry args={[DIE_HALF * 1.8, DIE_HALF * 1.8]} />
+          <meshBasicMaterial map={pipTexture(d.number, ink)} transparent depthWrite={false} polygonOffset polygonOffsetFactor={-2} />
         </mesh>
       ))}
     </>
   );
 }
 
-/** Resting pose before any roll: flat on the felt with 20 on top. */
+/** Resting pose before any roll: flat on the felt with 6 on top. */
 function initialPose(): { position: Vector3; quaternion: Quaternion } {
   const up = new Vector3(0, 1, 0);
-  const q = new Quaternion().setFromUnitVectors(D20_FACES[faceWithNumber(20)].normal, up);
-  return { position: new Vector3(0, DIE_RADIUS * 0.7947, 0), quaternion: q };
+  const q = new Quaternion().setFromUnitVectors(D6_FACES[faceWithNumber(6)].normal, up);
+  return { position: new Vector3(0, DIE_HALF, 0), quaternion: q };
 }
 
 function Tray() {
@@ -183,9 +189,9 @@ export function DiceTray({ side, roll, onLanded, onFirstLanded }: Props) {
 
   // Where the dice lie, for things thrown about the table to hit (as of the last frame).
   useFrame(() => {
-    const radius = DIE_RADIUS * TRAY_SCALE;
+    const half = DIE_HALF * TRAY_SCALE;
     for (const [key, g] of [['d1', die.current], ['d2', die2.current]] as const) {
-      if (g && g.visible) setDie(key, { p: g.getWorldPosition(new Vector3()), q: g.getWorldQuaternion(new Quaternion()), radius });
+      if (g && g.visible) setDie(key, { p: g.getWorldPosition(new Vector3()), q: g.getWorldQuaternion(new Quaternion()), half });
       else setDie(key, null);
     }
   });
@@ -263,9 +269,9 @@ export function DiceTray({ side, roll, onLanded, onFirstLanded }: Props) {
         <group ref={die2}>
           <group ref={skinGroup2}>
             <mesh geometry={geometry} castShadow>
-              <meshStandardMaterial color={tint2.body} roughness={0.35} metalness={0.05} flatShading />
+              <meshStandardMaterial color={tint2.body} roughness={0.35} metalness={0.05} />
             </mesh>
-            <Numbers ink={tint2.ink} />
+            <Pips ink={tint2.ink} />
           </group>
         </group>
       )}
@@ -278,10 +284,9 @@ export function DiceTray({ side, roll, onLanded, onFirstLanded }: Props) {
               emissiveIntensity={look ? look.glow : 0}
               roughness={0.35}
               metalness={0.05}
-              flatShading
             />
           </mesh>
-          <Numbers ink={tint ? tint.ink : lit === 'critFailure' ? '#ffe0dc' : '#1d1b22'} />
+          <Pips ink={tint ? tint.ink : lit === 'critFailure' ? '#ffe0dc' : '#1d1b22'} />
         </group>
         {look && look.glow > 0 && <pointLight color={look.emissive} intensity={5} distance={4} position={[0, 1.2, 0]} />}
       </group>

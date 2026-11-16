@@ -180,7 +180,7 @@ describe('falling', () => {
       narration: { success: 's', failure: 'f' },
     };
     const p = ok(applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling }));
-    const r = ok(applyCommand(p.state, { type: 'attemptSpecial', roll: 15 }));
+    const r = ok(applyCommand(p.state, { type: 'attemptSpecial', roll: 5 }));
     expect(r.state.falling).toEqual([{ piece: expect.objectContaining({ id: 'black-knight-d4' }), from: air('d4') }]);
     expect(r.state.turn).toBe('white');
   });

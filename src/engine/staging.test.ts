@@ -73,7 +73,7 @@ describe('cleaning GM staging', () => {
 
 describe('the engine carries staging', () => {
   const ruling = (staging: Ruling['staging'], effects: Effect[]): Ruling => ({
-    interpretation: 'x', feasible: true, dc: 10, cost: 1, effects, narration: { success: 's', failure: 'f' }, staging,
+    interpretation: 'x', feasible: true, dc: 4, cost: 1, effects, narration: { success: 's', failure: 'f' }, staging,
   });
   const look: Staging = { fx: [], shake: 2, beats: [], acts: [] };
 
@@ -81,7 +81,7 @@ describe('the engine carries staging', () => {
     const effects: Effect[] = [{ type: 'move', from: sq('b1'), to: sq('c3') }];
     let s = { ...createInitialState(), ap: { white: 3, black: 0 } };
     s = ok(applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling: ruling({ success: look }, effects) })).state;
-    const r = ok(applyCommand(s, { type: 'attemptSpecial', roll: 15 }));
+    const r = ok(applyCommand(s, { type: 'attemptSpecial', roll: 5 }));
     expect(r.events[0]).toMatchObject({ type: 'specialResolved', outcome: 'success', effects, staging: look });
   });
 
@@ -89,7 +89,7 @@ describe('the engine carries staging', () => {
     const effects: Effect[] = [{ type: 'tag', at: sq('g1'), tag: '불타는 중', turns: 2, aura: { element: 'fire', strength: 3 } }];
     let s = { ...createInitialState(), ap: { white: 3, black: 0 } };
     s = ok(applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling: ruling(undefined, effects) })).state;
-    const r = ok(applyCommand(s, { type: 'attemptSpecial', roll: 15 }));
+    const r = ok(applyCommand(s, { type: 'attemptSpecial', roll: 5 }));
     expect(r.state.board[sq('g1')]?.tags?.[0]).toMatchObject({ name: '불타는 중', aura: { element: 'fire', strength: 3 } });
   });
 });
@@ -140,9 +140,9 @@ describe('exits are stored with the captured pieces', () => {
     const board = [...createInitialState().board];
     prep?.(board);
     let s: GameState = { ...createInitialState(), board, ap: { white: 3, black: 0 } };
-    const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 10, cost: 1, effects, narration: { success: 's', failure: 'f' }, ...(staging && { staging: { success: staging } }) };
+    const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 4, cost: 1, effects, narration: { success: 's', failure: 'f' }, ...(staging && { staging: { success: staging } }) };
     s = ok(applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling })).state;
-    return ok(applyCommand(s, { type: 'attemptSpecial', roll: 15 })).state;
+    return ok(applyCommand(s, { type: 'attemptSpecial', roll: 5 })).state;
   };
 
   it('each piece gets the exit of the effect that took it; a rider is thrown off instead', () => {

@@ -3,7 +3,7 @@ import { createInitialState, parseSquare, type Ruling } from '../engine';
 import { reachOf } from './reach';
 
 const sq = (n: string) => parseSquare(n)!;
-const base: Ruling = { interpretation: 'x', feasible: true, dc: 10, cost: 1, effects: [], narration: { success: 's', failure: 'f' } };
+const base: Ruling = { interpretation: 'x', feasible: true, dc: 4, cost: 1, effects: [], narration: { success: 's', failure: 'f' } };
 
 describe('who acts on what, for the ruling sheet', () => {
   const board = createInitialState().board;

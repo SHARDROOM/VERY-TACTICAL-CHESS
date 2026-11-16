@@ -1,7 +1,7 @@
 import { Quaternion, Vector3 } from 'three';
 import type { Obstacle } from './piecePhysics';
 import type { Pose, ToyOp } from '../session/toy';
-import { d20Vertices } from '../dice3d/d20';
+import { d6Corners } from '../dice3d/d6';
 
 /*
  * The table's toys between the scene and the session (docs/SPEC.md, "만지작거리기"): what this
@@ -56,29 +56,29 @@ export const newSeed = () => Math.floor(Math.random() * 2 ** 31);
 
 // ---- the dice ----------------------------------------------------------------------
 
-const dice = new Map<string, { p: Vector3; q: Quaternion; radius: number }>();
+const dice = new Map<string, { p: Vector3; q: Quaternion; half: number }>();
 const hulls = new Map<number, Float32Array>();
 
-/** Where a die lies now (world), or that it is put away (null). */
-export function setDie(key: string, at: { p: Vector3; q: Quaternion; radius: number } | null): void {
+/** Where a die (a cube, its faces `half` from its centre) lies now (world), or that it is put away (null). */
+export function setDie(key: string, at: { p: Vector3; q: Quaternion; half: number } | null): void {
   if (!at) dice.delete(key);
   else {
     const d = dice.get(key);
     if (d) {
       d.p.copy(at.p);
       d.q.copy(at.q);
-      d.radius = at.radius;
-    } else dice.set(key, { p: at.p.clone(), q: at.q.clone(), radius: at.radius });
+      d.half = at.half;
+    } else dice.set(key, { p: at.p.clone(), q: at.q.clone(), half: at.half });
   }
 }
 
 /** The dice as obstacles. */
 export function diceObstacles(): { hull: Float32Array; p: Vector3; q: Quaternion }[] {
   return [...dice.values()].map((d) => {
-    let hull = hulls.get(d.radius);
+    let hull = hulls.get(d.half);
     if (!hull) {
-      hull = Float32Array.from(d20Vertices(d.radius).flatMap((v) => [v.x, v.y, v.z]));
-      hulls.set(d.radius, hull);
+      hull = Float32Array.from(d6Corners(d.half).flatMap((v) => [v.x, v.y, v.z]));
+      hulls.set(d.half, hull);
     }
     return { hull, p: d.p.clone(), q: d.q.clone() };
   });

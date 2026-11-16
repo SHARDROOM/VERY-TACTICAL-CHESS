@@ -20,7 +20,7 @@ describe('running out of time', () => {
   });
 
   it('cancels a ruling that was waiting for the player', () => {
-    const ruling = { interpretation: 'x', feasible: true, dc: 10, cost: 1, effects: [], narration: { success: 's', failure: 'f' } };
+    const ruling = { interpretation: 'x', feasible: true, dc: 4, cost: 1, effects: [], narration: { success: 's', failure: 'f' } };
     const s = ok(applyCommand({ ...createInitialState(), ap: { white: 2, black: 0 } }, { type: 'proposeSpecial', action: '춤', ruling }));
     const r = ok(applyCommand(s.state, { type: 'timeout' }));
     expect(r.state.pending).toBeNull();

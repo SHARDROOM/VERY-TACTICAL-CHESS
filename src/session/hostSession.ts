@@ -1,5 +1,5 @@
 import type { Color, GameState, RuleConfig } from '../engine';
-import { rollD20 } from '../dice';
+import { rollDie } from '../dice';
 import type { GameMaster } from '../gm/types';
 import { Authority, type AuthorityEvent, type FallSimulator } from './authority';
 import type { Channel } from './channel';
@@ -72,7 +72,7 @@ export class HostSession implements Session {
 
   constructor(gm: GameMaster, private readonly options: HostOptions) {
     const resumed = !!options.initialState;
-    this.authority = new Authority(gm, options.roll ?? rollD20, (e) => this.onAuthority(e), {
+    this.authority = new Authority(gm, options.roll ?? rollDie, (e) => this.onAuthority(e), {
       initial: options.initialState,
       phase: resumed ? 'playing' : 'waiting',
       chance: options.chance,

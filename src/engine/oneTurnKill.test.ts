@@ -5,7 +5,7 @@ import { move, ok, okMove, sq } from './testUtil';
 const ruling = (effects: Effect[], over: Partial<Ruling> = {}): Ruling => ({
   interpretation: 'x',
   feasible: true,
-  dc: 10,
+  dc: 4,
   cost: 1,
   effects,
   narration: { success: 's', failure: 'f' },
@@ -56,7 +56,7 @@ describe('no king capture on a turn where AP was used', () => {
   it('after a special action the engine refuses a king capture this turn (safety net)', () => {
     // In normal play this cannot come up: if a special action leaves the king attacked, the
     // turn ends at once (see below). The guard still holds if a state ever gets here.
-    const s = attempt(propose(quiet(), [{ type: 'move', from: sq('g1'), to: sq('f3') }]), 20).state;
+    const s = attempt(propose(quiet(), [{ type: 'move', from: sq('g1'), to: sq('f3') }]), 6).state;
     expect(s.turn).toBe('white');
     expect(s.usedApThisTurn).toBe(true);
     const board = [...s.board];
@@ -90,7 +90,7 @@ describe('no king capture on a turn where AP was used', () => {
       'white',
       { ap: { white: 3, black: 0 } },
     );
-    const r = attempt(propose(s, [{ type: 'move', from: sq('a4'), to: sq('c5') }]), 20);
+    const r = attempt(propose(s, [{ type: 'move', from: sq('a4'), to: sq('c5') }]), 6);
     expect(r.state.turn).toBe('black');
     // ...black ignores it...
     s = okMove(r.state, 'h7', 'h6').state;
@@ -102,7 +102,7 @@ describe('no king capture on a turn where AP was used', () => {
 describe('automatic turn end when a special action leaves the opponent in check', () => {
   it('a successful action that gives check ends the turn and keeps the remaining AP', () => {
     const s = propose(quiet(3), [{ type: 'move', from: sq('b1'), to: sq('a1') }]);
-    const r = attempt(s, 20);
+    const r = attempt(s, 6);
     expect(r.events).toContainEqual({ type: 'check', color: 'black' });
     expect(r.events).toContainEqual({ type: 'autoTurnEnd', color: 'white', reason: 'check' });
     expect(r.state.turn).toBe('black');
@@ -111,7 +111,7 @@ describe('automatic turn end when a special action leaves the opponent in check'
   });
 
   it('if the king was already attacked when the turn began, any attempt ends the turn (success or failure)', () => {
-    for (const roll of [20, 1]) {
+    for (const roll of [6, 1]) {
       const r = attempt(propose(kingHanging(), [{ type: 'move', from: sq('g1'), to: sq('f3') }]), roll);
       expect(r.events).toContainEqual({ type: 'autoTurnEnd', color: 'white', reason: 'check' });
       expect(r.state.turn).toBe('black');
@@ -119,21 +119,21 @@ describe('automatic turn end when a special action leaves the opponent in check'
   });
 
   it('no check, no automatic end: the player keeps acting', () => {
-    const r = attempt(propose(quiet(), [{ type: 'move', from: sq('g1'), to: sq('f3') }]), 20);
+    const r = attempt(propose(quiet(), [{ type: 'move', from: sq('g1'), to: sq('f3') }]), 6);
     expect(r.state.turn).toBe('white');
     expect(r.events.some((e) => e.type === 'autoTurnEnd')).toBe(false);
   });
 
   it('a stunned attacker does not count as check', () => {
     let s = kingHanging(5);
-    s = attempt(propose(s, [{ type: 'tag', at: sq('a1'), tag: '기절', turns: 0 }]), 20).state;
+    s = attempt(propose(s, [{ type: 'tag', at: sq('a1'), tag: '기절', turns: 0 }]), 6).state;
     expect(s.turn).toBe('white');
   });
 
   it("a rider attacks only through its carrier's movement", () => {
     // A queen on d1 would attack a8? No - use the rook: rook rides the knight on g1, so the a-file threat is gone.
     let s = kingHanging(5);
-    s = attempt(propose(s, [{ type: 'board', rider: sq('a1'), carrier: sq('g1') }]), 20).state;
+    s = attempt(propose(s, [{ type: 'board', rider: sq('a1'), carrier: sq('g1') }]), 6).state;
     expect(s.turn).toBe('white');
     expect(s.board[sq('a1')]).toBeNull();
   });
@@ -149,9 +149,9 @@ describe('automatic turn end when a special action leaves the opponent in check'
       { ap: { white: 5, black: 0 } },
     );
     // Shield the black king (white can tag enemy pieces), then bring the rook to the a-file.
-    const shielded = attempt(propose(s, [{ type: 'tag', at: sq('a8'), tag: '보호막', turns: 0 }]), 20).state;
+    const shielded = attempt(propose(s, [{ type: 'tag', at: sq('a8'), tag: '보호막', turns: 0 }]), 6).state;
     expect(shielded.turn).toBe('white');
-    const r = attempt(propose(shielded, [{ type: 'move', from: sq('b1'), to: sq('a1') }]), 20);
+    const r = attempt(propose(shielded, [{ type: 'move', from: sq('b1'), to: sq('a1') }]), 6);
     expect(r.events).toContainEqual({ type: 'autoTurnEnd', color: 'white', reason: 'check' });
   });
 });

@@ -3,9 +3,9 @@ import { AIR, applyCommand, capturedAfter, createInitialState, createStateFrom, 
 import { ok, okMove, passTurn, play, sq } from './testUtil';
 
 const act = (s: GameState, effects: Effect[]) => {
-  const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 10, cost: 1, effects, narration: { success: 's', failure: 'f' } };
+  const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 4, cost: 1, effects, narration: { success: 's', failure: 'f' } };
   const p = ok(applyCommand(s, { type: 'proposeSpecial', action: 'x', ruling }));
-  return ok(applyCommand(p.state, { type: 'attemptSpecial', roll: 20 })).state;
+  return ok(applyCommand(p.state, { type: 'attemptSpecial', roll: 6 })).state;
 };
 
 describe('captured pieces', () => {
@@ -40,7 +40,7 @@ describe('captured pieces', () => {
     );
     s = act(s, [{ type: 'tag', at: sq('e8'), tag: '보호막', turns: 0 }]);
     s = passTurn(s);
-    s = okMove(s, 'e4', 'e8', { clashRolls: [20, 1] }).state;
+    s = okMove(s, 'e4', 'e8', { clashRolls: [6, 1] }).state;
     expect(s.captured).toEqual([]);
     s = okMove(passTurn(s), 'e4', 'e8').state;
     expect(s.captured).toEqual([expect.objectContaining({ type: 'king', color: 'black' })]);

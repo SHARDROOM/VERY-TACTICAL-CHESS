@@ -196,8 +196,8 @@ select option { background: var(--walnut); }
 .seal-number { font-family: var(--font-voice); font-weight: 800; font-size: 2.1rem; line-height: 1; }
 /* The twenty faces of the die: which of them succeed. */
 .odds { margin: 18px 0 4px; }
-.odds-faces { display: grid; grid-template-columns: repeat(20, 1fr); gap: 2px; }
-.odds-face { height: 22px; border-radius: 3px; background: rgba(43, 33, 25, 0.12); color: rgba(43, 33, 25, 0.55); font-size: 0.6875rem; display: grid; place-items: center; font-variant-numeric: tabular-nums; }
+.odds-faces { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.odds-face { height: 30px; border-radius: 4px; background: rgba(43, 33, 25, 0.12); color: rgba(43, 33, 25, 0.55); font-size: 0.9375rem; display: grid; place-items: center; font-variant-numeric: tabular-nums; }
 .odds-face.win { background: #4e8a68; color: #eaf5ee; }
 .odds-face.crit { background: #c8963e; color: #2b2119; font-weight: 800; }
 .odds-face.fumble { background: var(--wax); color: #f7e3d3; font-weight: 800; }
@@ -227,7 +227,7 @@ select option { background: var(--walnut); }
   .ruling-body { padding-right: 76px; }
   .seal { width: 72px; height: 72px; }
   .seal-number { font-size: 1.75rem; }
-  .odds-face { font-size: 0; height: 16px; }
+  .odds-face { height: 26px; }
 }
 
 .dice-hud {

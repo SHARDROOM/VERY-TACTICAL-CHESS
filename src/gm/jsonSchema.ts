@@ -97,7 +97,7 @@ export const GM_RULING_JSON_SCHEMA = {
       description: '주체가 하는 방법: touch(근접, 1칸 이내만), ranged(쏘기·던지기), magic(주문), move(주체가 직접 이동)',
     },
     feasible: { type: 'boolean', description: '시도 자체가 가능한 행동인가. 행동이 아니거나 규칙을 바꾸려는 요청이면 false' },
-    dc: { type: 'integer', description: '난이도. d20 결과가 이 값 이상이면 성공. 불가능하면 0' },
+    dc: { type: 'integer', description: '난이도. d6 결과가 이 값 이상이면 성공. 불가능하면 0' },
     cost: { type: 'integer', description: '시도할 때 드는 AP. 불가능하면 0' },
     effects: {
       type: 'array',
@@ -106,7 +106,7 @@ export const GM_RULING_JSON_SCHEMA = {
     },
     critSuccessEffects: {
       type: 'array',
-      description: '주사위 20(대성공)일 때 effects 대신 적용할 효과. 성공보다 조금 더 좋은 결과. 비우면 effects가 적용됨',
+      description: '주사위 6(대성공)일 때 effects 대신 적용할 효과. 성공보다 조금 더 좋은 결과. 비우면 effects가 적용됨',
       items: { anyOf: GM_EFFECT_JSON_SCHEMAS },
     },
     critFailureEffects: {
@@ -119,7 +119,7 @@ export const GM_RULING_JSON_SCHEMA = {
       properties: {
         success: { type: 'string', description: '성공했을 때의 서술 (한국어, 1~2문장)' },
         failure: { type: 'string', description: '실패했을 때의 서술 (한국어, 1~2문장)' },
-        critSuccess: { type: 'string', description: '대성공(20)일 때의 서술 (한국어, 1~2문장)' },
+        critSuccess: { type: 'string', description: '대성공(6)일 때의 서술 (한국어, 1~2문장)' },
         critFailure: { type: 'string', description: '대실패(1)일 때의 서술 (한국어, 1~2문장)' },
       },
       required: ['success', 'failure', 'critSuccess', 'critFailure'],

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { applyCommand, createInitialState, parseSquare } from '../engine';
 import { parseGmRuling } from './parse';
 import { fakeRuling, FakeGameMaster } from './fakeGm';
-import { rollD20, successChance } from '../dice';
+import { rollDie, successChance } from '../dice';
 
 const sq = (n: string) => parseSquare(n)!;
 
@@ -11,7 +11,7 @@ describe('parseGmRuling', () => {
   const valid = {
     interpretation: 'x',
     feasible: true,
-    dc: 10,
+    dc: 4,
     cost: 1,
     effects: [
       { type: 'move', from: 'b1', to: 'e5' },
@@ -82,20 +82,21 @@ describe('fake GM', () => {
 });
 
 describe('dice', () => {
-  it('rolls integers 1..20 and hits every face', () => {
+  it('rolls integers 1..6 and hits every face', () => {
     const seen = new Set<number>();
-    for (let i = 0; i < 2000; i++) {
-      const r = rollD20();
-      expect(Number.isInteger(r) && r >= 1 && r <= 20).toBe(true);
+    for (let i = 0; i < 600; i++) {
+      const r = rollDie();
+      expect(Number.isInteger(r) && r >= 1 && r <= 6).toBe(true);
       seen.add(r);
     }
-    expect(seen.size).toBe(20);
+    expect(seen.size).toBe(6);
   });
 
-  it('computes success chance, counting natural 20 as a win and natural 1 as a loss', () => {
-    expect(successChance(11)).toBe(0.5);
-    expect(successChance(2)).toBe(0.95);
-    expect(successChance(25)).toBe(0.05);
+  it('computes success chance, counting a natural 6 as a win and a natural 1 as a loss', () => {
+    expect(successChance(4)).toBe(0.5);
+    expect(successChance(2)).toBeCloseTo(5 / 6);
+    expect(successChance(6)).toBeCloseTo(1 / 6);
+    expect(successChance(9)).toBeCloseTo(1 / 6);
   });
 });
 
@@ -106,7 +107,7 @@ describe('full effect vocabulary through the GM boundary', () => {
       actor: 'b1',
       means: 'magic',
       feasible: true,
-      dc: 10,
+      dc: 4,
       cost: 1,
       effects: [
         { type: 'tag', at: 'g8', tag: '기절', turns: 1 },
@@ -138,7 +139,7 @@ describe('full effect vocabulary through the GM boundary', () => {
     const base = {
       interpretation: 'x',
       feasible: true,
-      dc: 10,
+      dc: 4,
       cost: 1,
       critSuccessEffects: [],
       critFailureEffects: [],
@@ -166,7 +167,7 @@ describe('swap, revive, burn and terrain through the GM boundary', () => {
   const base = {
     interpretation: 'x',
     feasible: true,
-    dc: 10,
+    dc: 4,
     cost: 1,
     critSuccessEffects: [],
     critFailureEffects: [],
@@ -228,7 +229,7 @@ describe('swap, revive, burn and terrain through the GM boundary', () => {
 });
 
 describe('clash multipliers, props, bridges and ladders through the GM boundary', () => {
-  const base = { interpretation: 'x', actor: 'e2', means: 'magic', feasible: true, dc: 10, cost: 1, critSuccessEffects: [], critFailureEffects: [], narration: { success: 's', failure: 'f', critSuccess: 'cs', critFailure: 'cf' } };
+  const base = { interpretation: 'x', actor: 'e2', means: 'magic', feasible: true, dc: 4, cost: 1, critSuccessEffects: [], critFailureEffects: [], narration: { success: 's', failure: 'f', critSuccess: 'cs', critFailure: 'cf' } };
   const sword = { preset: 'sword', color: '', scale: 1, attach: 'rightHand', parts: '' };
   const none = { preset: 'none', color: '', scale: 1, attach: 'rightHand', parts: '' };
 
@@ -339,7 +340,7 @@ describe('fake GM: levitation', () => {
     if (!parsed.ok) return;
     const proposed = applyCommand({ ...s, ap: { white: 3, black: 0 } }, { type: 'proposeSpecial', action: 'd1 퀸이 떠오른다', ruling: parsed.ruling });
     if (!proposed.ok) throw new Error(proposed.reason);
-    const after = applyCommand(proposed.state, { type: 'attemptSpecial', roll: 15 });
+    const after = applyCommand(proposed.state, { type: 'attemptSpecial', roll: 5 });
     if (!after.ok) throw new Error(after.reason);
     expect(after.state.board[parseSquare('d1^')!]?.type).toBe('queen');
     const down = fakeRuling('e1 킹이 d1 퀸을 떨어뜨린다', 'white', after.state.board);

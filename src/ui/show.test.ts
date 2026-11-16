@@ -6,8 +6,8 @@ const sq = (n: string) => parseSquare(n)!;
 const label = (o: string) => o;
 
 /** A special action with these effects, attempted with this roll. */
-function resolve(effects: Effect[], roll = 15) {
-  const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 10, cost: 2, effects, narration: { success: '해냈다', failure: '놓쳤다' } };
+function resolve(effects: Effect[], roll = 5) {
+  const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 4, cost: 2, effects, narration: { success: '해냈다', failure: '놓쳤다' } };
   let s: GameState = { ...createInitialState(), ap: { white: 3, black: 0 } };
   const proposed = applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling });
   if (!proposed.ok) throw new Error(proposed.reason);
@@ -62,7 +62,7 @@ describe('building a show from a batch', () => {
 describe('what each piece does in a show', () => {
   it('trips, entrances, acts and changes go to the right pieces', () => {
     const ruling: Ruling = {
-      interpretation: 'x', feasible: true, dc: 10, cost: 1,
+      interpretation: 'x', feasible: true, dc: 4, cost: 1,
       effects: [
         { type: 'move', from: sq('b1'), to: sq('c3') },
         { type: 'spawn', at: sq('e4'), color: 'white', piece: 'rook' },
@@ -85,7 +85,7 @@ describe('what each piece does in a show', () => {
     const p = applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling });
     if (!p.ok) throw new Error(p.detail);
     s = p.state;
-    const r = applyCommand(s, { type: 'attemptSpecial', roll: 15 });
+    const r = applyCommand(s, { type: 'attemptSpecial', roll: 5 });
     if (!r.ok) throw new Error(r.reason);
     const show = buildShow(r.events, s, label)!;
     const d = directionsFor(show, 1000);
@@ -147,8 +147,8 @@ describe('clashes in a show', () => {
     s = { ...s, board: b };
     const proposed = applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling });
     if (!proposed.ok) throw new Error(proposed.detail);
-    // The knight loses the clash: 4 against 15 × 1.2 (a pawn's ×0.8 with 검술 ×1.5).
-    const r = applyCommand(proposed.state, { type: 'attemptSpecial', roll: 15, clashRolls: [4, 15] });
+    // The knight loses the clash: 1 against 6 × 1.2 = 7.2 → 7 (a pawn's ×0.8 with 검술 ×1.5).
+    const r = applyCommand(proposed.state, { type: 'attemptSpecial', roll: 5, clashRolls: [1, 6] });
     if (!r.ok) throw new Error(r.reason);
     const show = buildShow(r.events, proposed.state, label)!;
     expect(show.clashes).toEqual([{ effect: 1, clash: expect.objectContaining({ winner: 'defender', defense: 1.2 }) }]);

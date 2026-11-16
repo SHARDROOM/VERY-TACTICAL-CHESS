@@ -62,7 +62,7 @@ function spy(channel: Channel, log: unknown[]): Channel {
 }
 
 /** A host with one guest (black). Call `begin()` to leave the waiting room. */
-function online(gm = new TestGm(), roll = () => 20) {
+function online(gm = new TestGm(), roll = () => 6) {
   const [hostEnd, guestEnd] = memoryChannelPair();
   const sentToGuest: unknown[] = [];
   const sentToHost: unknown[] = [];
@@ -87,7 +87,7 @@ function join(host: HostSession, options: ConstructorParameters<typeof GuestSess
   return { guest, rec: record(guest), hostEnd, guestEnd };
 }
 
-const hotseat = (gm: GameMaster = new TestGm(), roll = () => 20) => {
+const hotseat = (gm: GameMaster = new TestGm(), roll = () => 6) => {
   const s = new LocalSession(gm, { roll });
   s.start();
   return s;
@@ -155,9 +155,9 @@ describe('hotseat session', () => {
   });
 
   it('a capture of a shielded piece becomes a clash: dice are rolled only then, and everyone sees them', async () => {
-    const rolls = [20, 3, 15]; // the shield roll; then the clash: 3 against 15
+    const rolls = [6, 1, 6]; // the shield roll; then the clash: 1 against 6
     let n = 0;
-    const s = hotseat(new TestGm(), () => rolls[n++] ?? 10);
+    const s = hotseat(new TestGm(), () => rolls[n++] ?? 4);
     const rec = record(s);
     s.request({ type: 'move', from: sq('e2'), to: sq('e4') });
     s.request({ type: 'move', from: sq('d7'), to: sq('d5') });
@@ -168,7 +168,7 @@ describe('hotseat session', () => {
     expect(n).toBe(1);
     s.request({ type: 'move', from: sq('d5'), to: sq('e4') });
     const clash = rec.events.flatMap((e) => (e.kind === 'events' ? e.events : [])).find((e) => e.type === 'clash');
-    expect(clash).toMatchObject({ type: 'clash', winner: 'defender', shield: true, rounds: [{ attack: 3, defense: 15 }] });
+    expect(clash).toMatchObject({ type: 'clash', winner: 'defender', shield: true, rounds: [{ attack: 1, defense: 6 }] });
     // The attacking pawn lost: it is gone, the shielded pawn stays.
     expect(s.view().state.board[sq('d5')]).toBeNull();
     expect(s.view().state.board[sq('e4')]).toMatchObject({ color: 'white', type: 'pawn' });
@@ -311,7 +311,7 @@ describe('online: host and guest', () => {
 
   it('the guest declares and attempts a special action; the host calls the GM and rolls', async () => {
     const rolls: number[] = [];
-    const o = online(new TestGm(), () => (rolls.push(20), 20));
+    const o = online(new TestGm(), () => (rolls.push(6), 6));
     await o.begin();
     o.host.request({ type: 'move', from: sq('e2'), to: sq('e4') });
     await settle();
@@ -321,7 +321,7 @@ describe('online: host and guest', () => {
     expect(o.guest.view().state.pending).toMatchObject({ color: 'black', action: 'b8 나이트를 c6로 날린다' });
     o.guest.request({ type: 'attempt' });
     await settle();
-    expect(rolls).toEqual([20]);
+    expect(rolls).toEqual([6]);
     expect(o.guest.view().state.board[sq('c6')]).toMatchObject({ type: 'knight', color: 'black' });
   });
 
@@ -350,8 +350,8 @@ describe('online: host and guest', () => {
   });
 
   it('guests cannot send dice rolls or arbitrary commands', () => {
-    expect(parseGuestMessage({ t: 'req', req: { type: 'attempt', roll: 20 } })).toEqual({ t: 'req', req: { type: 'attempt' } });
-    expect(parseGuestMessage({ t: 'req', req: { type: 'attemptSpecial', roll: 20 } })).toBeNull();
+    expect(parseGuestMessage({ t: 'req', req: { type: 'attempt', roll: 6 } })).toEqual({ t: 'req', req: { type: 'attempt' } });
+    expect(parseGuestMessage({ t: 'req', req: { type: 'attemptSpecial', roll: 6 } })).toBeNull();
     expect(parseGuestMessage({ t: 'req', req: { type: 'proposeSpecial', ruling: {} } })).toBeNull();
     expect(parseGuestMessage({ t: 'req', req: { type: 'timeout' } })).toBeNull();
     expect(parseGuestMessage({ t: 'req', req: { type: 'chaos' } })).toBeNull();
@@ -393,7 +393,7 @@ describe('turn clock', () => {
     vi.useFakeTimers();
     try {
       const gm = new SlowGm(5000);
-      const s = new LocalSession(gm, { roll: () => 20 });
+      const s = new LocalSession(gm, { roll: () => 6 });
       s.setRules({ turnSeconds: 30, timeoutPenalty: 1 });
       s.start();
       expect(s.view().timer).toMatchObject({ limitMs: 30_000, running: true });
@@ -418,7 +418,7 @@ describe('turn clock', () => {
   it('the dice and the show that follows an attempt add to the clock', async () => {
     vi.useFakeTimers();
     try {
-      const s = new LocalSession(new TestGm(), { roll: () => 15 });
+      const s = new LocalSession(new TestGm(), { roll: () => 5 });
       s.setRules({ turnSeconds: 30, apPerTurn: 3 });
       s.start();
       s.request({ type: 'declare', action: 'b1 나이트를 투석기로 e5까지 날린다' });
@@ -444,7 +444,7 @@ describe('turn clock', () => {
 describe('chaos', () => {
   it('may strike once a round, when white\'s turn begins, and everyone sees it', async () => {
     const gm = new TestGm();
-    const o = online(gm, () => 20);
+    const o = online(gm, () => 6);
     await settle();
     o.host.setRules({ chaosChance: 0.5 });
     // Chaos dice: always below the chance.
@@ -463,7 +463,7 @@ describe('chaos', () => {
 
   it('only a real (API) GM makes chaos: with the fake GM nothing happens, and the host is told', async () => {
     const { FakeGameMaster } = await import('../gm/fakeGm');
-    const s = new LocalSession(new FakeGameMaster(0), { roll: () => 20, chance: () => 0 });
+    const s = new LocalSession(new FakeGameMaster(0), { roll: () => 6, chance: () => 0 });
     s.setRules({ chaosChance: 0.5 });
     expect(s.view().chaosReady).toBe(false);
     s.start();
@@ -488,7 +488,7 @@ describe('chaos', () => {
         ? { title: '반칙', narration: '킹을 없앤다', effects: [{ type: 'remove', at: 'e8' }] }
         : { title: '지진', narration: '땅이 흔들린다.', effects: [{ type: 'move', from: 'a7', to: 'a6' }] };
     };
-    const s = new LocalSession(gm, { roll: () => 20, chance: () => 0 });
+    const s = new LocalSession(gm, { roll: () => 6, chance: () => 0 });
     s.setRules({ chaosChance: 0.1 });
     s.start();
     s.request({ type: 'move', from: sq('e2'), to: sq('e4') });
@@ -502,7 +502,7 @@ describe('chaos', () => {
   it('a chaos event that breaks the rules is skipped with a notice', async () => {
     const gm = new TestGm();
     gm.chaosReply = { title: '반칙', narration: '킹을 없앤다', effects: [{ type: 'remove', at: 'e8' }] };
-    const s = new LocalSession(gm, { roll: () => 20, chance: () => 0 });
+    const s = new LocalSession(gm, { roll: () => 6, chance: () => 0 });
     s.setRules({ chaosChance: 0.1 });
     s.start();
     const rec = record(s);

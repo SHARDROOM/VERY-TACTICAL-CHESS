@@ -10,7 +10,7 @@ const ruling = (effects: Effect[]): Ruling => ({ interpretation: 'x', feasible: 
 const act = (state: GameState, ...effects: Effect[]) => {
   const p = applyCommand({ ...state, ap: { white: 5, black: 5 } }, { type: 'proposeSpecial', action: 'a', ruling: ruling(effects) });
   if (!p.ok) throw new Error(p.detail);
-  return ok(applyCommand(p.state, { type: 'attemptSpecial', roll: 15 }));
+  return ok(applyCommand(p.state, { type: 'attemptSpecial', roll: 5 }));
 };
 const base = () => createStateFrom({ a1: { color: 'white', type: 'rook' }, e1: { color: 'white', type: 'king' }, h8: { color: 'black', type: 'king' }, c2: { color: 'white', type: 'pawn' } });
 

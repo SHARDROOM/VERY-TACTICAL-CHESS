@@ -6,11 +6,11 @@ const sq = (n: string) => parseSquare(n)!;
 
 function tagged(effects: Ruling['effects']): GameState {
   let s: GameState = { ...createInitialState(), ap: { white: 3, black: 0 } };
-  const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 10, cost: 1, effects, narration: { success: 's', failure: 'f' } };
+  const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 4, cost: 1, effects, narration: { success: 's', failure: 'f' } };
   const p = applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling });
   if (!p.ok) throw new Error(p.detail);
   s = p.state;
-  const r = applyCommand(s, { type: 'attemptSpecial', roll: 15 });
+  const r = applyCommand(s, { type: 'attemptSpecial', roll: 5 });
   if (!r.ok) throw new Error(r.reason);
   return r.state;
 }

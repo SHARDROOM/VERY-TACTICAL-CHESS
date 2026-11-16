@@ -1,4 +1,4 @@
-import { rollD20 } from '../dice';
+import { rollDie } from '../dice';
 import type { GameState, RuleConfig } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { Authority, type AuthorityEvent, type FallSimulator } from './authority';
@@ -29,7 +29,7 @@ export class LocalSession implements Session {
   private timer: TurnTimer | null = null;
 
   constructor(gm: GameMaster, options: LocalOptions = {}) {
-    this.authority = new Authority(gm, options.roll ?? rollD20, (e) => this.onAuthority(e), {
+    this.authority = new Authority(gm, options.roll ?? rollDie, (e) => this.onAuthority(e), {
       initial: options.initialState,
       phase: options.phase ?? 'waiting',
       chance: options.chance,
