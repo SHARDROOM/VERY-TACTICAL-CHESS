@@ -61,7 +61,7 @@ function spy(channel: Channel, log: unknown[]): Channel {
   return { ...channel, send: (m) => (log.push(m), channel.send(m)) };
 }
 
-/** A host with one guest (black). Call `begin()` to leave the waiting room. */
+/** A host (white) with one guest (black). `sit()` seats the guest; `begin()` also leaves the waiting room. */
 function online(gm = new TestGm(), roll = () => 6) {
   const [hostEnd, guestEnd] = memoryChannelPair();
   const sentToGuest: unknown[] = [];
@@ -71,12 +71,18 @@ function online(gm = new TestGm(), roll = () => 6) {
   host.attachGuest(spy(hostEnd, sentToGuest));
   const guest = new GuestSession(spy(guestEnd, sentToHost), { heartbeatMs: 0, id: 'guest-1', name: '친구' });
   const guestRec = record(guest);
-  const begin = async () => {
+  host.takeSeat('white');
+  const sit = async () => {
     await settle();
+    guest.takeSeat('black');
+    await settle();
+  };
+  const begin = async () => {
+    await sit();
     host.start();
     await settle();
   };
-  return { gm, host, guest, hostRec, guestRec, sentToGuest, sentToHost, hostEnd, guestEnd, begin };
+  return { gm, host, guest, hostRec, guestRec, sentToGuest, sentToHost, hostEnd, guestEnd, sit, begin };
 }
 
 /** Adds another guest to the host's room. */
@@ -185,9 +191,74 @@ describe('hotseat session', () => {
 });
 
 describe('waiting room', () => {
-  it('a new room waits: the first guest takes black, nothing can be played yet', async () => {
-    const o = online();
+  it('everyone comes in on the waiting bench and picks a seat', async () => {
+    const host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', heartbeatMs: 0 });
+    const a = join(host, { name: '하나' });
+    const b = join(host, { name: '둘' });
     await settle();
+    // The host too.
+    expect(host.view().seat).toBe('spectator');
+    expect(a.guest.view()).toMatchObject({ phase: 'waiting', seat: 'spectator' });
+    expect(a.rec.notices().join()).toContain('대기석');
+    b.guest.takeSeat('white');
+    await settle();
+    // Taken: the next one has to pick another.
+    a.guest.takeSeat('white');
+    host.takeSeat('black');
+    await settle();
+    expect(a.rec.notices().join()).toContain('백 자리에는 이미 둘님이 앉아 있습니다');
+    expect(a.guest.view().members.map((m) => [m.name, m.role])).toEqual([['방장', 'black'], ['하나', 'spectator'], ['둘', 'white']]);
+    // Red is only on the 3-player board.
+    a.guest.takeSeat('red');
+    await settle();
+    expect(a.guest.view().seat).toBe('spectator');
+    host.setRules({ map: 'hex3' });
+    a.guest.takeSeat('red');
+    await settle();
+    expect(a.guest.view().seat).toBe('red');
+    // Straight from one seat to another, and back to the bench.
+    b.guest.takeSeat('spectator');
+    await settle();
+    a.guest.takeSeat('white');
+    await settle();
+    expect(a.guest.view().members.map((m) => [m.name, m.role])).toEqual([['방장', 'black'], ['하나', 'white'], ['둘', 'spectator']]);
+    // Back to two players: whoever sat at red goes to the bench.
+    b.guest.takeSeat('red');
+    await settle();
+    host.setRules({ map: 'classic' });
+    await settle();
+    expect(b.guest.view().seat).toBe('spectator');
+    host.dispose();
+  });
+
+  it('every seat of the board needs someone before the game starts; then seats are fixed', async () => {
+    const host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', heartbeatMs: 0 });
+    const rec = record(host);
+    host.setRules({ map: 'hex3' });
+    const a = join(host, { name: '하나' });
+    const b = join(host, { name: '둘' });
+    await settle();
+    host.takeSeat('white');
+    a.guest.takeSeat('black');
+    await settle();
+    host.start();
+    expect(host.view().phase).toBe('waiting');
+    expect(rec.notices().join()).toContain('적 자리');
+    b.guest.takeSeat('red');
+    await settle();
+    host.start();
+    await settle();
+    expect(b.guest.view()).toMatchObject({ phase: 'playing', seat: 'red' });
+    b.guest.takeSeat('spectator');
+    await settle();
+    expect(b.guest.view().seat).toBe('red');
+    expect(b.rec.notices().join()).toContain('게임 중에는 자리를 바꿀 수 없습니다');
+    host.dispose();
+  });
+
+  it('a new room waits: nothing can be played yet', async () => {
+    const o = online();
+    await o.sit();
     expect(o.host.view()).toMatchObject({ phase: 'waiting', connection: { kind: 'hosting', code: 'ABC234' } });
     expect(o.guest.view()).toMatchObject({ phase: 'waiting', seat: 'black', connection: { kind: 'connected' } });
     expect(o.guest.view().members.map((m) => [m.name, m.role])).toEqual([['방장', 'white'], ['친구', 'black']]);
@@ -197,7 +268,7 @@ describe('waiting room', () => {
     expect(o.hostRec.notices()).toContain('게임이 아직 시작되지 않았습니다.');
   });
 
-  it('later guests watch; spectators see everything but cannot play', async () => {
+  it('those left on the bench watch; spectators see everything but cannot play', async () => {
     const o = online();
     const watcher = join(o.host, { name: '구경꾼' });
     await o.begin();
@@ -213,7 +284,7 @@ describe('waiting room', () => {
 
   it('the host sets the rules; everyone sees them; the game starts with them', async () => {
     const o = online();
-    await settle();
+    await o.sit();
     o.host.setRules({ apPerTurn: 2, turnSeconds: 60, chaosChance: 0.25, doodle: false, timeoutPenalty: 3 });
     // Values outside the offered choices are ignored.
     o.host.setRules({ turnSeconds: 7, apPerTurn: 99 });
@@ -229,20 +300,33 @@ describe('waiting room', () => {
   it('cannot start without someone in the black seat', async () => {
     const host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', heartbeatMs: 0 });
     const rec = record(host);
+    host.takeSeat('white');
     host.start();
     expect(host.view().phase).toBe('waiting');
     expect(rec.notices().join()).toContain('흑 자리');
   });
 
-  it('the host can seat a spectator as black (the old black player watches)', async () => {
+  it('the host can send a seated guest back to the bench (and only that)', async () => {
     const o = online();
     const watcher = join(o.host, { name: '구경꾼' });
+    await o.sit();
+    o.host.assignRole(watcher.guest.view().myKey, 'red');
+    o.host.assignRole(o.guest.view().myKey, 'white');
     await settle();
-    const key = watcher.guest.view().myKey;
-    o.host.assignRole(key, 'black');
+    expect(watcher.guest.view().seat).toBe('spectator');
+    expect(o.guest.view().seat).toBe('black');
+    o.host.assignRole(o.guest.view().myKey, 'spectator');
+    await settle();
+    expect(o.guest.view().seat).toBe('spectator');
+    watcher.guest.takeSeat('black');
     await settle();
     expect(watcher.guest.view().seat).toBe('black');
-    expect(o.guest.view().seat).toBe('spectator');
+  });
+
+  it('a seat request off the wire is checked', () => {
+    expect(parseGuestMessage({ t: 'seat', role: 'red' })).toEqual({ t: 'seat', role: 'red' });
+    expect(parseGuestMessage({ t: 'seat', role: 'gray' })).toBeNull();
+    expect(parseGuestMessage({ t: 'seat', role: 'both' })).toBeNull();
   });
 
   it('names show up for everyone and member reconnect ids are never shared', async () => {
@@ -523,7 +607,7 @@ describe('liveness', () => {
       host.attachGuest(hostEnd);
       // A guest that connects, says hello, then goes silent forever (no pings, no goodbye).
       guestEnd.send({ t: 'hello', v: 2 });
-      const blackOnline = () => host.view().members.some((m) => m.role === 'black' && m.online);
+      const blackOnline = () => host.view().members.some((m) => !m.host && m.online);
       await vi.advanceTimersByTimeAsync(10);
       expect(blackOnline()).toBe(true);
       await vi.advanceTimersByTimeAsync(4000);
@@ -544,7 +628,7 @@ describe('liveness', () => {
       host.attachGuest(hostEnd);
       const guest = new GuestSession(guestEnd, { heartbeatMs: 1000, silenceTimeoutMs: 5000 });
       await vi.advanceTimersByTimeAsync(20_000);
-      expect(host.view().members.some((m) => m.role === 'black' && m.online)).toBe(true);
+      expect(host.view().members.some((m) => !m.host && m.online)).toBe(true);
       expect(guest.view().connection).toEqual({ kind: 'connected' });
       guest.dispose();
       host.dispose();

@@ -108,6 +108,7 @@ export class LocalSession implements Session {
   }
 
   assignRole(_key: string, _role: Role): void {}
+  takeSeat(_role: Role): void {}
 
   dispose(): void {
     this.authority.dispose();

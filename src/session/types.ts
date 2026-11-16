@@ -133,7 +133,9 @@ export interface Session {
   start(): void;
   /** Authority only: back to the waiting room (after a game, or to change rules). */
   restart(): void;
-  /** Authority only: seat a member as black or move them to the spectators. */
+  /** Waiting room: sit in an empty seat (white, black, red on the 3-player board) or go back to the bench ('spectator'). */
+  takeSeat(role: Role): void;
+  /** Authority only: send a member from their seat back to the waiting bench. */
   assignRole(key: string, role: Role): void;
   dispose(): void;
 }

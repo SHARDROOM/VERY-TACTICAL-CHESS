@@ -347,7 +347,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
 
   // Online, the camera stays on your side once your color is known.
   useEffect(() => {
-    if (seat === 'white' || seat === 'black') setCamera((c) => ({ ...c, side: seat, nonce: c.nonce + 1 }));
+    if (seat === 'white' || seat === 'black' || seat === 'red') setCamera((c) => ({ ...c, side: seat, nonce: c.nonce + 1 }));
   }, [seat]);
 
   useEffect(() => {
@@ -929,7 +929,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     setPromotionChoice(null);
   };
 
-  const resetView = () => setCamera((c) => ({ mode: 'side', side: seat === 'white' || seat === 'black' ? seat : sideToMove, nonce: c.nonce + 1 }));
+  const resetView = () => setCamera((c) => ({ mode: 'side', side: seat === 'white' || seat === 'black' || seat === 'red' ? seat : sideToMove, nonce: c.nonce + 1 }));
   const toggleTopView = () => setCamera((c) => ({ ...c, mode: c.mode === 'top' ? 'side' : 'top', nonce: c.nonce + 1 }));
 
   /** Back to the waiting room (this screen goes away). */
@@ -1000,7 +1000,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
           <span className="turn-number">{game.turnNumber}턴</span>
         </div>
         {view.timer && playing && !frozen && <TimerBadge timer={view.timer} mine={myTurn && !spectator} />}
-        {(seat === 'white' || seat === 'black') && online && <div className={`badge me me-${seat}`}>나: {COLOR_NAME[seat]}</div>}
+        {(seat === 'white' || seat === 'black' || seat === 'red') && online && <div className={`badge me me-${seat}`}>나: {COLOR_NAME[seat]}</div>}
         {spectator && <div className="badge me">관전 중</div>}
         {online && watchers > 0 && <div className="badge muted-badge">관전 {watchers}명</div>}
         {inCheck && <div className="badge check">체크!</div>}

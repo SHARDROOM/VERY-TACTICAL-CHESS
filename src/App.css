@@ -147,6 +147,7 @@ select option { background: var(--walnut); }
 .chat-who { flex: none; font-size: 0.8125rem; font-weight: 700; padding: 0 6px; border-radius: 6px; background: rgba(236, 223, 192, 0.07); }
 .chat-who.who-white { color: #f3ead6; }
 .chat-who.who-black { color: #b9b0a2; }
+.chat-who.who-red { color: #e08a7c; }
 .chat-who.who-spectator { color: var(--muted); }
 .chat-text { overflow-wrap: anywhere; }
 
@@ -478,6 +479,25 @@ select option { background: var(--walnut); }
 .role-badge.role-white { color: #f3ead6; }
 .role-badge.role-black { color: #b9b0a2; }
 .role-badge.role-spectator { color: var(--muted); font-weight: 500; }
+.seats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.seat {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px;
+  border: 1px dashed var(--line-strong); background: rgba(0, 0, 0, 0.18);
+}
+.seat.taken { border-style: solid; border-color: var(--line); background: rgba(236, 223, 192, 0.05); }
+.seat.mine { border-color: var(--accent); }
+.seat.offline { opacity: 0.6; }
+.seat-stone { flex: none; width: 22px; height: 22px; border-radius: 50%; box-shadow: 0 2px 3px rgba(0, 0, 0, 0.5); }
+.seat.open .seat-stone { opacity: 0.45; }
+.seat-white .seat-stone { background: radial-gradient(circle at 35% 30%, #fffaf0, #e6dcc6 70%); }
+.seat-black .seat-stone { background: radial-gradient(circle at 35% 30%, #4a4036, #120d09 70%); box-shadow: 0 0 0 1px var(--line-strong), 0 2px 3px rgba(0, 0, 0, 0.5); }
+.seat-red .seat-stone { background: radial-gradient(circle at 35% 30%, #d8604f, #7a1d16 70%); }
+.seat-label { flex: none; width: 1.6em; font-family: var(--font-voice); font-weight: 800; font-size: 1.0625rem; }
+.seat-empty { color: var(--muted); }
+.bench-title { margin: 6px 0 0; font-family: var(--font-voice); font-weight: 700; font-size: 1rem; }
+.bench-title .muted { color: var(--muted); font-weight: 400; font-family: var(--font-ui); font-size: 0.875rem; }
+.members.bench .member { padding: 5px 2px; }
+.role-badge.role-red { color: #e08a7c; }
 .rules-form { display: flex; flex-direction: column; gap: 9px; }
 .rules-form .field, .name-field { display: grid; grid-template-columns: 7.5em 1fr; align-items: center; gap: 10px; font-size: 0.9375rem; }
 .toggle-row { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9375rem; }

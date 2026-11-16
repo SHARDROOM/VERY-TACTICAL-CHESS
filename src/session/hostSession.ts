@@ -4,6 +4,8 @@ import type { GameMaster } from '../gm/types';
 import { Authority, type AuthorityEvent, type FallSimulator } from './authority';
 import type { Channel } from './channel';
 import { Emitter } from './emitter';
+import type { SavedSeats } from './storage';
+import { playersOf } from '../engine';
 import { PROTOCOL_VERSION, parseGuestMessage, type HostMessage, type RoomSnapshot } from './protocol';
 import { startHeartbeat } from './heartbeat';
 import { DoodleStore, type DoodleChange, type DoodleOp } from './doodle';
@@ -30,8 +32,8 @@ export interface HostOptions {
   link: string;
   /** Resume a saved game instead of starting fresh (skips the waiting room). */
   initialState?: GameState;
-  /** Resume: the player who held the black seat, so they get it back when they return. */
-  black?: { id: string; name: string };
+  /** Resume: who sat where, so everyone gets their seat back (guests when they return). */
+  seats?: SavedSeats;
   hostName?: string;
   roll?: () => number;
   chance?: () => number;
@@ -52,14 +54,15 @@ interface Seat extends Member {
 }
 
 const HOST_KEY = 'host';
+const SEAT_NAME: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
 
 /**
  * Online host: runs the authority (state, dice, GM calls with the host's own key) and mirrors
- * every change to everyone in the room. The first guest takes the black seat; anyone after that
- * watches. Nothing secret is ever sent: no API key, and no member's reconnect id.
+ * every change to everyone in the room. Everyone, the host too, comes in on the waiting bench
+ * (role 'spectator') and picks an empty seat themselves: white, black, and red on the 3-player
+ * board. Nothing secret is ever sent: no API key, and no member's reconnect id.
  */
 export class HostSession implements Session {
-  readonly hostColor: Color = 'white';
   private readonly emitter = new Emitter();
   private readonly authority: Authority;
   private readonly members: Seat[];
@@ -81,16 +84,24 @@ export class HostSession implements Session {
     const t = this.authority.timer();
     this.timer = t && { ...t, at: Date.now() };
     this.connection = { kind: 'hosting', code: options.code, link: options.link };
-    this.members = [{ key: HOST_KEY, id: null, channel: null, name: cleanName(options.hostName) || '방장', role: 'white', online: true, host: true }];
-    if (options.black) {
-      this.members.push({ key: this.newKey(), id: options.black.id, channel: null, name: cleanName(options.black.name) || '흑', role: 'black', online: false, host: false });
+    // A saved game puts everyone back in their seat (an old save: the host was white).
+    const hostRole: Role = resumed ? options.seats?.host ?? 'white' : 'spectator';
+    this.members = [{ key: HOST_KEY, id: null, channel: null, name: cleanName(options.hostName) || '방장', role: hostRole, online: true, host: true }];
+    for (const g of options.seats?.guests ?? []) {
+      if (g.role === hostRole) continue;
+      this.members.push({ key: this.newKey(), id: g.id, channel: null, name: cleanName(g.name) || SEAT_NAME[g.role], role: g.role, online: false, host: false });
     }
+  }
+
+  /** Where the host sits (the bench is 'spectator'). */
+  private get hostRole(): Role {
+    return this.members[0].role;
   }
 
   view(): SessionView {
     return {
       state: this.authority.state,
-      seat: this.hostColor,
+      seat: this.hostRole,
       gmBusy: this.authority.busy,
       gmName: this.authority.gm.name,
       connection: this.connection,
@@ -107,10 +118,12 @@ export class HostSession implements Session {
 
   subscribe = (listener: Parameters<Emitter['subscribe']>[0]) => this.emitter.subscribe(listener);
 
-  /** Who sits at black, for saving the game (with the reconnect id, which stays on this machine). */
-  blackPlayer(): { id: string; name: string } | null {
-    const black = this.members.find((m) => m.role === 'black' && m.id);
-    return black ? { id: black.id!, name: black.name } : null;
+  /** Who sits where, for saving the game (with the guests' reconnect ids, which stay on this machine). */
+  seats(): SavedSeats {
+    const guests = this.members
+      .filter((m) => !m.host && m.id && m.role !== 'spectator')
+      .map((m) => ({ role: m.role as Color, id: m.id!, name: m.name }));
+    return { host: this.hostRole, guests };
   }
 
   /** Someone connected to the room; they get a seat (or are turned away) at their hello. */
@@ -129,6 +142,8 @@ export class HostSession implements Session {
         case 'name':
           member.name = msg.name;
           return this.roomChanged();
+        case 'seat':
+          return this.seat(member, msg.role);
         case 'doodle':
           return this.applyDoodle(msg.op, member.key, false);
         case 'toy':
@@ -179,14 +194,13 @@ export class HostSession implements Session {
         setTimeout(() => channel.close(), 200);
         return;
       }
-      // The first free seat (black, then red on the 3-player board), else watching.
-      const free = this.freeSeat();
+      // Newcomers wait on the bench and choose a seat themselves.
       member = {
         key: this.newKey(),
         id: id ?? null,
         channel,
         name: name || `손님 ${this.nextKey - 1}`,
-        role: free ?? 'spectator',
+        role: 'spectator',
         online: true,
         host: false,
       };
@@ -205,14 +219,19 @@ export class HostSession implements Session {
       doodles: this.doodles.doodles,
     } satisfies HostMessage);
     this.roomChanged(member);
-    const role = member.role === 'spectator' ? '관전' : member.role === 'red' ? '적' : '흑';
-    const text = returning ? `${member.name}님이 다시 들어왔습니다.` : `${member.name}님이 들어왔습니다 (${role}).`;
+    const text = returning ? `${member.name}님이 다시 들어왔습니다.` : `${member.name}님이 들어왔습니다.`;
     this.emitter.emit({ kind: 'notice', text, tone: 'normal' });
     this.broadcast({ t: 'notice', text, tone: 'normal' }, member);
   }
 
   request(req: Request): void {
-    void this.authority.handle(req, this.hostColor);
+    const role = this.hostRole;
+    if (role === 'spectator') return this.emitter.emit({ kind: 'notice', text: '관전자는 수를 둘 수 없습니다.', tone: 'warn' });
+    void this.authority.handle(req, role);
+  }
+
+  takeSeat(role: Role): void {
+    this.seat(this.members[0], role);
   }
 
   sendChat(text: string): void {
@@ -243,20 +262,44 @@ export class HostSession implements Session {
 
   setRules(rules: Partial<RuleConfig>): void {
     this.authority.setRules(cleanRules(this.authority.state.rules, rules));
+    // A seat the new board does not have (red, off the hexagon): back to the bench.
+    const seats = playersOf(this.authority.state.rules.map);
+    let moved = false;
+    for (const m of this.members) {
+      if (m.role !== 'spectator' && !seats.includes(m.role)) {
+        m.role = 'spectator';
+        moved = true;
+      }
+    }
+    if (moved) this.roomChanged();
   }
 
-  /** A guest's seat still empty: black, then red on the 3-player board. */
-  private freeSeat(): Role | null {
-    const seats: Role[] = this.authority.state.rules.map === 'hex3' ? ['black', 'red'] : ['black'];
-    return seats.find((s) => !this.members.some((m) => m.role === s)) ?? null;
+  /**
+   * `member` sits in `role` (or stands up to the bench): only in the waiting room, only an empty
+   * seat the board has. Anyone may move straight from one seat to another.
+   */
+  private seat(member: Seat, role: Role): void {
+    const tell = (text: string) =>
+      member.host ? this.emitter.emit({ kind: 'notice', text, tone: 'warn' }) : this.sendTo(member, { t: 'notice', text, tone: 'warn' });
+    if (member.role === role) return;
+    if (this.authority.phase !== 'waiting') return tell('게임 중에는 자리를 바꿀 수 없습니다.');
+    if (role !== 'spectator') {
+      if (!playersOf(this.authority.state.rules.map).includes(role)) return;
+      const holder = this.members.find((m) => m.role === role);
+      if (holder) return tell(`${SEAT_NAME[role]} 자리에는 이미 ${holder.name}님이 앉아 있습니다.`);
+    }
+    member.role = role;
+    this.roomChanged();
+    const text = role === 'spectator' ? `${member.name}님이 대기석으로 갔습니다.` : `${member.name}님이 ${SEAT_NAME[role]} 자리에 앉았습니다.`;
+    this.emitter.emit({ kind: 'notice', text, tone: 'normal' });
+    this.broadcast({ t: 'notice', text, tone: 'normal' });
   }
 
-  /** Needs someone in every guest seat (black, and red on the 3-player board) who is here. */
+  /** Needs someone in every seat of the board (white, black, and red on the 3-player board) who is here. */
   start(): void {
-    const seats: Role[] = this.authority.state.rules.map === 'hex3' ? ['black', 'red'] : ['black'];
-    const empty = seats.find((s) => !this.members.some((m) => m.role === s && m.online));
+    const empty = playersOf(this.authority.state.rules.map).find((s) => !this.members.some((m) => m.role === s && m.online));
     if (empty) {
-      this.emitter.emit({ kind: 'notice', text: `${empty === 'red' ? '적' : '흑'} 자리에 앉은 사람이 있어야 시작할 수 있습니다.`, tone: 'warn' });
+      this.emitter.emit({ kind: 'notice', text: `${SEAT_NAME[empty]} 자리에 앉은 사람이 있어야 시작할 수 있습니다.`, tone: 'warn' });
       return;
     }
     this.authority.start();
@@ -266,19 +309,15 @@ export class HostSession implements Session {
     this.authority.reset();
   }
 
+  /** The host sends a guest from their seat back to the bench (only that: guests choose seats themselves). */
   assignRole(key: string, role: Role): void {
     const target = this.members.find((m) => m.key === key && !m.host);
-    if (!target || role === 'white' || target.role === role) return;
-    if (role === 'red' && this.authority.state.rules.map !== 'hex3') return;
-    if (role === 'black' || role === 'red') {
-      const current = this.members.find((m) => m.role === role);
-      if (current) {
-        if (current.online) current.role = 'spectator';
-        else this.members.splice(this.members.indexOf(current), 1);
-      }
-    }
-    target.role = role;
+    if (!target || role !== 'spectator' || target.role === 'spectator' || this.authority.phase !== 'waiting') return;
+    target.role = 'spectator';
     this.roomChanged();
+    const text = `방장이 ${target.name}님을 대기석으로 옮겼습니다.`;
+    this.emitter.emit({ kind: 'notice', text, tone: 'normal' });
+    this.broadcast({ t: 'notice', text, tone: 'normal' });
   }
 
   dispose(): void {
@@ -346,7 +385,7 @@ export class HostSession implements Session {
         if (e.to === 'all') {
           this.broadcast({ t: 'notice', text: e.text, tone: e.tone });
           this.emitter.emit({ kind: 'notice', text: e.text, tone: e.tone });
-        } else if (e.to === this.hostColor || e.to === 'any') {
+        } else if (e.to === this.hostRole || e.to === 'any') {
           this.emitter.emit({ kind: 'notice', text: e.text, tone: e.tone });
         } else {
           const player = this.members.find((m) => m.role === e.to);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { RuleConfig } from '../engine';
+import { playersOf, type Color, type RuleConfig } from '../engine';
 import {
   AP_PER_TURN,
   CHAOS_CHANCES,
@@ -21,6 +21,7 @@ import { playSfx } from '../audio/sfx';
 import { Icon } from './Icon';
 
 const ROLE_BADGE: Record<Member['role'], string> = { white: '백', black: '흑', red: '적', gray: '회색', spectator: '관전' };
+const SEAT_LABEL: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
 
 interface Props {
   session: Session;
@@ -41,8 +42,12 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
   const online = view.connection.kind !== 'local';
   const me = view.members.find((m) => m.key === view.myKey);
   const [name, setName] = useState(me?.name ?? '');
-  const black = view.members.find((m) => m.role === 'black');
-  const canStart = !online || !!black?.online;
+  // The board's seats (white, black, and red on the 3-player board) and who sits in each.
+  const seats = playersOf(rules.map);
+  const holder = (c: Color) => view.members.find((m) => m.role === c);
+  const emptySeats = seats.filter((c) => !holder(c)?.online);
+  const bench = view.members.filter((m) => m.role === 'spectator');
+  const canStart = !online || emptySeats.length === 0;
   const connected = view.connection.kind === 'local' || view.connection.kind === 'hosting' || view.connection.kind === 'connected';
   const inset = useMemo(() => ({ left: 0, top: 0, bottom: 0 }), []);
 
@@ -98,7 +103,7 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
 
           {conn.kind === 'hosting' && (
             <section className="invite-box">
-              <div className="muted-line">친구에게 방 코드나 링크를 보내 주세요. 두 번째로 들어오는 사람부터는 관전자가 됩니다.</div>
+              <div className="muted-line">친구에게 방 코드나 링크를 보내 주세요. 들어온 사람은 대기석에서 원하는 자리를 골라 앉습니다.</div>
               <div className="room-code">{conn.code}</div>
               <div className="link-row">
                 <input readOnly value={conn.link} onFocus={(e) => e.target.select()} />
@@ -110,37 +115,71 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
           <div className="waiting-cols">
             <section className="waiting-section">
               <h2>참가자 {online && <span className="muted">({view.members.length}/10)</span>}</h2>
-              <ul className="members">
-                {view.members.map((m) => (
-                  <li key={m.key} className={`member ${m.online ? '' : 'offline'}`}>
-                    <span className={`role-badge role-${m.role}`}>{ROLE_BADGE[m.role]}</span>
-                    <span className="member-name">
-                      {m.name}
-                      {m.key === view.myKey && online && <span className="member-tag">나</span>}
-                      {m.host && online && <span className="member-tag">방장</span>}
-                      {!m.online && <span className="member-tag off">연결 끊김</span>}
-                    </span>
-                    {host && online && !m.host && (
-                      <span className="member-actions">
-                        {m.role === 'spectator' ? (
-                          <>
-                            <button onClick={() => session.assignRole(m.key, 'black')}>흑으로</button>
-                            {rules.map === 'hex3' && <button onClick={() => session.assignRole(m.key, 'red')}>적으로</button>}
-                          </>
-                        ) : (
-                          <button onClick={() => session.assignRole(m.key, 'spectator')}>관전으로</button>
-                        )}
-                      </span>
-                    )}
-                  </li>
-                ))}
-                {online && !black && (
-                  <li className="member empty">
-                    <span className="role-badge role-black">흑</span>
-                    <span className="member-name">빈 자리, 들어오는 사람이 앉습니다</span>
-                  </li>
-                )}
-              </ul>
+              {online ? (
+                <>
+                  <ul className="seats" aria-label="자리">
+                    {seats.map((c) => {
+                      const m = holder(c);
+                      const mine = !!m && m.key === view.myKey;
+                      return (
+                        <li key={c} className={`seat seat-${c} ${m ? 'taken' : 'open'} ${m && !m.online ? 'offline' : ''} ${mine ? 'mine' : ''}`}>
+                          <span className="seat-stone" aria-hidden />
+                          <span className="seat-label">{SEAT_LABEL[c]}</span>
+                          <span className="member-name">
+                            {m ? (
+                              <>
+                                {m.name}
+                                {mine && <span className="member-tag">나</span>}
+                                {m.host && <span className="member-tag">방장</span>}
+                                {!m.online && <span className="member-tag off">연결 끊김</span>}
+                              </>
+                            ) : (
+                              <span className="seat-empty">빈 자리</span>
+                            )}
+                          </span>
+                          <span className="member-actions">
+                            {mine ? (
+                              <button onClick={() => session.takeSeat('spectator')}>일어나기</button>
+                            ) : !m && me ? (
+                              <button className="primary" onClick={() => session.takeSeat(c)}>
+                                앉기
+                              </button>
+                            ) : m && host && !m.host ? (
+                              <button onClick={() => session.assignRole(m.key, 'spectator')} title={`${m.name}님을 대기석으로 보냅니다`}>
+                                비우기
+                              </button>
+                            ) : null}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <h3 className="bench-title">
+                    대기석 <span className="muted">{bench.length}명</span>
+                  </h3>
+                  <ul className="members bench">
+                    {bench.length === 0 && <li className="member empty">아무도 없습니다.</li>}
+                    {bench.map((m) => (
+                      <li key={m.key} className={`member ${m.online ? '' : 'offline'}`}>
+                        <span className="member-name">
+                          {m.name}
+                          {m.key === view.myKey && <span className="member-tag">나</span>}
+                          {m.host && <span className="member-tag">방장</span>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <ul className="members">
+                  {view.members.map((m) => (
+                    <li key={m.key} className="member">
+                      <span className={`role-badge role-${m.role}`}>{ROLE_BADGE[m.role]}</span>
+                      <span className="member-name">{m.name}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {online && me && (
                 <label className="field name-field">
                   <span>내 이름</span>
@@ -289,11 +328,13 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
                 <button className="primary big" onClick={() => session.start()} disabled={!canStart}>
                   게임 시작
                 </button>
-                {!canStart && <span className="muted-line">흑 자리에 앉은 사람이 들어와야 시작할 수 있습니다.</span>}
+                {!canStart && (
+                  <span className="muted-line">{emptySeats.map((c) => SEAT_LABEL[c]).join('·')} 자리에 앉은 사람이 있어야 시작할 수 있습니다.</span>
+                )}
               </>
             ) : (
               <span className="muted-line">
-                {me?.role === 'spectator' ? '관전자로 들어왔습니다. ' : ''}방장이 게임을 시작하기를 기다리는 중…
+                {me?.role === 'spectator' ? '대기석에 있습니다. 빈 자리에 앉거나 그대로 관전할 수 있습니다. ' : ''}방장이 게임을 시작하기를 기다리는 중…
               </span>
             )}
           </footer>

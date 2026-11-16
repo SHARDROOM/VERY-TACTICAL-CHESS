@@ -163,7 +163,7 @@ describe('saved games', () => {
     const state = busyState();
     const local = new LocalSession(new TestGm(), { roll: () => 6, initialState: state, phase: 'playing' });
     expect(local.view()).toMatchObject({ state, phase: 'playing' });
-    const host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', initialState: state, heartbeatMs: 0, black: { id: 'guest-1', name: '친구' } });
+    const host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', initialState: state, heartbeatMs: 0, seats: { host: 'white', guests: [{ role: 'black', id: 'guest-1', name: '친구' }] } });
     expect(host.view()).toMatchObject({ state, phase: 'playing' });
     // The black seat waits for its player.
     expect(host.view().members.map((m) => [m.name, m.role, m.online])).toEqual([['방장', 'white', true], ['친구', 'black', false]]);
@@ -186,10 +186,26 @@ describe('saved games', () => {
     expect(loadSavedGame(storage)?.state.precedents).toEqual([{ ...old, outcome: 'success' }]);
   });
 
-  it('a host save remembers who sat at black', () => {
+  it('a host save remembers who sat where', () => {
     const storage = new MemoryStorage();
-    saveGame({ kind: 'host', code: 'ABC234', state: createInitialState(), gm: { provider: 'fake' }, black: { id: 'guest-1', name: '친구' } }, storage);
-    expect(loadSavedGame(storage)?.black).toEqual({ id: 'guest-1', name: '친구' });
+    const seats = { host: 'black' as const, guests: [{ role: 'white' as const, id: 'guest-1', name: '친구' }, { role: 'red' as const, id: 'guest-2', name: '셋째' }] };
+    saveGame({ kind: 'host', code: 'ABC234', state: createInitialState(), gm: { provider: 'fake' }, seats }, storage);
+    expect(loadSavedGame(storage)?.seats).toEqual(seats);
+  });
+
+  it('an old host save (black only) puts the host back at white', () => {
+    const storage = new MemoryStorage();
+    saveGame({ kind: 'host', code: 'ABC234', state: createInitialState(), gm: { provider: 'fake' }, black: { id: 'guest-1', name: '친구' } } as never, storage);
+    expect(loadSavedGame(storage)?.seats).toEqual({ host: 'white', guests: [{ role: 'black', id: 'guest-1', name: '친구' }] });
+  });
+
+  it('a resumed host sits where they sat, the guests\' seats wait for them', () => {
+    const host = new HostSession(new TestGm(), {
+      code: 'ABC234', link: 'x', initialState: createInitialState(), heartbeatMs: 0,
+      seats: { host: 'black', guests: [{ role: 'white', id: 'guest-1', name: '친구' }] },
+    });
+    expect(host.view().seat).toBe('black');
+    expect(host.view().members.map((m) => [m.name, m.role, m.online])).toEqual([['방장', 'black', true], ['친구', 'white', false]]);
   });
 });
 
@@ -222,7 +238,7 @@ describe('reconnecting', () => {
     expect(guest.view().connection).toMatchObject({ kind: 'paused' });
 
     // The host comes back with the saved state under the same room, keeping black's seat.
-    host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', initialState: state, heartbeatMs: 0, black: { id: 'guest-1', name: '친구' } });
+    host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', initialState: state, heartbeatMs: 0, seats: { host: 'white', guests: [{ role: 'black', id: 'guest-1', name: '친구' }] } });
     reopen = () => {};
     await settle(10);
     expect(guest.view()).toMatchObject({ connection: { kind: 'connected' }, seat: 'black', phase: 'playing' });
@@ -240,7 +256,10 @@ describe('reconnecting', () => {
     const host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', heartbeatMs: 0 });
     const [h1, g1] = memoryChannelPair();
     host.attachGuest(h1);
-    new GuestSession(g1, { id: 'same-player', heartbeatMs: 0 });
+    const first = new GuestSession(g1, { id: 'same-player', heartbeatMs: 0 });
+    await settle();
+    host.takeSeat('white');
+    first.takeSeat('black');
     await settle();
     host.start();
     await settle();

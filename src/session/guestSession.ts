@@ -14,6 +14,7 @@ import {
   type Member,
   type Phase,
   type Request,
+  type Role,
   type Seat,
   type Session,
   type SessionView,
@@ -120,6 +121,10 @@ export class GuestSession implements Session {
   restart(): void {}
   assignRole(): void {}
 
+  takeSeat(role: Role): void {
+    this.send({ t: 'seat', role });
+  }
+
   dispose(): void {
     this.disposed = true;
     this.connection = { kind: 'disconnected', reason: '방에서 나왔습니다.' };
@@ -202,10 +207,11 @@ export class GuestSession implements Session {
         this.chat = msg.chat;
         this.doodles = msg.doodles;
         const me = this.members.find((m) => m.key === this.myKey);
-        const role = me?.role === 'black' ? '흑' : me?.role === 'white' ? '백' : '관전자';
+        const where = me?.role === 'black' ? '흑' : me?.role === 'white' ? '백' : me?.role === 'red' ? '적' : null;
+        const first = where ? `방에 들어왔습니다. 당신은 ${where}입니다.` : this.phase === 'waiting' ? '방에 들어왔습니다. 대기석에서 앉을 자리를 골라 주세요.' : '방에 들어왔습니다. 관전합니다.';
         this.emitter.emit({
           kind: 'notice',
-          text: again ? '방장과 다시 연결되었습니다. 이어 갑니다.' : `방에 들어왔습니다. 당신은 ${role}입니다.`,
+          text: again ? '방장과 다시 연결되었습니다. 이어 갑니다.' : first,
           tone: 'normal',
         });
         break;

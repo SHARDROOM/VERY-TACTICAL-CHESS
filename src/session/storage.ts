@@ -1,4 +1,4 @@
-import { SQUARES, withAir, withDefaultRules, type GameState } from '../engine';
+import { SQUARES, withAir, withDefaultRules, type Color, type GameState } from '../engine';
 import type { GmConfig } from '../ui/GmSettings';
 
 /** What a saved game remembers about its GM: never the API key (that is kept apart, see savedGm). */
@@ -15,8 +15,14 @@ export interface SavedGame {
   state: GameState;
   gm: SavedGm;
   savedAt: number;
-  /** Host only: who sat at black (their reconnect id stays on this machine), so they get the seat back. */
-  black?: { id: string; name: string };
+  /** Host only: who sat where (guests' reconnect ids stay on this machine), so everyone gets their seat back. */
+  seats?: SavedSeats;
+}
+
+/** The host's seat and the guests' (with their private reconnect ids). */
+export interface SavedSeats {
+  host: Color | 'spectator';
+  guests: { role: Color; id: string; name: string }[];
 }
 
 const KEY = 'vtc.save.v1';
@@ -148,7 +154,7 @@ export function loadSavedGame(storage?: Storage): SavedGame | null {
     !isObj(st) ||
     !Array.isArray(st.board) ||
     (st.board.length !== 64 && st.board.length !== SQUARES) ||
-    (st.turn !== 'white' && st.turn !== 'black') ||
+    !['white', 'black', 'red'].includes(st.turn as string) ||
     !isObj(st.status) ||
     !isObj(st.ap) ||
     !isObj(st.rules) ||
@@ -158,11 +164,11 @@ export function loadSavedGame(storage?: Storage): SavedGame | null {
   }
   if (raw.kind === 'host' && typeof raw.code !== 'string') return bad();
   const game = raw as unknown as SavedGame;
-  const black = isObj(raw.black) && typeof raw.black.id === 'string' && typeof raw.black.name === 'string' ? { id: raw.black.id, name: raw.black.name } : undefined;
+  const seats = parseSeats(raw.seats) ?? legacySeats(raw.black);
   // Saves from before a rule existed get its default; from before the air, an empty air layer.
   // From before critical successes were dropped: those count as plain successes now.
   const precedents = game.state.precedents.map((p) => ((p.outcome as string) === 'critSuccess' ? { ...p, outcome: 'success' as const } : p));
-  return { ...game, black, state: { ...game.state, precedents, rules: withDefaultRules(game.state.rules), board: withAir(game.state.board, game.state.map) } };
+  return { ...game, seats, state: { ...game.state, precedents, rules: withDefaultRules(game.state.rules), board: withAir(game.state.board, game.state.map) } };
 
   function bad() {
     clearSavedGame(storage);
@@ -205,4 +211,21 @@ export function saveName(name: string, storage?: Storage): void {
   } catch {
     // ignore
   }
+}
+
+const SEATS = ['white', 'black', 'red'];
+
+function parseSeats(raw: unknown): SavedSeats | undefined {
+  if (!isObj(raw) || !Array.isArray(raw.guests)) return undefined;
+  const host = raw.host === 'spectator' || SEATS.includes(raw.host as string) ? (raw.host as SavedSeats['host']) : 'white';
+  const guests = raw.guests
+    .filter((g): g is Record<string, unknown> => isObj(g) && SEATS.includes(g.role as string) && typeof g.id === 'string' && typeof g.name === 'string')
+    .map((g) => ({ role: g.role as Color, id: g.id as string, name: g.name as string }));
+  return { host, guests };
+}
+
+/** Saves from before seats were chosen: the host was white, the guest who played black is kept. */
+function legacySeats(black: unknown): SavedSeats | undefined {
+  if (!isObj(black) || typeof black.id !== 'string' || typeof black.name !== 'string') return undefined;
+  return { host: 'white', guests: [{ role: 'black', id: black.id, name: black.name }] };
 }

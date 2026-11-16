@@ -1,11 +1,11 @@
 import { PROMOTION_TYPES, SQUARES, type GameEvent, type GameState } from '../engine';
-import { cleanChat, cleanName, type ChatMessage, type Member, type NoticeTone, type Phase, type Request, type TimerSnapshot } from './types';
+import { cleanChat, cleanName, type ChatMessage, type Member, type NoticeTone, type Phase, type Request, type Role, type TimerSnapshot } from './types';
 import { parseDoodleChange, parseDoodleOp, type Doodle, type DoodleChange, type DoodleOp } from './doodle';
 import { parseToyOp, type ToyOp } from './toy';
 
 
-/** 3: the air layer (128-square boards, falling pieces). */
-export const PROTOCOL_VERSION = 4;
+/** 3: the air layer (128-square boards, falling pieces). 5: seats chosen from the waiting bench. */
+export const PROTOCOL_VERSION = 5;
 
 /**
  * `id` is a random per-browser id, so a guest coming back gets their seat again.
@@ -17,6 +17,8 @@ export type GuestMessage =
   | { t: 'ping' }
   | { t: 'chat'; text: string }
   | { t: 'name'; name: string }
+  /** Sit in a seat (or go back to the waiting bench, 'spectator'), in the waiting room. */
+  | { t: 'seat'; role: Role }
   | { t: 'doodle'; op: DoodleOp }
   /** Something picked up off the table (passed on to everyone else as it happens). */
   | { t: 'toy'; op: ToyOp };
@@ -53,6 +55,9 @@ export type HostMessage =
   /** Someone else is playing with what lies about the table. */
   | { t: 'toy'; op: ToyOp };
 
+/** Seats a member may choose (gray belongs to chaos). */
+const SEAT_ROLES: readonly Role[] = ['white', 'black', 'red', 'spectator'];
+
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isSquare = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < SQUARES;
 
@@ -73,6 +78,9 @@ export function parseGuestMessage(raw: unknown): GuestMessage | null {
   if (raw.t === 'name') {
     const name = cleanName(raw.name);
     return name ? { t: 'name', name } : null;
+  }
+  if (raw.t === 'seat') {
+    return SEAT_ROLES.includes(raw.role as Role) ? { t: 'seat', role: raw.role as Role } : null;
   }
   if (raw.t === 'doodle') {
     const op = parseDoodleOp(raw.op);
@@ -112,7 +120,7 @@ const isTimer = (v: unknown) => v === null || (isObj(v) && typeof v.remainingMs 
 function parseChatMessage(v: unknown): ChatMessage | null {
   if (!isObj(v)) return null;
   const text = cleanChat(v.text);
-  const role = v.role === 'white' || v.role === 'black' || v.role === 'spectator' ? v.role : null;
+  const role = SEAT_ROLES.includes(v.role as Role) ? (v.role as Role) : null;
   if (!text || !role || typeof v.author !== 'string' || typeof v.id !== 'number') return null;
   return { id: v.id, author: v.author, name: cleanName(v.name) || '?', role, text };
 }

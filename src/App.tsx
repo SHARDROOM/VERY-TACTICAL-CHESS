@@ -65,8 +65,8 @@ export default function App() {
       const target = saveTarget.current;
       const view = session.view();
       if (!target || view.phase !== 'playing') return;
-      const black = session instanceof HostSession ? session.blackPlayer() ?? undefined : undefined;
-      saveGame({ kind: target.kind, code: target.kind === 'host' ? target.code : undefined, state: view.state, gm: gmForSave(gmRef.current), black });
+      const seats = session instanceof HostSession ? session.seats() : undefined;
+      saveGame({ kind: target.kind, code: target.kind === 'host' ? target.code : undefined, state: view.state, gm: gmForSave(gmRef.current), seats });
       last = view.state;
     };
     write();
@@ -117,7 +117,7 @@ export default function App() {
         link: inviteLink(room.code),
         fall: landFalls,
         initialState: resume?.state,
-        black: resume?.black,
+        seats: resume?.seats,
         hostName: savedName() || undefined,
         onDispose: room.close,
       });
