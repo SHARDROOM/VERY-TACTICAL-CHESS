@@ -22,10 +22,11 @@ export interface DiceRun {
 
 const MAX_STEPS = 60 * 8;
 /**
- * How hard a die is thrown (사용자 요청: harder): across the tray at 12–16 per second, a little
- * up, spinning fast. It slams into the far wall and comes back before it settles.
+ * How a die is thrown (사용자 요청): tossed up from low in the near end, spinning fast. It pops up
+ * about 1.5 (a piece's height on the table), arcs over to land past the middle, tumbles and hits
+ * the far wall before it settles. Little sideways drift, so it never meets the side walls high.
  */
-const THROW = { height: [1.0, 0.4], speed: [12, 4], up: [-1, 1.5], side: 3, spin: 32 } as const;
+const THROW = { height: [0.6, 0.2], speed: [4, 1.5], up: [7.5, 1.5], side: 1.2, spin: 32 } as const;
 const GRAVITY = 9.81 * 2.2;
 
 let physics: Promise<typeof import('@dimforge/rapier3d-compat').default> | null = null;
