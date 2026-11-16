@@ -1,5 +1,5 @@
 /** Small line icons for the table tools, drawn in the current text colour. */
-export type IconName = 'reset' | 'top' | 'side' | 'pencil' | 'scroll' | 'gear' | 'note' | 'eraser' | 'undo' | 'check';
+export type IconName = 'reset' | 'top' | 'side' | 'pencil' | 'scroll' | 'gear' | 'note' | 'eraser' | 'undo' | 'check' | 'quill';
 
 const PATHS: Record<IconName, string> = {
   // A circular arrow: back to the usual view.
@@ -17,6 +17,8 @@ const PATHS: Record<IconName, string> = {
   eraser: 'M15 4l6 6-9 9H7l-4-4zM10 9l6 6M12 20h9',
   undo: 'M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3',
   check: 'M5 12l5 5L20 7',
+  // A quill: help writing a declaration.
+  quill: 'M20 3C12 4 7 9 6 17l-2 4M6 17c5 0 10-3 12-10M10 13h4',
 };
 
 export function Icon({ name }: { name: IconName }) {

@@ -409,7 +409,16 @@ export function BoardScene({
           <PieceMesh key={piece.id} piece={piece} position={squareToWorld(from)} selected={false} direction={directions?.get(piece.id)} />
         )),
         ...graveyard.map(({ piece, position }) => (
-          <PieceMesh key={piece.id} piece={piece} position={position} selected={false} captured exit={piece.exit} direction={directions?.get(piece.id)} />
+          <PieceMesh
+            key={piece.id}
+            piece={piece}
+            position={position}
+            selected={false}
+            captured
+            exit={piece.exit}
+            shardsAt={piece.exit === 'shatter' && piece.at !== undefined ? squareToWorld(piece.at) : undefined}
+            direction={directions?.get(piece.id)}
+          />
         )),
       ]}
       </PiecePhysicsContext.Provider>

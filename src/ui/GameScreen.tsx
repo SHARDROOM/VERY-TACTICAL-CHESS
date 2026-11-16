@@ -47,6 +47,7 @@ import { Icon } from './Icon';
 import { PieceSilhouette } from './PieceSilhouette';
 import { buildShow, directionsFor, exitFx, type Show } from './show';
 import { reachOf } from './reach';
+import { tapToWrite, writtenMarks } from './writeHelp';
 import { prefersReducedMotion, useStagingLook } from './stagingLook';
 import type { FxShow } from '../scene/FxLayer';
 import { duelLength, planDuel, simulateDuel, type DuelPlan, type DuelRun } from '../scene/duel';
@@ -246,6 +247,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const [hovered, setHovered] = useState<Square | null>(null);
   const [log, setLog] = useState<LogLine[]>(() => (startNotice ? [{ id: nextLogId++, text: startNotice, tone: 'warn' }] : []));
   const [text, setText] = useState('');
+  /** 행동 쓰기 도움: board taps write the declaration's squares into the box instead of picking pieces up. */
+  const [writeHelp, setWriteHelp] = useState(false);
   const [camera, setCamera] = useState<CameraRequest>({ mode: 'side', side: homeSide, nonce: 0 });
   // Dev only: "x,y,z,tx,ty,tz" pins the camera there (for screenshots from odd angles).
   useEffect(() => {
@@ -783,7 +786,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const pending = game.pending;
   // Who acts on what, on the sheet and on the board, while the ruling waits.
   const reach = useMemo(() => (pending ? reachOf(pending.ruling, game.board) : null), [pending, game.board]);
-  const marks = useMemo(() => (reach && !stage ? { actor: reach.actor, targets: reach.targets.map((t) => t.at) } : null), [reach, stage]);
+  // Rings on the board: who and what a waiting ruling acts on, or what the declaration being written names.
+  const marks = useMemo(() => {
+    if (reach) return stage ? null : { actor: reach.actor, targets: reach.targets.map((t) => t.at) };
+    return writeHelp && !stage ? writtenMarks(text) : null;
+  }, [reach, stage, writeHelp, text]);
   const connected = view.connection.kind === 'local' || view.connection.kind === 'hosting' || view.connection.kind === 'connected';
   const locked = !playing || view.gmBusy || !!pending || !myTurn || !connected || !!dice || !!stage || !!duel || !!romp;
   // A turn has to be used for something: a normal move ends it by itself, so passing is only
@@ -805,6 +812,12 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
 
   const onSquareClick = (sq: Square) => {
     if (locked || doodleTool) return;
+    if (writeHelp) {
+      const r = tapToWrite(game, sq, text);
+      if ('warn' in r) say(r.warn, 'warn');
+      else setText(r.text);
+      return;
+    }
     const piece = game.board[sq];
     if (selected !== null && targets.includes(sq)) {
       if (promotes(selected, sq)) setPromotionChoice({ from: selected, to: sq });
@@ -826,6 +839,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     if (parsed && !isAir(parsed.from) && game.board[parsed.from]?.color !== sideToMove && game.board[parsed.from + AIR]?.color === sideToMove) {
       parsed = { ...parsed, from: parsed.from + AIR, to: isAir(parsed.to) ? parsed.to : parsed.to + AIR };
     }
+    setWriteHelp(false);
     if (parsed) {
       if (!parsed.promotion && promotes(parsed.from, parsed.to) && legalTargets(game, parsed.from).some((t) => t.to === parsed.to)) {
         setPromotionChoice({ from: parsed.from, to: parsed.to });
@@ -874,7 +888,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         ? `${COLOR_NAME[sideToMove]}의 차례입니다`
         : chain
           ? `${squareName(chain.at)}의 기물을 한 번 더 움직이거나 턴 종료`
-          : `${COLOR_NAME[sideToMove]}: 수 또는 특수 행동`;
+          : writeHelp
+            ? '행동할 내 기물을 누르세요'
+            : `${COLOR_NAME[sideToMove]}: 수 또는 특수 행동`;
 
   return (
     <div className="app">
@@ -1016,6 +1032,20 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
               ))}
             </ol>
             <form onSubmit={onSubmit} className="input-row">
+              <button
+                type="button"
+                className={`write-help${writeHelp ? ' active' : ''}`}
+                aria-pressed={writeHelp}
+                aria-label="행동 쓰기 도움"
+                title="행동 쓰기 도움: 판의 기물과 칸을 누르면 입력칸에 이어 씁니다"
+                disabled={locked || !!chain}
+                onClick={() => {
+                  setWriteHelp((on) => !on);
+                  setSelected(null);
+                }}
+              >
+                <Icon name="quill" />
+              </button>
               <input
                 value={text}
                 onChange={(e) => setText(e.target.value)}
@@ -1028,8 +1058,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
               </button>
             </form>
             <div className="panel-footer">
-              <span className="counter">
-                {text.length}/{game.rules.actionMaxLength}
+              <span className={`counter${writeHelp ? ' write-hint' : ''}`}>
+                {writeHelp ? (text.trim() ? '기물이나 칸을 누르면 이어 씁니다' : '행동할 내 기물부터 누르세요') : `${text.length}/${game.rules.actionMaxLength}`}
               </span>
               <button
                 onClick={() => session.request({ type: 'endTurn' })}

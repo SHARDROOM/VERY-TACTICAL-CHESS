@@ -10,7 +10,7 @@ import { TABLE_TOP_Y } from './WoodTable';
 import { actPose, easeInOut, entrancePose, stylePose, swapPose, swerve, type PieceDirection, type Pose } from './pieceMotion';
 import { AIR_Y, squareToWorld } from './coords';
 import { finishMaterial, type Finish } from './pieceFinish';
-import { AshPile, SHATTER_SECONDS, ShardPile, SmokeWisp } from './Remains';
+import { AshPile, Relic, SHATTER_SECONDS, ShardScatter, SmokeWisp } from './Remains';
 import { PropOnPiece } from './PropMesh';
 
 /** What the pieces share for physics: which side the dice are on, and where taken pieces lie. */
@@ -115,6 +115,8 @@ interface Props {
   direction?: PieceDirection;
   /** Beside the board: how it left (as the GM staged it). */
   exit?: Exit;
+  /** Shattered: the square (world centre) its shards lie strewn around. */
+  shardsAt?: [number, number, number];
   onClick?: (e: ThreeEvent<MouseEvent>) => void;
   onHover?: (hovering: boolean) => void;
 }
@@ -221,7 +223,7 @@ function planMove(from: Vector3, to: Vector3, captured: boolean): Omit<Motion, '
  * visuals live here and in pieceGeometry, so they can later be swapped for
  * model files without touching the rest of the scene.
  */
-export function PieceMesh({ piece, position, selected, captured = false, popIn = false, direction, exit, onClick, onHover }: Props) {
+export function PieceMesh({ piece, position, selected, captured = false, popIn = false, direction, exit, shardsAt, onClick, onHover }: Props) {
   const group = useRef<Group>(null);
   const riderRef = useRef<Group>(null);
   /** Which of this show's trips comes next. */
@@ -235,7 +237,8 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const prev = useRef({ type: piece.type, color: piece.color, rider: piece.rider?.id ?? null });
   const wasCaptured = useRef(captured);
   /** An exit being played (the remains show once it is over). */
-  const [exiting, setExiting] = useState<{ kind: Exit; start: number; offset: [number, number, number] } | null>(null);
+  /** A staged exit playing: how, from when (performance.now() ms), and where it stood (world). */
+  const [exiting, setExiting] = useState<{ kind: Exit; start: number; from: [number, number, number] } | null>(null);
   const exitingRef = useRef(exiting);
   exitingRef.current = exiting;
   const bobPhase = useRef(Math.random() * 6);
@@ -304,7 +307,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const beginExit = (exit: Exit, from: Vector3, to: Vector3, delay: number) => {
     phys.current = null;
     motion.current = { from, to, fromScale: shownScale.current, toScale: CAPTURED_SCALE, delay, duration: EXIT_SECONDS[exit]!, arc: 0, startedAt: null, kind: 'exit', style: exit };
-    setExiting({ kind: exit, start: performance.now() + delay * 1000, offset: [to.x - from.x, to.y - from.y, to.z - from.z] });
+    setExiting({ kind: exit, start: performance.now() + delay * 1000, from: [from.x, from.y, from.z] });
     const onSquare = EXIT_SECONDS[exit]! * ON_SQUARE * 1000;
     if (exit === 'ash') glow.current = { color: '#ff6a1f', peak: 1.6, start: performance.now() + delay * 1000, duration: onSquare, hold: true, flicker: true };
     if (exit === 'vanish') glow.current = { color: '#bfe3ff', peak: 1.4, start: performance.now() + delay * 1000, duration: onSquare };
@@ -512,7 +515,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       if (exit === 'burn') {
         // Thrown off in flames; it keeps burning a while beside the board, then is left scorched.
         glow.current = { color: '#ff5a14', peak: 1.4, start: performance.now() + delay * 1000, duration: 4200, hold: true, flicker: true };
-        setExiting({ kind: 'burn', start: performance.now() + delay * 1000, offset: [0, 0, 0] });
+        setExiting({ kind: 'burn', start: performance.now() + delay * 1000, from: [from.x, from.y, from.z] });
       }
       // Knocked off its square when the attacker lands, tumbling across the table to the side.
       const start = from.clone().setY(Math.max(from.y, 0) + 0.02);
@@ -612,12 +615,14 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       const p = Math.min(1, Math.max(0, (clock.elapsedTime - m.startedAt) / m.duration));
       if (m.kind === 'exit') {
         const style = m.style as Exit;
-        const onSquare = style === 'shatter' ? 1 : ON_SQUARE;
+        // A shattered piece is gone at once (its shards burst out and strew the board, see
+        // ShardScatter); its telling part then turns up beside the board.
+        const onSquare = style === 'shatter' ? 0.55 : ON_SQUARE;
         if (p < onSquare) {
           // On its square: burning down, fading upward, or sinking into the board.
           const q = p / onSquare;
           shownAt.current.copy(m.from);
-          shownScale.current = m.fromScale;
+          shownScale.current = style === 'shatter' ? 0.0001 : m.fromScale;
           if (style === 'ash') squash = Math.max(0.04, 1 - 0.96 * q * q);
           else if (style === 'vanish') {
             shownAt.current.y += 0.35 * (1 - (1 - q) ** 3);
@@ -837,12 +842,10 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   // What stands beside the board after a staged exit; while the exit plays, the piece itself.
   const remains = captured && exit && !exiting ? exit : null;
   const body =
-    exiting?.kind === 'shatter' ? (
-      <ShardPile type={piece.type} color={piece.color} id={piece.id} flight={{ offset: exiting.offset, start: exiting.start, scale: CAPTURED_SCALE }} />
+    exiting?.kind === 'shatter' || remains === 'shatter' ? (
+      <Relic type={piece.type} color={piece.color} />
     ) : remains === 'ash' ? (
       <AshPile type={piece.type} color={piece.color} id={piece.id} />
-    ) : remains === 'shatter' ? (
-      <ShardPile type={piece.type} color={piece.color} id={piece.id} />
     ) : (
       <PieceModel
         type={piece.type}
@@ -855,6 +858,16 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   return (
     <>
     {remains === 'burn' && <SmokeWisp follow={group} height={height} />}
+    {captured && exit === 'shatter' && shardsAt && (
+      <group position={shardsAt}>
+        <ShardScatter
+          color={piece.color}
+          id={piece.id}
+          center={shardsAt}
+          burst={exiting?.kind === 'shatter' ? { start: exiting.start, from: [exiting.from[0] - shardsAt[0], exiting.from[1] - shardsAt[1], exiting.from[2] - shardsAt[2]] } : null}
+        />
+      </group>
+    )}
     <group
       ref={group}
       position={position}

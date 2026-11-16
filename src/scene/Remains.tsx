@@ -5,9 +5,10 @@ import type { Color, PieceType } from '../engine';
 import { featureParts } from './pieceGeometry';
 
 /*
- * What is left of a piece beside the board after a staged exit (docs/SPEC.md, "GM 연출"):
- * a heap of ash or of shards, each with the piece's telling part on top so you can still see
- * what it was, and a thread of smoke over a burnt piece.
+ * What is left of a piece after a staged exit (docs/SPEC.md, "GM 연출"): beside the board a
+ * heap of ash (with the piece's telling part on top so you can still see what it was) and a
+ * thread of smoke over a burnt piece; for a shattered piece its shards strewn on the board and
+ * only its telling part beside it.
  */
 
 const LOOK = {
@@ -69,113 +70,119 @@ const FLECK = new IcosahedronGeometry(1, 0).scale(0.03, 0.02, 0.03);
 
 const SHARD_SHAPES: BufferGeometry[] = [new TetrahedronGeometry(1, 0), new DodecahedronGeometry(1, 0), new IcosahedronGeometry(1, 0)];
 
+/** One shard of a shattered piece, lying where it came to rest around its square. */
 interface Shard {
   geometry: BufferGeometry;
   scale: [number, number, number];
-  pile: [number, number, number];
+  /** Where it rests, from the square's centre (on the board, y = half its thickness). */
+  rest: [number, number, number];
   rotation: [number, number, number];
-  burst: [number, number, number];
+  /** Seconds in the air, how high it flies and how much it spins on the way. */
+  flight: number;
+  lift: number;
+  spin: [number, number, number];
   accent: boolean;
 }
 
+/** The board's half width: shards that would fly off it stop at its edge. */
+const BOARD_EDGE = 3.95;
+
 /**
- * A heap of shards with the telling part on top. With `flight`, it first bursts from the
- * piece's square and the shards fly together to the heap (`offset` is from the square to the
- * heap; the group stands on the square until the flight is over).
+ * What is left of a shattered piece on its square: shards strewn around it, a few spilling into
+ * the squares next door, lying there for the rest of the game (docs/SPEC.md, "부서진 조각").
+ * Placed at the square's centre (`center`, in world units, to keep them on the board). With
+ * `start` (performance.now() ms), they first burst out of the piece and rain down; without, they
+ * simply lie there. Seeded by the piece's id, so every screen strews them alike.
  */
-export function ShardPile({ type, color, id, flight }: { type: PieceType; color: Color; id: string; flight?: { offset: [number, number, number]; start: number; scale: number } | null }) {
+export function ShardScatter({ color, id, center, burst }: { color: Color; id: string; center: [number, number, number]; burst?: { start: number; from: [number, number, number] } | null }) {
   const shards = useMemo<Shard[]>(() => {
-    const rand = seeded(`${id}-shards`);
-    return Array.from({ length: 9 }, (_, i) => {
-      const a = (i / 9) * Math.PI * 2 + rand();
-      const r = 0.1 + rand() * 0.22;
-      const s = 0.05 + rand() * 0.05;
+    const rand = seeded(`${id}-strewn`);
+    return Array.from({ length: 16 }, (_, i) => {
+      const big = i < 4;
+      const s = big ? 0.1 + rand() * 0.05 : 0.05 + rand() * 0.055;
+      const a = rand() * Math.PI * 2;
+      const r = (big ? 0.05 : 0.12) + rand() ** 0.8 * (big ? 0.25 : 0.62);
+      const x = Math.max(-BOARD_EDGE - center[0], Math.min(BOARD_EDGE - center[0], Math.cos(a) * r));
+      const z = Math.max(-BOARD_EDGE - center[2], Math.min(BOARD_EDGE - center[2], Math.sin(a) * r));
+      const flat = 0.35 + rand() * 0.3;
       return {
         geometry: SHARD_SHAPES[i % SHARD_SHAPES.length],
-        scale: [s * (0.8 + rand() * 0.6), s * (0.6 + rand() * 0.5), s * (0.8 + rand() * 0.6)],
-        pile: [Math.cos(a) * r, s * 0.6 + (r < 0.18 ? 0.05 : 0), Math.sin(a) * r],
-        rotation: [rand() * 3, rand() * 3, rand() * 3],
-        burst: [Math.cos(a) * (0.9 + rand()), 1.4 + rand() * 1.4, Math.sin(a) * (0.9 + rand())],
+        scale: [s * (0.9 + rand() * 0.6), s * flat, s * (0.8 + rand() * 0.6)],
+        rest: [x, s * flat * 0.8, z],
+        // Lying flat-ish, turned every which way.
+        rotation: [(rand() - 0.5) * 0.5, rand() * Math.PI * 2, (rand() - 0.5) * 0.5],
+        flight: 0.5 + rand() * 0.35,
+        lift: 0.25 + rand() * 0.55,
+        spin: [(rand() - 0.5) * 18, (rand() - 0.5) * 14, (rand() - 0.5) * 18],
         accent: i % 4 === 3,
       };
     });
-  }, [id]);
+  }, [id, center[0], center[2]]);
   const refs = useRef<(Mesh | null)[]>([]);
-  const feature = useRef<Group>(null);
   const look = LOOK[color];
 
   useFrame(() => {
-    const f = flight;
-    const t = f ? (performance.now() - f.start) / 1000 : Infinity;
+    const t = burst ? (performance.now() - burst.start) / 1000 : Infinity;
+    const [ox, oy, oz] = burst?.from ?? [0, 0, 0];
     shards.forEach((s, i) => {
       const m = refs.current[i];
       if (!m) return;
-      if (!f || t >= SHATTER_SECONDS) {
-        m.position.set(...s.pile);
-        m.scale.set(...s.scale);
-        m.rotation.set(...s.rotation);
-        return;
-      }
       if (t < 0) {
         m.scale.setScalar(0.0001);
         return;
       }
-      // Burst out from the square, then gather and fly to the heap.
-      const tb = Math.min(t, 0.45);
-      const bx = s.burst[0] * tb;
-      const bz = s.burst[2] * tb;
-      const by = Math.max(0.04, 0.45 + s.burst[1] * tb - 4.9 * tb * tb);
-      if (t < 0.55) {
-        m.position.set(bx, by, bz);
-        m.scale.set(...s.scale);
-        m.rotation.set(s.rotation[0] + t * 9, s.rotation[1] + t * 7, s.rotation[2]);
+      m.scale.set(...s.scale);
+      if (t >= s.flight + BOUNCE) {
+        m.position.set(...s.rest);
+        m.rotation.set(...s.rotation);
         return;
       }
-      const q = Math.min(1, (t - 0.55) / (SHATTER_SECONDS - 0.55));
-      const e = q < 0.5 ? 4 * q * q * q : 1 - (-2 * q + 2) ** 3 / 2;
-      const k = f.scale;
-      m.position.set(
-        bx + (f.offset[0] + s.pile[0] * k - bx) * e,
-        by + (f.offset[1] + s.pile[1] * k - by) * e + Math.sin(Math.PI * q) * 1.1,
-        bz + (f.offset[2] + s.pile[2] * k - bz) * e,
-      );
-      const sc = 1 + (k - 1) * e;
-      m.scale.set(s.scale[0] * sc, s.scale[1] * sc, s.scale[2] * sc);
-      m.rotation.set(s.rotation[0] + t * 9, s.rotation[1] + t * 7, s.rotation[2]);
-    });
-    // The telling part rides along with the shards.
-    const g = feature.current;
-    if (g) {
-      if (!f || t >= SHATTER_SECONDS) {
-        g.position.set(0, 0, 0);
-        g.scale.setScalar(1);
-      } else if (t < 0) g.scale.setScalar(0.0001);
-      else {
-        const q = Math.max(0, Math.min(1, (t - 0.55) / (SHATTER_SECONDS - 0.55)));
-        const e = q < 0.5 ? 4 * q * q * q : 1 - (-2 * q + 2) ** 3 / 2;
-        const tb = Math.min(t, 0.45);
-        const by = Math.max(0, 0.6 + 1.6 * tb - 4.9 * tb * tb);
-        g.position.set(f.offset[0] * e, by + (f.offset[1] - by) * e + Math.sin(Math.PI * q) * 1.2, f.offset[2] * e);
-        g.scale.setScalar(1 + (f.scale - 1) * e);
+      if (t < s.flight) {
+        // Out of the piece's body (about where its middle was), up and down onto the board.
+        const u = t / s.flight;
+        const out = 1 - (1 - u) ** 2;
+        const y = (oy + 0.45) * (1 - u) + s.rest[1] * u + 4 * s.lift * u * (1 - u);
+        const w = (1 - u) ** 2;
+        m.position.set(ox + (s.rest[0] - ox) * out, y, oz + (s.rest[2] - oz) * out);
+        m.rotation.set(s.rotation[0] + s.spin[0] * w, s.rotation[1] + s.spin[1] * w, s.rotation[2] + s.spin[2] * w);
+        return;
       }
-    }
+      // A little skip where it lands.
+      const b = (t - s.flight) / BOUNCE;
+      m.position.set(s.rest[0], s.rest[1] + 0.04 * Math.sin(Math.PI * b) * (s.lift + 0.3), s.rest[2]);
+      m.rotation.set(...s.rotation);
+    });
   });
 
   return (
     <group>
       {shards.map((s, i) => (
-        <mesh key={i} ref={(m) => void (refs.current[i] = m)} geometry={s.geometry} position={s.pile} scale={s.scale} rotation={s.rotation} castShadow>
+        <mesh
+          key={i}
+          ref={(m) => void (refs.current[i] = m)}
+          geometry={s.geometry}
+          position={s.rest}
+          scale={s.scale}
+          rotation={s.rotation}
+          castShadow
+          // Only to look at: clicks go through to the square underneath.
+          raycast={() => null}
+        >
           <meshPhysicalMaterial color={s.accent ? look.accent : look.body} roughness={0.35} clearcoat={0.5} flatShading />
         </mesh>
       ))}
-      <group ref={feature}>
-        <Feature type={type} color={color} tint={null} y={0.1} tilt={0.9} />
-      </group>
     </group>
   );
 }
 
-/** Seconds a shattering takes: the burst on the square and the flight to the heap. */
+const BOUNCE = 0.18;
+
+/** What stands beside the board for a shattered piece: just its telling part, lying on its side. */
+export function Relic({ type, color }: { type: PieceType; color: Color }) {
+  return <Feature type={type} color={color} tint={null} y={0.06} tilt={1.2} />;
+}
+
+/** Seconds a shattering takes on screen: the shards strewn on the board, the telling part set beside it. */
 export const SHATTER_SECONDS = 1.4;
 
 const PUFF = new IcosahedronGeometry(1, 1);

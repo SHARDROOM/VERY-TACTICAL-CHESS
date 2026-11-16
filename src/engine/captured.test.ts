@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCommand, createInitialState, createStateFrom, type Effect, type GameState, type Ruling } from './index';
+import { AIR, applyCommand, capturedAfter, createInitialState, createStateFrom, type Effect, type GameState, type Piece, type Ruling } from './index';
 import { ok, okMove, passTurn, play, sq } from './testUtil';
 
 const act = (s: GameState, effects: Effect[]) => {
@@ -43,5 +43,15 @@ describe('captured pieces', () => {
     expect(s.captured).toEqual([]);
     s = okMove(passTurn(s), 'e4', 'e8').state;
     expect(s.captured).toEqual([expect.objectContaining({ type: 'king', color: 'black' })]);
+  });
+
+  it('a shattered piece keeps the ground square its shards lie on (below it if it was in the air, beside the move for en passant)', () => {
+    const pawn: Piece = { id: 'p', color: 'black', type: 'pawn' };
+    expect(capturedAfter([], [{ type: 'removed', piece: pawn, at: sq('d5'), exit: 'shatter' }])).toEqual([{ ...pawn, exit: 'shatter', at: sq('d5') }]);
+    expect(capturedAfter([], [{ type: 'removed', piece: pawn, at: sq('d5') + AIR, exit: 'shatter' }])[0].at).toBe(sq('d5'));
+    const ep = capturedAfter([], [{ type: 'moved', pieceId: 'w', from: sq('e5'), to: sq('d6'), captured: pawn, special: { kind: 'enPassant' }, capturedExit: 'shatter' }]);
+    expect(ep[0].at).toBe(sq('d5'));
+    // Any other way off the board leaves nothing behind.
+    expect(capturedAfter([], [{ type: 'removed', piece: pawn, at: sq('d5'), exit: 'vanish' }])[0].at).toBeUndefined();
   });
 });

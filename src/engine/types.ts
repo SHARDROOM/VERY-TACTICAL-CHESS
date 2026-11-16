@@ -46,6 +46,8 @@ export interface Tag {
 /** A piece beside the board, and how it left (as the GM staged it; missing = knocked off). */
 export interface CapturedPiece extends Piece {
   exit?: Exit;
+  /** Where it shattered (exit 'shatter'): its shards lie scattered on that ground square. */
+  at?: Square;
 }
 
 export interface Piece {

@@ -160,8 +160,9 @@ describe('exits are stored with the captured pieces', () => {
     );
     expect(after.captured).toEqual([
       { id: expect.any(String), color: 'black', type: 'pawn', exit: 'ash' },
-      { id: expect.any(String), color: 'black', type: 'pawn', exit: 'shatter' },
-      { id: 'b-rider', color: 'black', type: 'pawn', exit: 'shatter' },
+      // Shattered: the shards lie where it stood (e7), its rider's with them.
+      { id: expect.any(String), color: 'black', type: 'pawn', exit: 'shatter', at: sq('e7') },
+      { id: 'b-rider', color: 'black', type: 'pawn', exit: 'shatter', at: sq('e7') },
       // Knocked off is the plain way: nothing recorded.
       { id: expect.any(String), color: 'black', type: 'pawn' },
     ]);

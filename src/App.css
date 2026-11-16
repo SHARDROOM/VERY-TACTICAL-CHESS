@@ -53,6 +53,9 @@ button.big { padding: 12px 14px; font-size: 1.0625rem; }
 button.active { border-color: var(--accent); background: rgba(200, 150, 62, 0.2); color: var(--accent-bright); }
 input, select { font: inherit; }
 .input-row { display: flex; gap: 6px; }
+.input-row .write-help { flex: none; width: 40px; padding: 0; display: grid; place-items: center; }
+.input-row .write-help.active { background: var(--accent); border-color: var(--accent); color: var(--bg, #1b1410); }
+.counter.write-hint { color: var(--accent); }
 .input-row input, .join-row input, .link-row input, .name-field input, .rules-form select, .doodle-note,
 .settings input[type='password'], .settings input[list], .settings select {
   flex: 1; min-width: 0; background: rgba(0, 0, 0, 0.35); color: var(--text); border: 1px solid var(--line);
