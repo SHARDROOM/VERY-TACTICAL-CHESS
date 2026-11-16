@@ -667,3 +667,36 @@ describe('playing with the table (toys)', () => {
     expect(parseGuestMessage({ t: 'toy', op: { op: 'hold', id: 'x', pose } })).toEqual({ t: 'toy', op: { op: 'hold', id: 'x', pose } });
   });
 });
+
+describe('the three-player board through a session', () => {
+  it('a king falls, its side picks an exile out of turn, the clock waits meanwhile', async () => {
+    const { createStateFrom, setBoardMap } = await import('../engine');
+    const state = createStateFrom(
+      {
+        '백e1': { color: 'white', type: 'king' },
+        '백e3': { color: 'white', type: 'rook' },
+        '흑d2': { color: 'black', type: 'king' },
+        '흑a1': { color: 'black', type: 'rook' },
+        '흑b1': { color: 'black', type: 'knight' },
+        '적e1': { color: 'red', type: 'king' },
+      },
+      'white',
+      { map: 'hex3' },
+    );
+    const sq = (n: string) => parseSquare(n)!;
+    const s = new LocalSession(new TestGm(), { roll: () => 6, initialState: { ...state, rules: { ...state.rules, map: 'hex3', turnSeconds: 60 } }, phase: 'playing' });
+    s.request({ type: 'move', from: sq('백e3'), to: sq('흑d2') });
+    expect(s.view().state.surrender).toEqual({ loser: 'black', to: 'white' });
+    expect(s.view().timer).toBeNull();
+    // Nothing but the pick until it is made.
+    s.request({ type: 'endTurn' });
+    expect(s.view().state.surrender).toBeTruthy();
+    s.request({ type: 'exile', at: sq('흑b1') });
+    expect(s.view().state.surrender).toBeUndefined();
+    expect(s.view().state.board[sq('흑a1')]).toMatchObject({ color: 'white' });
+    expect(s.view().timer?.running).toBe(true);
+    expect(parseGuestMessage({ t: 'req', req: { type: 'exile', at: sq('흑b1') } })).toEqual({ t: 'req', req: { type: 'exile', at: sq('흑b1') } });
+    s.dispose();
+    setBoardMap('classic');
+  });
+});

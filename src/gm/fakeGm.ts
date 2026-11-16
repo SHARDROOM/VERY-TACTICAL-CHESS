@@ -1,4 +1,4 @@
-import { AIR, distance, parseSquare, type AttachPoint, type Board, type Color, type Means, type PieceType, type PropPreset, type Square } from '../engine';
+import { AIR, SQUARE_PATTERN, distance, parseSquare, type AttachPoint, type Board, type Color, type Means, type PieceType, type PropPreset, type Square } from '../engine';
 import type { GameMaster, GmRequest, GmRulingJson } from './types';
 import { josa } from '../ui/josa';
 
@@ -162,7 +162,8 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
     const s = parseSquare(n)!;
     return board && !board[s] && board[s + AIR] ? `${n}^` : n;
   };
-  const names = [...action.toLowerCase().matchAll(/[a-h][1-8]/g)].map((m) => up(m[0]));
+  // Square names as this board writes them ("e4", or "흑e4" on the 3-player board), without a ^.
+  const names = [...action.toLowerCase().matchAll(new RegExp(SQUARE_PATTERN().replace('\\^?', ''), 'g'))].map((m) => up(m[0].replace(/\s/g, '')));
   const squares = names.map(parseSquare).filter((s): s is Square => s !== null);
   const mine = (i: number) => (board ? board[squares[i]]?.color === color : true);
   // The acting piece: the first square named, if it is the player's.

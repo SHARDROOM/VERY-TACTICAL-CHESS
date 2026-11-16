@@ -1,4 +1,4 @@
-import { TERRAIN_NAME, parseSquare, squareName, terrainAt, type GameState, type Square } from '../engine';
+import { TERRAIN_NAME, parseSquare, squareName, terrainAt, type GameState, type Square, SQUARE_PATTERN } from '../engine';
 import { PIECE_NAME } from './messages';
 import { josa } from './josa';
 
@@ -10,12 +10,12 @@ import { josa } from './josa';
 
 /** Squares named in a declaration, in order ("e4^" is the air above e4). */
 function namedSquares(text: string): Square[] {
-  return [...text.toLowerCase().matchAll(/[a-h][1-8]\^?/g)].map((m) => parseSquare(m[0])).filter((s): s is Square => s !== null);
+  return [...text.toLowerCase().matchAll(new RegExp(SQUARE_PATTERN(), 'g'))].map((m) => parseSquare(m[0])).filter((s): s is Square => s !== null);
 }
 
 /** The square named as who acts ("d2의 폰이"), if the declaration names one yet. */
 function subjectSquare(text: string): Square | null {
-  const m = text.toLowerCase().match(/([a-h][1-8]\^?)의 [가-힣]+(?:이|가)(?=\s|$)/);
+  const m = text.toLowerCase().match(new RegExp(`(${SQUARE_PATTERN()})의 [가-힣]+(?:이|가)(?=\\s|$)`));
   return m ? parseSquare(m[1]) : null;
 }
 

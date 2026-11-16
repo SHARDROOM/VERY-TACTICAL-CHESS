@@ -1,4 +1,4 @@
-import { AIR, BASE_CLASH, COVER_NAME, ridersOf, MAX_TERRAIN, PROP_PRESET_NAME, RIDE, TERRAIN_NAME, airOf, distance, isAir, parseSquare, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig } from '../engine';
+import { AIR, BASE_CLASH, COVER_NAME, ridersOf, MAX_TERRAIN, PROP_PRESET_NAME, RIDE, TERRAIN_NAME, airOf, distance, isAir, parseSquare, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig , SQUARE_PATTERN, playersOf, squareAt } from '../engine';
 
 const COLOR: Record<Color, string> = { white: '백', black: '흑', red: '적' };
 const PIECE: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
@@ -12,6 +12,19 @@ const BASE_LIST = `폰 ×${BASE_CLASH.pawn}, 나이트 ×${BASE_CLASH.knight}, �
  * The GM's standing instructions. Depends only on the rule numbers, so it stays
  * byte-identical for a whole game and can be prompt-cached.
  */
+/** The 3-player board's rules, for both GM prompts when the room plays it (docs/SPEC.md, "3인 육각 맵"). */
+function hexRules(rules: RuleConfig): string {
+  if (rules.map !== 'hex3') return '';
+  return `
+## 3인 육각 판 (이 게임의 판)
+- 세 사람(백, 흑, 적)이 육각형 판에서 둡니다. 차례는 백 → 흑 → 적 순입니다. "상대"는 나머지 두 사람 모두입니다. 편(color)에는 white, black, red를 씁니다.
+- 판은 세 사람의 반쪽 판(8칸 × 4줄)을 붙인 것입니다. 칸 이름은 반드시 그 반쪽 판 주인의 글자를 앞에 붙여 씁니다: "백e4", "흑a1", "적h2" (공중은 "흑e4^"). 줄은 1~4뿐입니다. 판 그림은 반쪽 판마다 그 주인이 보는 방향으로 그려 두었습니다.
+- 반쪽 판은 4번째 줄끼리 맞닿습니다. 내 a~d줄은 왼쪽 상대의 h~e줄로, e~h줄은 오른쪽 상대의 d~a줄로 곧게 이어집니다(백 기준: 백 d4 위는 적 e4, 백 e4 위는 흑 d4). 가운데 점에는 여섯 개의 d4·e4 칸이 모여 있습니다.
+- 거리는 판을 따라 킹 걸음으로 잽니다(이음매도 그대로 건넙니다). "선언에 나온 칸"의 거리를 참고하세요.
+- 킹이 잡히면 그 편은 잡은 사람에게 항복합니다: 기물 하나만 남겨 누더기 후드(합 ×1)를 쓰고 망명하고, 나머지는 잡은 쪽 편이 됩니다. 망명한 기물이 킹을 잡으면 킹이 됩니다. 킹이 하나만 남으면 그 편이 이깁니다. "누더기 후드" 태그는 시스템이 붙이는 것이니 untag로 떼지 마세요.
+`;
+}
+
 export function buildSystemPrompt(rules: RuleConfig): string {
   return `당신은 "아주 전략적인 체스"의 게임 마스터(GM)입니다. 두 플레이어가 체스를 두다가, 체스 규칙에 없는 기상천외한 행동("특수 행동")을 선언하면 당신이 판정합니다.
 
@@ -113,7 +126,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - 없는 것은 parts에 직접 조합합니다(최대 20개). 한 줄에 부품 하나(또는 ;로 구분): "도형 재질 x y z 폭 높이 깊이 [x회전 y회전 z회전] [#색]". 도형은 box, cylinder, cone, sphere, wedge, torus(원기둥·원뿔·공·고리의 폭은 지름, 고리는 눕힌 링). 재질은 wood, stone, iron, gold, cloth, rope, glass, glow(천·유리·빛남은 #rrggbb 색). 위치와 크기는 칸 단위(한 칸 = 1, 기물 높이는 0.8~1.6), 회전은 도. 예: 꽃 화관 = "torus rope 0 0.03 0 0.24 0.04 0.24; sphere cloth 0.1 0.05 0 0.06 0.06 0.06 #e05a8a; sphere cloth -0.1 0.05 0 0.06 0.06 0.06 #f2c14e".
 - 기물에 붙일 때 attach는 rightHand, leftHand, head, back, feet. 좌표의 원점은 그 붙는 곳이고(head면 머리 꼭대기, feet면 발밑 바닥, 손이면 쥐는 자리), x는 기물의 오른쪽, y는 위, z는 앞(상대 쪽)입니다. 그래서 모자나 화관은 y 0 근처에 두세요. 기물 키의 1.5배 안에 들어가게 작게 만드세요.
 - 칸에 놓일 때(벽, 구덩이, 다리, 사다리) 원점은 칸 가운데 바닥이고, x는 h열 쪽, z는 8줄 쪽입니다. 한 칸 안에 들어가게 만드세요.
-
+${hexRules(rules)}
 ## 절대 규칙 (어기면 판정 전체가 거부됩니다)
 - 킹은 어떤 효과로도 제거하거나 잡거나 변환하거나 편을 바꿀 수 없고, 킹을 새로 만들 수도 없습니다. 킹은 일반 체스 수로만 잡힙니다. 킹에 태그를 붙이는 것은 됩니다.
 - 기물이 없는 칸을 from/at/rider/carrier로 쓰지 마세요. 같은 편 기물이 있는 칸으로 move하지 마세요.
@@ -165,6 +178,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 /** Text board, uppercase = white, rank 8 at the top. */
 /** The ground as a grid, and (if anything floats) the air layer above it. */
 function boardGrid(state: GameState): string {
+  if (state.map === 'hex3') return hexGrid(state);
   const ground = new Map((state.terrain ?? []).map((c) => [c.at, c.cover ? (c.kind === 'wall' ? 'H' : '=') : c.kind === 'wall' ? '#' : 'O']));
   const grid = (layer: number, terrain: boolean) => {
     const rows: string[] = [];
@@ -182,6 +196,32 @@ function boardGrid(state: GameState): string {
   };
   const floating = state.board.some((p, sq) => p && isAir(sq));
   return floating ? `(땅)\n${grid(0, true)}\n\n(공중, 칸 이름 끝에 ^)\n${grid(AIR, false)}` : grid(0, true);
+}
+
+/**
+ * The 3-player board, half by half as each owner sees its own: rank 4 (by the centre) on top,
+ * rank 1 (its back rank) below; each cell the side's letter (w 백, b 흑, r 적) and the piece's.
+ */
+function hexGrid(state: GameState): string {
+  const ground = new Map((state.terrain ?? []).map((c) => [c.at, c.cover ? (c.kind === 'wall' ? 'H' : '=') : c.kind === 'wall' ? '#' : 'O']));
+  const side = { white: 'w', black: 'b', red: 'r' } as const;
+  const cell = (sq: number, terrain: boolean) => {
+    const p = state.board[sq];
+    return p ? side[p.color] + LETTER[p.type] : terrain ? `${ground.get(sq) ?? '.'} ` : '. ';
+  };
+  const half = (h: 0 | 1 | 2, layer: number, terrain: boolean) => {
+    const rows = [`(${COLOR[(['white', 'black', 'red'] as const)[h]]}의 반쪽 판)`];
+    for (let rank = 3; rank >= 0; rank--) {
+      const cells: string[] = [];
+      for (let file = 0; file < 8; file++) cells.push(cell(layer + squareAt(file, rank, h)!, terrain));
+      rows.push(`${rank + 1} ${cells.join(' ')}`);
+    }
+    rows.push('  a  b  c  d  e  f  g  h');
+    return rows.join('\n');
+  };
+  const all = (layer: number, terrain: boolean) => ([0, 1, 2] as const).map((h) => half(h, layer, terrain)).join('\n\n');
+  const floating = state.board.some((p, sq) => p && isAir(sq));
+  return floating ? `(땅)\n${all(0, true)}\n\n(공중, 칸 이름 끝에 ^)\n${all(AIR, false)}` : all(0, true);
 }
 
 function describeTags(p: Piece): string {
@@ -252,7 +292,7 @@ function sanitizeDeclaration(text: string): string {
 
 /** The squares named in a declaration, what stands there, and how far apart they are (for touch vs. ranged). */
 function declaredSquares(action: string, state: GameState): string {
-  const names = [...new Set([...action.toLowerCase().matchAll(/[a-h][1-8]/g)].map((m) => m[0]))];
+  const names = [...new Set([...action.toLowerCase().matchAll(new RegExp(SQUARE_PATTERN().replace('\\^?', ''), 'g'))].map((m) => squareName(parseSquare(m[0].replace(/\s/g, ''))!)))];
   if (!names.length) return '(칸 이름 없음)';
   const at = (n: string) => parseSquare(n)!;
   const what = (n: string) => {
@@ -271,24 +311,23 @@ function declaredSquares(action: string, state: GameState): string {
 
 export function buildUserMessage(action: string, state: GameState, problem?: string): string {
   const me = state.turn;
-  const them = me === 'white' ? 'black' : 'white';
+  const sides = playersOf(state.map ?? 'classic');
+  const them = sides.filter((c) => c !== me);
   return `## 현재 상황
 - 차례: ${COLOR[me]} (보유 AP ${state.ap[me]})
-- 상대: ${COLOR[them]} (보유 AP ${state.ap[them]})
+${them.map((c) => `- 상대: ${COLOR[c]} (보유 AP ${state.ap[c] ?? 0})`).join('\n')}
 - 턴 번호: ${state.turnNumber}
 
 ## 기물 위치
-- 백: ${pieceList(state, 'white')}
-- 흑: ${pieceList(state, 'black')}
+${sides.map((c) => `- ${COLOR[c]}: ${pieceList(state, c)}`).join('\n')}
 
 ## 잡힌 기물 (보드 옆, revive로 되살릴 수 있음)
-- 백: ${capturedList(state, 'white')}
-- 흑: ${capturedList(state, 'black')}
+${sides.map((c) => `- ${COLOR[c]}: ${capturedList(state, c)}`).join('\n')}
 
 ## 지형
 ${terrainList(state)}
 
-## 보드 (대문자 = 백, 소문자 = 흑, . = 빈 칸, # = 벽, H = 사다리 걸린 벽, O = 구덩이, = = 다리 놓인 구덩이; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰; 태그와 탑승은 위 목록 참고)
+## 보드 (${state.map === 'hex3' ? '칸마다 편 글자(w 백, b 흑, r 적)와 기물 글자' : '대문자 = 백, 소문자 = 흑'}, . = 빈 칸, # = 벽, H = 사다리 걸린 벽, O = 구덩이, = = 다리 놓인 구덩이; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰; 태그와 탑승은 위 목록 참고)
 ${boardGrid(state)}
 
 ## 이번 게임의 판례 (최근 ${MAX_PRECEDENTS}개까지, 오래된 순)
@@ -354,7 +393,7 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 - {"type": "cover", "at": "d4", "kind": "bridge", "turns": 2}: 구덩이에 다리(bridge, 건너고 설 수 있음)나 벽에 사다리(ladder, 넘어가기만)를 놓는다. {"type": "clearCover", "at": "d4"}로 치운다(다리 위 기물은 빠짐).
 - tag에는 합 배율(clash 1.2~2.0, 싸움 실력)을, tag·terrain·cover에는 prop(모습: 미리 만든 모양 sword, spear, shield, ladder, bridge, flag, crown, barricade 또는 직접 조합)을 줄 수 있다. 필요 없으면 clash 0, prop의 preset "none".
 칸 이름은 a1~h8 형식(공중의 칸은 e4^처럼 ^를 붙임)이고, 효과는 순서대로 앞 효과가 적용된 보드를 기준으로 합니다.
-
+${hexRules(rules)}
 ## 절대 규칙 (어기면 사건 전체가 취소됩니다)
 - 효과는 1~3개, 최대 ${rules.maxEffects}개.
 - 킹은 제거, 이동으로 잡기, 변환, 편 바꾸기, 생성 모두 불가. 킹에 태그는 가능.
@@ -421,24 +460,23 @@ export function pickSparks(random: () => number = Math.random, count = 2): strin
 
 export function buildChaosUserMessage(state: GameState, inspiration: string[] = [], problem?: string): string {
   const me = state.turn;
-  const them = me === 'white' ? 'black' : 'white';
+  const sides = playersOf(state.map ?? 'classic');
+  const them = sides.filter((c) => c !== me);
   return `## 현재 상황
 - 지금 시작되는 차례: ${COLOR[me]} (보유 AP ${state.ap[me]})
-- 상대: ${COLOR[them]} (보유 AP ${state.ap[them]})
+${them.map((c) => `- 상대: ${COLOR[c]} (보유 AP ${state.ap[c] ?? 0})`).join('\n')}
 - 턴 번호: ${state.turnNumber}
 
 ## 기물 위치
-- 백: ${pieceList(state, 'white')}
-- 흑: ${pieceList(state, 'black')}
+${sides.map((c) => `- ${COLOR[c]}: ${pieceList(state, c)}`).join('\n')}
 
 ## 잡힌 기물 (보드 옆, revive로 되살릴 수 있음)
-- 백: ${capturedList(state, 'white')}
-- 흑: ${capturedList(state, 'black')}
+${sides.map((c) => `- ${COLOR[c]}: ${capturedList(state, c)}`).join('\n')}
 
 ## 지형
 ${terrainList(state)}
 
-## 보드 (대문자 = 백, 소문자 = 흑, . = 빈 칸, # = 벽, H = 사다리 걸린 벽, O = 구덩이, = = 다리 놓인 구덩이; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰)
+## 보드 (${state.map === 'hex3' ? '칸마다 편 글자(w 백, b 흑, r 적)와 기물 글자' : '대문자 = 백, 소문자 = 흑'}, . = 빈 칸, # = 벽, H = 사다리 걸린 벽, O = 구덩이, = = 다리 놓인 구덩이; k 킹, q 퀸, r 룩, b 비숍, n 나이트, p 폰)
 ${boardGrid(state)}
 
 ## 이번 게임의 판례 (최근 ${MAX_PRECEDENTS}개까지, 오래된 순)

@@ -209,3 +209,23 @@ describe('move text on the hexagon', () => {
     expect(parseMoveText('e2e4')).toBeNull();
   });
 });
+
+describe('the GM on the hexagon', () => {
+  beforeAll(() => setBoardMap('hex3'));
+  afterAll(() => setBoardMap('classic'));
+  it('sees three sides, the halves drawn as their owners see them, and squares named with their half', async () => {
+    const { buildSystemPrompt, buildUserMessage } = await import('../../gm/prompt');
+    const { DEFAULT_RULES } = await import('../config');
+    const s = createInitialState({ ...DEFAULT_RULES, map: 'hex3' }, 'hex3');
+    const sys = buildSystemPrompt(s.rules);
+    expect(sys).toContain('## 3인 육각 판');
+    expect(buildSystemPrompt(DEFAULT_RULES)).not.toContain('3인 육각 판');
+    const m = buildUserMessage('흑e2의 폰이 백e2의 폰을 노린다', s);
+    expect(m).toContain('- 상대: 흑');
+    expect(m).toContain('- 상대: 적');
+    expect(m).toContain('- 적: 룩 적a1');
+    expect(m).toContain('(흑의 반쪽 판)');
+    expect(m).toContain('1 br bn bb bq bk bb bn br');
+    expect(m).toContain('흑e2(흑 폰)');
+  });
+});
