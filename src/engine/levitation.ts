@@ -1,6 +1,6 @@
 import { LEVITATE, SHIELD, type Board, type FallingPiece, type GameEvent, type Landing, type Piece, type Square, type TerrainCell } from './types';
 import { AIR, SQUARES, airOf, fileOf, groundOf, isAir, rankOf, squareAt } from './squares';
-import { hasTag, isShielded, withTag, withoutTag } from './tags';
+import { hasTag, isShielded, ridersOf, withTag, withoutTag } from './tags';
 import { blockedSquares, terrainAt } from './terrain';
 
 /*
@@ -157,7 +157,7 @@ export function playFalls(
     const removed = (p: Piece): GameEvent =>
       place.result === 'buried' ? { type: 'removed', piece: p, at, cause: 'pit', exit: 'sink' } : { type: 'removed', piece: p, at, cause: 'fall', exit: 'shatter' };
     after.push(removed(piece));
-    if (piece.rider) after.push(removed(piece.rider));
+    for (const r of ridersOf(piece)) after.push(removed(r));
   }
   return { board, events: [{ type: 'fell', seed, falls }, ...after] };
 }

@@ -36,6 +36,38 @@ export function moveTimesOf(piece: Piece): number {
   return Math.max(1, ...(piece.tags ?? []).map((t) => t.moveTimes ?? 1));
 }
 
+// ---- stacks of riders (탑승): a carrier, its rider, that one's rider, and so on up ----------
+
+/** Everyone riding a piece, bottom to top. */
+export function ridersOf(piece: Piece): Piece[] {
+  const out: Piece[] = [];
+  for (let r = piece.rider; r; r = r.rider) out.push(r);
+  return out;
+}
+
+/** The piece with `rider` (and whoever rides it) on top of everyone riding it already. */
+export function withRiderOnTop(carrier: Piece, rider: Piece): Piece {
+  return { ...carrier, rider: carrier.rider ? withRiderOnTop(carrier.rider, rider) : rider };
+}
+
+/** The topmost rider got off: the carrier without it, and it (null: nobody rides it). */
+export function withoutTopRider(carrier: Piece): { carrier: Piece; rider: Piece } | null {
+  const r = carrier.rider;
+  if (!r) return null;
+  if (!r.rider) return { carrier: { ...carrier, rider: undefined }, rider: r };
+  const up = withoutTopRider(r)!;
+  return { carrier: { ...carrier, rider: up.carrier }, rider: up.rider };
+}
+
+/** The piece and every rider on it changed by `f` (each sees itself without its riders' changes yet). */
+export function mapStack(piece: Piece, f: (p: Piece) => Piece): Piece {
+  const next = f(piece);
+  return piece.rider ? { ...next, rider: mapStack(piece.rider, f) } : next;
+}
+
+/** The whole stack, bottom first. */
+export const stackOf = (piece: Piece): Piece[] => [piece, ...ridersOf(piece)];
+
 /**
  * The carrier on `at` is taken or destroyed: whoever rides it is not taken with it but thrown
  * off, and falls (played like a fall from the air, see levitation.ts): it lands where it comes
@@ -49,7 +81,7 @@ export function unseat(carrier: Piece, at: Square, events: GameEvent[], push?: S
 }
 
 /**
- * A piece that moves off its square puts out its 화상, and so does whoever rides it.
+ * A piece that moves off its square puts out its 화상, and so does everyone riding it.
  * `at` is where it ends up; the events say whose fire went out.
  */
 export function extinguish(piece: Piece, at: Square, events: GameEvent[]): Piece {
@@ -58,9 +90,15 @@ export function extinguish(piece: Piece, at: Square, events: GameEvent[]): Piece
     next = withoutTag(next, BURN);
     events.push({ type: 'untagged', pieceId: piece.id, at, tag: BURN });
   }
-  if (next.rider && isBurning(next.rider)) {
-    events.push({ type: 'untagged', pieceId: next.rider.id, at, tag: BURN });
-    next = { ...next, rider: withoutTag(next.rider, BURN) };
+  if (next.rider) {
+    next = {
+      ...next,
+      rider: mapStack(next.rider, (r) => {
+        if (!isBurning(r)) return r;
+        events.push({ type: 'untagged', pieceId: r.id, at, tag: BURN });
+        return withoutTag(r, BURN);
+      }),
+    };
   }
   return next;
 }
@@ -112,8 +150,16 @@ export function tickTags(
     const own = countDown(p);
     let piece = own.piece;
     if (piece.rider) {
-      const r = countDown(piece.rider);
-      piece = { ...piece, rider: (r.burnt ? burnUp(r.piece, sq) : r.piece) ?? undefined };
+      // Everyone up the stack counts down; one that burns away is gone, and those above it settle
+      // onto the one below.
+      const kept: Piece[] = [];
+      for (const r of ridersOf(piece)) {
+        const c = countDown({ ...r, rider: undefined });
+        const left = c.burnt ? burnUp(c.piece, sq) : c.piece;
+        if (left) kept.push(left);
+      }
+      piece = { ...piece, rider: undefined };
+      for (const r of kept) piece = withRiderOnTop(piece, r);
     }
     if (!own.burnt) return piece;
     const left = burnUp(piece, sq);

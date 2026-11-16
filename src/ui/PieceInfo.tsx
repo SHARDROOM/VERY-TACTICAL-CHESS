@@ -1,4 +1,4 @@
-import { BASE_CLASH, BURN, ELEMENT_NAME, RIDE, clashMultiplier, clashSkill, squareName, type Piece, type Square, type Tag } from '../engine';
+import { BASE_CLASH, BURN, ELEMENT_NAME, RIDE, clashMultiplier, clashSkill, ridersOf, squareName, type Piece, type Square, type Tag } from '../engine';
 import { ELEMENT_LOOK } from '../scene/fxLooks';
 import { COLOR_NAME, PIECE_NAME, movePowers } from './messages';
 
@@ -73,12 +73,12 @@ export function PieceInfo({ piece, square }: { piece: Piece; square: Square }) {
     <div className="hud piece-info">
       <div className="piece-info-square">{squareName(square)}</div>
       <Line piece={piece} />
-      {piece.rider && (
-        <div className="rider">
-          <span className="muted">탑승 중: </span>
-          <Line piece={piece.rider} />
+      {ridersOf(piece).map((r, i) => (
+        <div className="rider" key={r.id}>
+          <span className="muted">{i === 0 ? '탑승 중: ' : '그 위에: '}</span>
+          <Line piece={r} />
         </div>
-      )}
+      ))}
     </div>
   );
 }

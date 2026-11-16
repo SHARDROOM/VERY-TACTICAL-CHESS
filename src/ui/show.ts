@@ -1,4 +1,6 @@
 import {
+  ridersOf,
+  type Piece,
   applyEffects,
   buildTimeline,
   effectiveStaging,
@@ -62,10 +64,13 @@ export function exitFx(show: Show): { fx: Fx; follower: string | null; start: nu
   });
 }
 
+/** Who is on top of the stack on a square (the one that gets off first). */
+const topRider = (p: Piece | null | undefined): string | null => (p ? ridersOf(p).at(-1)?.id ?? null : null);
+
 /** The piece that `effect` sends across the board, on the board as it stood just before it. */
 function moverOf(effect: Effect, board: GameState['board']): string | null {
   if (effect.type === 'move') return board[effect.from]?.id ?? null;
-  if (effect.type === 'unboard') return board[effect.at]?.rider?.id ?? null;
+  if (effect.type === 'unboard') return topRider(board[effect.at]);
   if (effect.type === 'swap') return board[effect.a]?.id ?? null;
   return null;
 }
@@ -136,14 +141,12 @@ export function buildShow(events: GameEvent[], before: GameState, outcomeLabel: 
       const mover = steps[i].board[e.from]!;
       const start = timeline.effectStarts[i] + timeline.effectDurations[i] * 0.9;
       exits.push({ pieceId: mover.id, at: e.to, exit: sunk, start });
-      if (mover.rider) exits.push({ pieceId: mover.rider.id, at: e.to, exit: sunk, start });
       return;
     }
     if (e.type === 'terrain') {
       const victim = steps[i].board[e.at];
       if (!victim || steps[i + 1].board[e.at]) return;
       exits.push({ pieceId: victim.id, at: e.at, exit: sunk, start: timeline.effectStarts[i] });
-      if (victim.rider) exits.push({ pieceId: victim.rider.id, at: e.at, exit: sunk, start: timeline.effectStarts[i] });
       return;
     }
     if (!exit || exit === 'default' || exit === 'knock') return;
@@ -152,7 +155,6 @@ export function buildShow(events: GameEvent[], before: GameState, outcomeLabel: 
     if (at === null || !victim || (e.type === 'move' && victim.color === steps[i].board[e.from]?.color)) return;
     const start = timeline.effectStarts[i] + (e.type === 'move' ? timeline.effectDurations[i] * 0.85 : 0);
     exits.push({ pieceId: victim.id, at, exit, start });
-    if (victim.rider) exits.push({ pieceId: victim.rider.id, at, exit, start });
   });
 
   return {
@@ -212,7 +214,7 @@ export function directionsFor(show: Show, startedAt: number, from = 0): Map<stri
         break;
       }
       case 'unboard': {
-        const id = before[e.at]?.rider?.id;
+        const id = topRider(before[e.at]);
         if (id) {
           const d = get(id);
           d.appearFrom = e.at;

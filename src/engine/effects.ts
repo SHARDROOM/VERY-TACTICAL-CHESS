@@ -20,7 +20,7 @@ import {
 } from './types';
 import type { RuleConfig } from './config';
 import { SQUARES, airOf, isAir, rankOf, sameLayer, squareName } from './squares';
-import { MAX_MOVE_TIMES, extinguish, isShielded, isStunned, unseat, withTag, withoutTag } from './tags';
+import { MAX_MOVE_TIMES, extinguish, isShielded, isStunned, mapStack, unseat, withRiderOnTop, withTag, withoutTag, withoutTopRider } from './tags';
 import { SHIELD } from './types';
 import { MAX_TERRAIN, dropFromBridges } from './terrain';
 import { capturedAfter } from './captured';
@@ -289,13 +289,12 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (rider.color !== carrier.color) return fail('같은 편 기물에만 탈 수 있음');
         if (rider.type === 'king') return fail('킹은 다른 기물에 탈 수 없음');
         if (isStunned(rider)) return fail('기절한 기물은 움직일 수 없음');
-        if (carrier.rider) return fail(`${squareName(e.carrier)}의 기물에는 이미 누군가 타고 있음`);
-        if (rider.rider) return fail('누군가를 태운 기물은 다른 기물에 탈 수 없음');
+        // No limit: it climbs on top of whoever rides the carrier already (with whoever rides it).
         board[e.rider] = null;
         touched.push(e.rider, e.carrier);
         events.push({ type: 'boarded', riderId: rider.id, carrierId: carrier.id, from: e.rider, at: e.carrier });
         const climbed = extinguish(rider, e.carrier, events);
-        board[e.carrier] = { ...carrier, rider: withTag(climbed, { name: RIDE, turnsLeft: null, appliedOnTurn: ctx.turnNumber }) };
+        board[e.carrier] = withRiderOnTop(carrier, withTag(climbed, { name: RIDE, turnsLeft: null, appliedOnTurn: ctx.turnNumber }));
         break;
       }
       case 'unboard': {
@@ -306,8 +305,10 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (board[e.to]) return fail(`내릴 칸 ${squareName(e.to)}이(가) 비어 있지 않음`);
         const wall = blockedLanding(e.to);
         if (wall) return fail(wall);
-        const rider = withoutTag(carrier.rider, RIDE);
-        board[e.at] = { ...carrier, rider: undefined };
+        // The one on top gets off.
+        const off = withoutTopRider(carrier)!;
+        const rider = withoutTag(off.rider, RIDE);
+        board[e.at] = off.carrier;
         touched.push(e.at, e.to);
         events.push({ type: 'unboarded', riderId: rider.id, from: e.at, to: e.to, captured: null });
         board[e.to] = extinguish(rider, e.to, events);
@@ -345,7 +346,8 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (piece.type === 'king') return fail('킹은 편을 바꿀 수 없음');
         if (!isColor(e.color)) return fail('기물 색이 올바르지 않음');
         if (piece.color === e.color) return fail(`${squareName(e.at)}의 기물은 이미 그 편임`);
-        board[e.at as Square] = { ...piece, color: e.color, rider: piece.rider && { ...piece.rider, color: e.color } };
+        // Everyone riding it goes over too.
+        board[e.at as Square] = mapStack(piece, (p) => ({ ...p, color: e.color }));
         touched.push(e.at as Square);
         events.push({ type: 'converted', pieceId: piece.id, at: e.at as Square, to: e.color });
         break;

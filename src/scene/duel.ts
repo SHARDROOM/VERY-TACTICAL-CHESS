@@ -1,7 +1,7 @@
 import { Quaternion, Vector3 } from 'three';
 import { DUEL_TIMING, clashSkill, type Board, type GameEvent, type Piece, type PieceType } from '../engine';
 import { loadPhysics } from '../dice3d/simulate';
-import { addPieceColliders } from './piecePhysics';
+import { addPieceColliders, riderTypes } from './piecePhysics';
 import { squareToWorld } from './coords';
 import { TABLE_TOP_Y } from './WoodTable';
 
@@ -21,8 +21,8 @@ export interface DuelPlan {
   attackerId: string;
   defenderId: string;
   /** Who fights (`rider`: whoever rides it, along for the fight). */
-  attacker: { type: PieceType; rider?: PieceType; home: Vector3; stance: Vector3 };
-  defender: { type: PieceType; rider?: PieceType; home: Vector3 };
+  attacker: { type: PieceType; riders?: PieceType[]; home: Vector3; stance: Vector3 };
+  defender: { type: PieceType; riders?: PieceType[]; home: Vector3 };
   exchanges: number;
   winner: 'attacker' | 'defender';
   finale: Finale;
@@ -41,8 +41,18 @@ export interface DuelRun {
 }
 
 /** Who fights from a square: the carrier (with its rider on top), or the rider itself. */
-const fighter = (p: Piece, id: string): { type: PieceType; rider?: PieceType } =>
-  p.id === id ? { type: p.type, ...(p.rider && { rider: p.rider.type }) } : { type: (p.rider as Piece).type };
+const fighter = (p: Piece, id: string): { type: PieceType; riders?: PieceType[] } => {
+  // The one fighting, with everyone riding it (a rider fighting from its carrier fights alone).
+  const stack = [p, ...riderTypesOf(p)];
+  const at = stack.findIndex((x) => x.id === id);
+  const who = stack[Math.max(0, at)];
+  return { type: who.type, riders: riderTypes(who) };
+};
+const riderTypesOf = (p: Piece): Piece[] => {
+  const out: Piece[] = [];
+  for (let r = p.rider; r; r = r.rider) out.push(r);
+  return out;
+};
 
 /** The duel for a clash on this board. `maxExchanges` cuts it short (the "light" setting). */
 export function planDuel(clash: ClashEvent, board: Board, maxExchanges = 6): DuelPlan | null {
@@ -137,9 +147,9 @@ export async function simulateDuel(plan: DuelPlan): Promise<DuelRun> {
     if (floor > 0.5) world.createCollider(RAPIER.ColliderDesc.cuboid(4, 0.05, 4).setTranslation(0, floor - 0.05, 0).setFriction(0.7).setRestitution(0.15), fixed);
     world.createCollider(RAPIER.ColliderDesc.cuboid(14, 0.3, 9).setTranslation(0, TABLE_TOP_Y - 0.3, 0).setFriction(0.7).setRestitution(0.15), fixed);
     // A weighted base: they rock and stand rather than topple at every touch; a rider rides along, glued on.
-    const body = (side: { type: PieceType; rider?: PieceType }, at: Vector3) => {
+    const body = (side: { type: PieceType; riders?: PieceType[] }, at: Vector3) => {
       const b = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(at.x, at.y, at.z).setLinearDamping(0.2).setAngularDamping(1.2).setCcdEnabled(true));
-      addPieceColliders(RAPIER, world, b, side.type, { rider: side.rider, friction: 0.5, footFriction: 0.6, restitution: 0.45, footDensity: 8 });
+      addPieceColliders(RAPIER, world, b, side.type, { riders: side.riders, friction: 0.5, footFriction: 0.6, restitution: 0.45, footDensity: 8 });
       return b;
     };
     const { attacker: A, defender: D } = plan;

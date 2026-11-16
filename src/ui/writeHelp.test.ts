@@ -25,9 +25,19 @@ describe('writing a declaration by tapping the board', () => {
     expect(taps(start, 'd1', 'b1', 'g8')).toBe('d1의 퀸이 b1의 나이트에게 g8의 나이트에게 ');
   });
 
-  it('the first tap must be on one of your own pieces', () => {
-    expect(taps(start, 'd7')).toMatch(/^! /);
-    expect(taps(start, 'd4')).toMatch(/^! /);
+  it('any order: what it is done to may come first, and the own piece tapped then is who does it', () => {
+    expect(taps(start, 'd7')).toBe('d7의 폰에게 ');
+    expect(taps(start, 'd7', 'd2')).toBe('d7의 폰에게 d2의 폰이 ');
+    expect(taps(start, 'd4', 'b1')).toBe('d4에 b1의 나이트가 ');
+    // Once someone acts, another own piece is acted on.
+    expect(taps(start, 'd2', 'e1')).toBe('d2의 폰이 e1의 킹에게 ');
+  });
+
+  it('a stack is tapped by its carrier (whoever rides it goes along)', () => {
+    const s = createStateFrom({ e1: { color: 'white', type: 'king' }, e8: { color: 'black', type: 'king' }, b1: { color: 'white', type: 'knight' } });
+    const board = [...s.board];
+    board[sq('b1')] = { ...board[sq('b1')]!, rider: { id: 'r', color: 'white', type: 'pawn', tags: [{ name: '탑승', turnsLeft: null, appliedOnTurn: 1 }] } };
+    expect(tapToWrite({ ...s, board }, sq('b1'), '')).toEqual({ text: 'b1의 나이트가 ' });
   });
 
   it('it goes on from what was typed, and names walls and pits', () => {
@@ -46,6 +56,8 @@ describe('writing a declaration by tapping the board', () => {
 
   it('rings who and what the text names', () => {
     expect(writtenMarks('d2의 폰이 d4의 룩에게 불을 붙인다')).toEqual({ actor: sq('d2'), targets: [sq('d4')] });
+    expect(writtenMarks('d7의 폰에게 d2의 폰이 불을 붙인다')).toEqual({ actor: sq('d2'), targets: [sq('d7')] });
+    expect(writtenMarks('d7의 폰에게 ')).toEqual({ actor: -1, targets: [sq('d7')] });
     expect(writtenMarks('함성을 지른다')).toBeNull();
   });
 });

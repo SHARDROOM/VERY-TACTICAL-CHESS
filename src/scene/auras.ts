@@ -27,11 +27,11 @@ export function aurasOn(board: Board): AuraSpec[] {
       const aura = auraOf(t);
       if (aura) out.push({ pieceId: piece.id, element: aura.element, strength: aura.strength, height: PIECE_HEIGHT[piece.type], radius: 0.3 });
     }
-    const rider = piece.rider;
-    for (const t of rider?.tags ?? []) {
-      const aura = auraOf(t);
-      if (rider && aura) {
-        out.push({ pieceId: rider.id, element: aura.element, strength: aura.strength, height: PIECE_HEIGHT[rider.type] * RIDER_SCALE, radius: 0.2 });
+    // Everyone riding it, up the stack.
+    for (let rider = piece.rider; rider; rider = rider.rider) {
+      for (const t of rider.tags ?? []) {
+        const aura = auraOf(t);
+        if (aura) out.push({ pieceId: rider.id, element: aura.element, strength: aura.strength, height: PIECE_HEIGHT[rider.type] * RIDER_SCALE, radius: 0.2 });
       }
     }
   }

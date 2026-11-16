@@ -153,10 +153,27 @@ describe('ride (탑승)', () => {
     const s = rich();
     expect(proposeFails(s, { type: 'board', rider: sq('a2'), carrier: sq('b8') })).toContain('같은 편');
     expect(proposeFails(s, { type: 'board', rider: sq('e1'), carrier: sq('d1') })).toContain('킹');
-    expect(proposeFails(boarded().state, { type: 'board', rider: sq('c2'), carrier: sq('b1') })).toContain('이미');
     expect(proposeFails(s, { type: 'tag', at: sq('a2'), tag: '탑승', turns: 0 })).toContain('board');
     expect(proposeFails(s, { type: 'unboard', at: sq('b1'), to: sq('a3') })).toContain('타고 있는 기물이 없음');
     expect(proposeFails(boarded().state, { type: 'unboard', at: sq('b1'), to: sq('d2') })).toContain('비어 있지 않음');
+  });
+
+  it('no limit: more climb on top; the one on top gets off first; a carrier climbs on with its riders', () => {
+    // a2 rides b1; c2 climbs on top of it.
+    const two = act(boarded().state, { type: 'board', rider: sq('c2'), carrier: sq('b1') });
+    const stack = two.state.board[sq('b1')]!;
+    expect(stack.rider?.type).toBe('pawn');
+    expect(stack.rider?.rider).toMatchObject({ id: two.state.board[sq('b1')]!.rider!.rider!.id, tags: [{ name: '탑승' }] });
+    expect(two.state.board[sq('c2')]).toBeNull();
+    // Off comes the top one (c2's pawn), the other stays.
+    const topId = stack.rider!.rider!.id;
+    const off = act(two.state, { type: 'unboard', at: sq('b1'), to: sq('c3') });
+    expect(off.state.board[sq('c3')]).toMatchObject({ id: topId, tags: [] });
+    expect(off.state.board[sq('b1')]?.rider?.rider).toBeUndefined();
+    // The b1 stack climbs onto the g1 knight, riders and all.
+    const tower = act(off.state, { type: 'board', rider: sq('b1'), carrier: sq('g1') });
+    const g1 = tower.state.board[sq('g1')]!;
+    expect([g1.type, g1.rider?.type, g1.rider?.rider?.type]).toEqual(['knight', 'knight', 'pawn']);
   });
 
   it('a rider is not on the board, so it neither moves alone nor attacks', () => {

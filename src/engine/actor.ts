@@ -1,6 +1,6 @@
 import { MEANS, MEANS_NAME, type Board, type Color, type Effect, type Means, type Ruling, type Square } from './types';
 import { fileOf, isAir, rankOf, squareName } from './squares';
-import { isStunned } from './tags';
+import { isStunned, stackOf } from './tags';
 import { applyEffects, type EffectContext } from './effects';
 
 /*
@@ -41,7 +41,7 @@ export function targetsOf(e: Effect): Square[] {
 
 /** Where the piece with this id stands (or rides), or null if it is gone. */
 function squareOf(board: Board, id: string): Square | null {
-  const sq = board.findIndex((p) => p?.id === id || p?.rider?.id === id);
+  const sq = board.findIndex((p) => !!p && stackOf(p).some((x) => x.id === id));
   return sq === -1 ? null : sq;
 }
 

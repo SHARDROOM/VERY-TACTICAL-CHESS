@@ -1,11 +1,11 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { Euler, Quaternion, Vector2, Vector3, type Group, type Mesh, type MeshPhysicalMaterial } from 'three';
-import { BURN, CORE_TAGS, RIDE, SHIELD, STUN, hasTag, type Color, type Entrance, type Exit, type MotionStyle, type Piece, type PieceType } from '../engine';
+import { BURN, CORE_TAGS, RIDE, SHIELD, STUN, hasTag, ridersOf, type Color, type Entrance, type Exit, type MotionStyle, type Piece, type PieceType } from '../engine';
 import { PIECE_HEIGHT, pieceParts } from './pieceGeometry';
 import { FoldingBadges, ShieldBubble, StunStars, type Chip } from './TagEffects';
 import { playSfx } from '../audio/sfx';
-import { ballistic, simulatePiece, tumble, type BodyPose, type Obstacle, type PieceRun } from './piecePhysics';
+import { ballistic, riderTypes, simulatePiece, stackHeight, tumble, type BodyPose, type Obstacle, type PieceRun } from './piecePhysics';
 import { TABLE_TOP_Y } from './WoodTable';
 import { actPose, easeInOut, entrancePose, stylePose, swapPose, swerve, type PieceDirection, type Pose } from './pieceMotion';
 import { AIR_Y, squareToWorld } from './coords';
@@ -15,7 +15,7 @@ import { chunksOf } from './debris';
 import { seedOf, seeded } from './boardPhysics';
 import { Grip, holdingSomething, onDepth, tableObstacles, useTable } from './tableDrag';
 import { LiveDrag } from './liveDrag';
-import { onToy, poseOf, readPose, tellToy } from './toys';
+import { onPushed, onToy, poseOf, readPose, tellToy } from './toys';
 import { PropOnPiece } from './PropMesh';
 
 /** What the pieces share for physics: which side the dice are on, and where taken pieces lie. */
@@ -96,6 +96,35 @@ export function tagChips(piece: Piece): Chip[] {
 }
 
 /** Tag visuals for one piece whose top is at `top`. */
+/** Who is on top of a piece's stack (null: nobody rides it). */
+const topRiderId = (p: Piece): string | null => ridersOf(p).at(-1)?.id ?? null;
+
+const withoutRide = (p: Piece): Piece => ({ ...p, tags: p.tags?.filter((t) => t.name !== RIDE) });
+
+/**
+ * Whoever rides a piece, stacked: each stands on the top of the one below (`below` is the kind
+ * under the first). `rows`: where each one's tag chips go, in its own frame. `refFor` gets each
+ * one's group (index from the bottom).
+ */
+function RiderStack({ riders, below, rows, facing, refFor, index = 0 }: {
+  riders: Piece[];
+  below: PieceType;
+  rows: number[];
+  facing: (p: Piece) => number;
+  refFor: (i: number, g: Group | null) => void;
+  index?: number;
+}) {
+  const [r, ...rest] = riders;
+  if (!r) return null;
+  return (
+    <group ref={(g) => refFor(index, g)} position={[0, PIECE_HEIGHT[below] - 0.06, 0]} scale={RIDER_SCALE}>
+      <PieceModel type={r.type} color={r.color} facing={facing(r)} />
+      <TagDecorations piece={withoutRide(r)} top={PIECE_HEIGHT[r.type]} chipsAbove={rows[0]} />
+      <RiderStack riders={rest} below={r.type} rows={rows.slice(1)} facing={facing} refFor={refFor} index={index + 1} />
+    </group>
+  );
+}
+
 /** `chipsAbove`: where its tag chips go instead of over its own head (over a rider's, which would hide them). */
 function TagDecorations({ piece, top, chipsAbove }: { piece: Piece; top: number; chipsAbove?: number }) {
   const chips = tagChips(piece);
@@ -238,13 +267,17 @@ function planMove(from: Vector3, to: Vector3, captured: boolean): Omit<Motion, '
  */
 export function PieceMesh({ piece, position, selected, captured = false, popIn = false, direction, exit, shards, onClick, onHover }: Props) {
   const group = useRef<Group>(null);
-  const riderRef = useRef<Group>(null);
+  /** The first rider's group (it sways, the stack with it), the top one's (it hops on), and each. */
+  const riderRef = useRef<Group | null>(null);
+  const topRef = useRef<Group | null>(null);
+  const riderGroups = useRef<(Group | null)[]>([]);
   /** Which of this show's trips comes next. */
   const tripIndex = useRef(0);
   const glow = useRef<Glow | null>(null);
   const glowOn = useRef(false);
   const flourish = useRef<Flourish | null>(null);
-  const riderHop = useRef<{ from: Vector3; start: number } | null>(null);
+  /** The rider now on top hopping on: from (its parent's frame), when, and where it ends (its parent's top). */
+  const riderHop = useRef<{ from: Vector3; start: number; base: number } | null>(null);
   /**
    * The rider's sway: it is held on loosely, so it leans against the carrier's every start, stop
    * and knock (its feet stay put) and springs back, wobbling a little. Tilt (radians) about the
@@ -253,7 +286,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const sway = useRef({ tilt: new Vector2(), rate: new Vector2(), last: null as Vector3 | null, vel: new Vector3() });
   const shownSquash = useRef(1);
   const travel = useRef({ x: 0, z: 0 });
-  const prev = useRef({ type: piece.type, color: piece.color, rider: piece.rider?.id ?? null });
+  const prev = useRef({ type: piece.type, color: piece.color, rider: topRiderId(piece) });
   const wasCaptured = useRef(captured);
   /** How it last left the board (a shattered piece comes back by gathering its chunks). */
   const lastExit = useRef(exit);
@@ -469,6 +502,35 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [captured, piece.id]);
 
+  // A piece moving past on the board knocks this taken piece about (a board simulation's track).
+  useEffect(() => {
+    if (!captured) return;
+    return onPushed(piece.id, (frames, steps, dt, start) => {
+      if (held.current || live.current || carriedThere.current || exitingRef.current || !physics) return;
+      const k = (steps - 1) * 7;
+      const final = {
+        position: new Vector3(frames[k], frames[k + 1], frames[k + 2]),
+        quaternion: new Quaternion(frames[k + 3], frames[k + 4], frames[k + 5], frames[k + 6]),
+      };
+      const still: Motion = { from: final.position, to: final.position, fromScale: shownScale.current, toScale: shownScale.current, delay: 0, duration: 0.2, arc: 0, startedAt: null, kind: 'captured' };
+      phys.current = {
+        purpose: 'fidget',
+        run: { frames, steps, dt, final, impacts: [] },
+        startedAt: null,
+        delay: Math.max(0, (start - performance.now()) / 1000),
+        fromScale: shownScale.current,
+        toScale: shownScale.current,
+        settleTo: null,
+        settle: null,
+        sounded: -1,
+        fallback: still,
+      };
+      motion.current = null;
+      physics.resting.set(piece.id, { type: piece.type, scale: shownScale.current, pose: final });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captured, piece.id]);
+
   /** Burns down, shatters, vanishes or sinks on the spot `from`, then turns up beside the board at `to`. */
   const beginExit = (exit: Exit, from: Vector3, to: Vector3, delay: number) => {
     phys.current = null;
@@ -490,15 +552,16 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     };
   }, []);
   // ...and a rider by its own id, where it sits on top.
-  const riderId = piece.rider?.id;
+  // ...and everyone riding it by their own ids, where each sits in the stack.
+  const riderIds = ridersOf(piece).map((r) => r.id).join(',');
   useEffect(() => {
-    const r = riderRef.current;
-    if (!physics || !r || !riderId) return;
-    physics.objects.set(riderId, r);
-    return () => {
-      if (physics.objects.get(riderId) === r) physics.objects.delete(riderId);
-    };
-  }, [riderId]);
+    if (!physics || !riderIds) return;
+    const ids = riderIds.split(',');
+    const groups = ids.map((_, i) => riderGroups.current[i]);
+    ids.forEach((id, i) => groups[i] && physics.objects.set(id, groups[i]!));
+    return () => ids.forEach((id, i) => physics.objects.get(id) === groups[i] && physics.objects.delete(id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [riderIds]);
 
   // A piece already lying beside the board when the scene opens is solid for later throws.
   useEffect(() => {
@@ -545,7 +608,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       motion.current,
       {
         type: piece.type,
-        ...(piece.rider && { rider: piece.rider.type }),
+        riders: riderTypes(piece),
         scale: targetScale,
         start: { position: start, quaternion: tilt },
         velocity: new Vector3(0, -1, 0),
@@ -567,7 +630,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   // Changes the show asked for: a new shape, a new side, a rider hopping on.
   useEffect(() => {
     const was = prev.current;
-    prev.current = { type: piece.type, color: piece.color, rider: piece.rider?.id ?? null };
+    prev.current = { type: piece.type, color: piece.color, rider: topRiderId(piece) };
     if (!direction || captured) return;
     const now = performance.now();
     if (direction.morph && was.type !== piece.type) {
@@ -578,11 +641,17 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       flourish.current = { kind: 'swirl', start: now, duration: 750 };
       glow.current = { color: '#b48bff', peak: 1.2, start: now, duration: 800 };
     }
-    if (direction.boardFrom !== undefined && piece.rider && was.rider !== piece.rider.id) {
+    const top = topRiderId(piece);
+    if (direction.boardFrom !== undefined && top && was.rider !== top) {
+      // The one now on top hops on from its square, up onto the top of the stack.
       const [fx, , fz] = squareToWorld(direction.boardFrom);
-      riderHop.current = { from: new Vector3(fx - position[0], 0, fz - position[2]), start: now };
+      const all = ridersOf(piece);
+      let floor = 0;
+      for (let i = 0; i < all.length - 1; i++) floor += PIECE_HEIGHT[i === 0 ? piece.type : all[i - 1].type] - 0.06;
+      const parentType = all.length > 1 ? all[all.length - 2].type : piece.type;
+      riderHop.current = { from: new Vector3(fx - position[0], -floor, fz - position[2]), start: now, base: PIECE_HEIGHT[parentType] - 0.06 };
     }
-  }, [piece.type, piece.color, piece.rider?.id]);
+  }, [piece.type, piece.color, topRiderId(piece)]);
 
   // A new destination: plan the trip from wherever the piece is now (once a recording it is
   // playing is over: the end of the recording plans it then).
@@ -726,7 +795,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         scripted,
         {
           type: piece.type,
-          ...(piece.rider && { rider: piece.rider.type }),
+          riders: riderTypes(piece),
           scale: targetScale,
           start: { position: start, quaternion: shownQ.current.clone() },
           velocity,
@@ -977,11 +1046,11 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
 
     // A rider hopping on from its square.
     const hop = riderHop.current;
-    const r = riderRef.current;
+    const r = topRef.current;
     if (hop && r) {
       const q = Math.min(1, (now - hop.start) / 600);
       const e = easeInOut(q);
-      const base = PIECE_HEIGHT[piece.type] - 0.06;
+      const base = hop.base;
       r.position.set(hop.from.x * (1 - e), hop.from.y + (base - hop.from.y) * e + Math.sin(Math.PI * q) * 0.7, hop.from.z * (1 - e));
       r.scale.setScalar(1 + (RIDER_SCALE - 1) * e);
       if (q >= 1) {
@@ -1082,8 +1151,22 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
 
   const facing = (p: Piece) => (p.type === 'knight' ? knightFacing(p.color, position[0]) : 0);
   const height = PIECE_HEIGHT[piece.type];
-  const rider = piece.rider;
-  const riderBase = height - 0.06;
+  const riders = ridersOf(piece);
+  // Everyone's tag chips go above the top of the stack, one row each (riders would hide them
+  // otherwise): where each one's row is, in its own frame.
+  const chipRows = useMemo(() => {
+    const stack = [piece, ...riders];
+    const top = stackHeight(piece);
+    let row = 0;
+    let base = 0;
+    return stack.map((p, i) => {
+      if (i > 0) base += PIECE_HEIGHT[stack[i - 1].type] - 0.06;
+      const y = top + row * 0.34 - base;
+      if (tagChips(withoutRide(p)).length) row++;
+      return y;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [piece]);
 
   // What stands beside the board after a staged exit; while the exit plays, the piece itself.
   const remains = captured && exit && !exiting ? exit : null;
@@ -1137,19 +1220,19 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
           <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
         </mesh>
       )}
-      {!captured && (
-        <TagDecorations
-          piece={piece}
-          top={height}
-          // Over the rider (and its own chips, if it has any).
-          chipsAbove={rider ? riderBase + PIECE_HEIGHT[rider.type] * RIDER_SCALE + (tagChips({ ...rider, tags: rider.tags?.filter((t) => t.name !== RIDE) }).length ? 0.34 : 0) : undefined}
+      {!captured && <TagDecorations piece={piece} top={height} chipsAbove={riders.length ? chipRows[0] : undefined} />}
+      {riders.length > 0 && (
+        <RiderStack
+          riders={riders}
+          below={piece.type}
+          rows={chipRows.slice(1)}
+          facing={facing}
+          refFor={(i, g) => {
+            if (i === 0) riderRef.current = g;
+            if (i === riders.length - 1) topRef.current = g;
+            riderGroups.current[i] = g;
+          }}
         />
-      )}
-      {rider && (
-        <group ref={riderRef} position={[0, riderBase, 0]} scale={RIDER_SCALE}>
-          <PieceModel type={rider.type} color={rider.color} facing={facing(rider)} />
-          <TagDecorations piece={{ ...rider, tags: rider.tags?.filter((t) => t.name !== RIDE) }} top={PIECE_HEIGHT[rider.type]} />
-        </group>
       )}
     </group>
     </>

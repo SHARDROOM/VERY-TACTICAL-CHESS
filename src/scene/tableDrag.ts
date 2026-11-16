@@ -2,11 +2,10 @@ import { createContext, useContext } from 'react';
 import { Plane, Vector3, type Camera, type Ray } from 'three';
 import { isAir, squareAt, type Board } from '../engine';
 import { squareToWorld, worldToBoard } from './coords';
-import { PIECE_HEIGHT } from './pieceGeometry';
 import { diceObstacles } from './toys';
 import { TABLE_TOP_Y } from './WoodTable';
 import { restingChunks } from './debris';
-import type { Obstacle, Obstacles } from './piecePhysics';
+import { riderTypes, stackHeight, type Obstacle, type Obstacles } from './piecePhysics';
 
 /*
  * Picking things up off the table (docs/SPEC.md, "만지작거리기"): taken pieces beside the board and
@@ -72,7 +71,7 @@ function topAt(board: Board, x: number, z: number): number {
   const sq = squareAt(Math.round(file), Math.round(rank));
   const p = sq === null ? null : board[sq];
   if (!p) return 0;
-  return p.rider ? PIECE_HEIGHT[p.type] - 0.06 + PIECE_HEIGHT[p.rider.type] : PIECE_HEIGHT[p.type];
+  return stackHeight(p);
 }
 
 /**
@@ -180,7 +179,7 @@ export function tableObstacles(hands: TableHands, except?: { square?: number; ch
   const pieces: Obstacles['pieces'] = [];
   board.forEach((p, sq) => {
     if (!p || isAir(sq) || sq === except?.square) return;
-    pieces.push({ type: p.type, ...(p.rider && { rider: p.rider.type }), at: squareToWorld(sq) });
+    pieces.push({ type: p.type, riders: riderTypes(p), at: squareToWorld(sq) });
   });
   const chunks = restingChunks()
     .filter((c) => c.key !== except?.chunkKey)

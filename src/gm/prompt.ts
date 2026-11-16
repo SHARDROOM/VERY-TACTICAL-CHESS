@@ -1,4 +1,4 @@
-import { AIR, BASE_CLASH, COVER_NAME, MAX_TERRAIN, PROP_PRESET_NAME, RIDE, TERRAIN_NAME, airOf, distance, isAir, parseSquare, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig } from '../engine';
+import { AIR, BASE_CLASH, COVER_NAME, ridersOf, MAX_TERRAIN, PROP_PRESET_NAME, RIDE, TERRAIN_NAME, airOf, distance, isAir, parseSquare, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig } from '../engine';
 
 const COLOR: Record<Color, string> = { white: '백', black: '흑' };
 const PIECE: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
@@ -55,8 +55,8 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - {"type": "remove", "at": "d7"}: at 칸의 기물을 보드에서 없앤다.
 - {"type": "tag", "at": "g8", "tag": "기절", "turns": 1}: 기물에 태그를 붙인다. turns는 그 기물 주인의 턴 기준 지속 턴 수이고, 0이면 영구다. clash에 합 배율(1.2~2.0, 없으면 0)을, prop에 태그의 모습(조형물, 없으면 preset "none")을 줄 수 있다. moveAs에 기물 종류 목록을 주면 그 태그가 있는 동안 원래 움직임에 더해 그 기물들처럼도 움직이고(없으면 빈 목록), moveTimes에 2~3을 주면 한 턴에 일반 수를 그만큼 연속으로 둔다(없으면 1). 아래 "이동 능력" 참고.
 - {"type": "untag", "at": "g8", "tag": "기절"}: 기물에서 태그를 뗀다.
-- {"type": "board", "rider": "a2", "carrier": "b1"}: rider 칸의 기물이 같은 편 carrier 기물에 올라탄다.
-- {"type": "unboard", "at": "b1", "to": "a3"}: at 칸 기물에 타고 있던 기물이 빈 칸 to로 내린다.
+- {"type": "board", "rider": "a2", "carrier": "b1"}: rider 칸의 기물(과 그 위에 탄 기물들)이 같은 편 carrier 기물에 올라탄다. 이미 누가 타 있으면 그 맨 위에 쌓인다.
+- {"type": "unboard", "at": "b1", "to": "a3"}: at 칸 기물에 탄 기물 중 맨 위의 기물이 빈 칸 to로 내린다.
 - {"type": "transform", "at": "a2", "into": "knight"}: 기물을 다른 종류(queen, rook, bishop, knight, pawn)로 바꾼다.
 - {"type": "spawn", "at": "e4", "color": "white", "piece": "pawn"}: 빈 칸에 새 기물을 만든다.
 - {"type": "convert", "at": "e2", "color": "black"}: 기물(과 그 기물에 탄 기물)이 상대 편으로 넘어간다. 매수, 배신, 정체는 스파이 같은 행동에 쓴다.
@@ -71,7 +71,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 ## 태그의 의미
 - "기절": 그 기물은 일반 수로도 효과로도 움직일 수 없고, 상대 킹을 체크하지도 못한다.
 - "보호막": 그 기물이 다음에 잡히거나 제거될 때 한 번 막아 주고 사라진다. 잡으려던 기물은 제자리에 남는다.
-- "탑승": board 효과로만 생긴다. 탄 기물은 태운 기물과 함께 움직이고, 혼자 움직이거나 공격하지 못한다. 태운 기물이 잡히면 함께 잡힌다.
+- "탑승": board 효과로만 생긴다. 탄 기물은 태운 기물과 함께 움직이고, 혼자 움직이거나 공격하지 못한다. 여러 기물이 위로 쌓여 탈 수 있다. 태운 기물이 잡히거나 없어지면 탄 기물들은 함께 잡히지 않고 굴러떨어진다(떨어진 빈 칸에 서고, 구덩이나 판 밖이면 사라진다).
 - "화상": 불이 붙은 기물. 지속 턴이 다할 때까지 그 기물이 칸을 옮기지 않으면(일반 수든 효과든) 불타서 없어진다. 옮기면 불이 꺼진다. 보호막이 있으면 보호막이 대신 깨진다. 1턴 이상이어야 하고(보통 2~3턴), 킹에는 붙일 수 없다. 불을 붙이는 행동에는 서사용 태그 대신 이것을 쓰세요.
 - "공중부양": 땅의 기물에 붙이면 그 기물이 바로 위 공중 칸(예: e4 → e4^)으로 떠오른다. 아래 "공중" 참고. 띄우는 행동에는 서사용 태그 대신 이것을 쓰세요.
 - 그 밖의 이름(예: "불타는 중", "용기백배"): 규칙에는 영향이 없는 서사용 태그. 이후 판정에서 당신이 참고한다. 짧게(20자 이내) 지으세요.
@@ -119,7 +119,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - 킹은 어떤 효과로도 제거하거나 잡거나 변환하거나 편을 바꿀 수 없고, 킹을 새로 만들 수도 없습니다. 킹은 일반 체스 수로만 잡힙니다. 킹에 태그를 붙이는 것은 됩니다.
 - 기물이 없는 칸을 from/at/rider/carrier로 쓰지 마세요. 같은 편 기물이 있는 칸으로 move하지 마세요.
 - 기절한 기물은 move나 board로 움직일 수 없습니다.
-- board: 같은 편끼리만, 킹은 탈 수 없음, 한 기물에는 한 명만 탈 수 있음. 탑승은 tag 효과로 붙이거나 뗄 수 없습니다.
+- board: 같은 편끼리만, 킹은 탈 수 없음. 몇 명이든 탈 수 있다(위로 쌓임). 탑승은 tag 효과로 붙이거나 뗄 수 없습니다.
 - spawn, unboard, revive의 도착 칸은 비어 있어야 하고 벽이나 구덩이도 없어야 합니다.
 - swap은 두 칸 모두에 기물이 있어야 하고, 둘 다 기절하지 않아야 합니다.
 - revive는 "잡힌 기물" 목록에 있는 기물만 되살립니다. 킹은 되살릴 수 없습니다.
@@ -203,7 +203,8 @@ function pieceList(state: GameState, color: Color): string {
   const items: string[] = [];
   state.board.forEach((p, sq) => {
     if (p?.color !== color) return;
-    const rider = p.rider ? ` (탑승: ${PIECE[p.rider.type]}${describeTags(p.rider)})` : '';
+    const riders = ridersOf(p);
+    const rider = riders.length ? ` (탑승: ${riders.map((r, i) => `${i ? '그 위에 ' : ''}${PIECE[r.type]}${describeTags(r)}`).join(', ')})` : '';
     items.push(`${PIECE[p.type]} ${squareName(sq)}${describeTags(p)}${rider}`);
   });
   return items.join(', ') || '(없음)';
@@ -259,7 +260,7 @@ function declaredSquares(action: string, state: GameState): string {
     const p = state.board[at(n)];
     const up = state.board[airOf(at(n))];
     const ground = state.terrain?.find((c) => c.at === at(n));
-    const here = p ? `${COLOR[p.color]} ${PIECE[p.type]}${p.rider ? `(탑승: ${PIECE[p.rider.type]})` : ''}` : ground ? TERRAIN_NAME[ground.kind] : '빈 칸';
+    const here = p ? `${COLOR[p.color]} ${PIECE[p.type]}${p.rider ? `(탑승: ${ridersOf(p).map((r) => PIECE[r.type]).join(', ')})` : ''}` : ground ? TERRAIN_NAME[ground.kind] : '빈 칸';
     return up ? `${here}, 그 위 공중 ${n}^: ${COLOR[up.color]} ${PIECE[up.type]}` : here;
   };
   const lines = [`- 칸: ${names.map((n) => `${n}(${what(n)})`).join(', ')}`];

@@ -10,7 +10,7 @@ export { parseMoveText } from './notation';
 export { squareName, parseSquare, fileOf, rankOf, squareAt, opponent, AIR, SQUARES, isAir, groundOf, airOf, sameLayer } from './squares';
 export { applyEffects, validateRuling, type EffectContext } from './effects';
 export { checkActor, distance, targetsOf } from './actor';
-export { hasTag, isStunned, isShielded, isBurning, isFloating, CORE_TAGS, MAX_MOVE_TIMES, movePatterns, moveTimesOf } from './tags';
+export { hasTag, isStunned, isShielded, isBurning, isFloating, CORE_TAGS, MAX_MOVE_TIMES, movePatterns, moveTimesOf, ridersOf, stackOf } from './tags';
 export { DEFAULT_RULES, withDefaultRules, type RuleConfig } from './config';
 export * from './staging';
 export { buildTimeline, effectDuration, moveDuration, ACT_DURATION, EXIT_DURATION, REVIVE_DURATION, SWAP_DURATION, type Timeline } from './timeline';

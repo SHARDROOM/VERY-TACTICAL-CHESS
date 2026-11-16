@@ -6,7 +6,7 @@ import { fileOf, isAir, rankOf, type Board, type CapturedPiece, type Color, type
 import { squareToWorld } from './coords';
 import { fallStart } from './boardPhysics';
 import { TableContext, depthMoved, holdingSomething, type TableHands } from './tableDrag';
-import { diceObstacles } from './toys';
+import { diceObstacles, setTakenSource } from './toys';
 import { clearChunks, restingChunks } from './debris';
 import { PieceMesh, PiecePhysicsContext, type PiecePhysics } from './PieceMesh';
 import type { Obstacle } from './piecePhysics';
@@ -423,6 +423,11 @@ export function BoardScene({
   );
   // Leaving the table (a new game, the menu): the chunks lying about go with it.
   useEffect(() => () => clearChunks(), []);
+  // Where the taken pieces lie, for pieces moving past to push them about.
+  useEffect(() => {
+    setTakenSource(() => [...resting.current.entries()].map(([id, o]) => ({ ...o, id })));
+    return () => setTakenSource(null);
+  }, []);
 
   return (
     // No long-press menu on the table (it would open while drawing or dragging).

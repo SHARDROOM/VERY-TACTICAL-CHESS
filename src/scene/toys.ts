@@ -1,4 +1,5 @@
 import { Quaternion, Vector3 } from 'three';
+import type { Obstacle } from './piecePhysics';
 import type { Pose, ToyOp } from '../session/toy';
 import { d20Vertices } from '../dice3d/d20';
 
@@ -82,3 +83,30 @@ export function diceObstacles(): { hull: Float32Array; p: Vector3; q: Quaternion
     return { hull, p: d.p.clone(), q: d.q.clone() };
   });
 }
+
+// ---- taken pieces lying about, for the board simulations ---------------------------
+
+/** Simulation tracks for taken pieces are keyed by this and the piece's id. */
+export const TAKEN = 'taken:';
+
+let takenSource: (() => (Obstacle & { id: string })[]) | null = null;
+/** Where the taken pieces lie (BoardScene tells). */
+export function setTakenSource(fn: (() => (Obstacle & { id: string })[]) | null): void {
+  takenSource = fn;
+}
+export const takenNow = () => takenSource?.() ?? [];
+
+type TrackHandler = (frames: Float32Array, steps: number, dt: number, start: number) => void;
+const pushers = new Map<string, TrackHandler>();
+/** A taken piece listens for being pushed about by a piece moving past (a board simulation). */
+export function onPushed(id: string, handler: TrackHandler): () => void {
+  pushers.set(id, handler);
+  return () => {
+    if (pushers.get(id) === handler) pushers.delete(id);
+  };
+}
+/** The taken-piece tracks of a board simulation, played from `start`. */
+export function playTakenTracks(tracks: ReadonlyMap<string, Float32Array>, steps: number, dt: number, start: number): void {
+  for (const [key, frames] of tracks) if (key.startsWith(TAKEN)) pushers.get(key.slice(TAKEN.length))?.(frames, steps, dt, start);
+}
+

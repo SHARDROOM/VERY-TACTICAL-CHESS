@@ -5,6 +5,7 @@ import { CHUNK, addChunk, chunkPose, clearChunks, getChunk, playChunk, restingCh
 import { Grip, LIFT, TABLE_LIFT, carryPoint } from './tableDrag';
 import { TABLE_TOP_Y } from './WoodTable';
 import { simulateRomp } from './boardPhysics';
+import { TAKEN } from './toys';
 import { fragmentsOf } from './shatter';
 import { squareToWorld } from './coords';
 
@@ -54,6 +55,21 @@ describe('chunks lying about', () => {
       seed: 3,
     });
     const t = run.tracks.get(CHUNK + 'x#0');
+    expect(t).toBeDefined();
+    const last = t!.length - 7;
+    expect(Math.hypot(t![last] - x, t![last + 2] - z)).toBeGreaterThan(0.3);
+  });
+
+  it('a piece sliding through a taken piece left on the board pushes it out of the way too', async () => {
+    const s = createStateFrom({ a1: { color: 'white', type: 'rook' }, e1: { color: 'white', type: 'king' }, e8: { color: 'black', type: 'king' } });
+    const [x, , z] = squareToWorld(parseSquare('a4')!);
+    const run = await simulateRomp({
+      board: s.board,
+      movers: [{ id: s.board[parseSquare('a1')!]!.id, type: 'rook', from: parseSquare('a1')!, to: parseSquare('a6')!, mode: 'slide' }],
+      taken: [{ id: 'gone', type: 'pawn', scale: 1, pose: { position: new Vector3(x, 0, z), quaternion: new Quaternion() } }],
+      seed: 3,
+    });
+    const t = run.tracks.get(TAKEN + 'gone');
     expect(t).toBeDefined();
     const last = t!.length - 7;
     expect(Math.hypot(t![last] - x, t![last + 2] - z)).toBeGreaterThan(0.3);

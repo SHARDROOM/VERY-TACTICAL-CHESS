@@ -1,5 +1,5 @@
 import { SHIELD, type Piece, type PieceType } from './types';
-import { hasTag } from './tags';
+import { hasTag, stackOf } from './tags';
 
 /*
  * 합 (clash): when a piece tries to capture one that can stand its ground (it has a clash
@@ -23,20 +23,20 @@ export const CLASH_ROLLS = 12;
 const tagMultiplier = (p: Piece): number => Math.max(1, ...(p.tags ?? []).map((t) => t.clash ?? 1));
 
 /**
- * Its fighting skill: the best tag multiplier among a piece's and its rider's (1 if none). A
+ * Its fighting skill: the best tag multiplier in its stack (it and everyone riding it; 1 if none). A
  * piece with skill wears a weapon of some kind, stands its ground and cuts down whom it beats.
  */
 export function clashSkill(piece: Piece): number {
-  return Math.max(tagMultiplier(piece), piece.rider ? tagMultiplier(piece.rider) : 1);
+  return Math.max(...stackOf(piece).map(tagMultiplier));
 }
 
 /**
  * What its d20 is multiplied by in a clash: its kind's base times its best tag's multiplier
- * (in hundredths). With a rider, whichever of the two fights better.
+ * (in hundredths). With riders, whichever of the stack fights best.
  */
 export function clashMultiplier(piece: Piece): number {
   const own = (p: Piece) => Math.round(BASE_CLASH[p.type] * tagMultiplier(p) * 100) / 100;
-  return Math.max(own(piece), piece.rider ? own(piece.rider) : 0);
+  return Math.max(...stackOf(piece).map(own));
 }
 
 /** A capture of this piece becomes a clash: it (or its rider) has skill, or it has a shield. */

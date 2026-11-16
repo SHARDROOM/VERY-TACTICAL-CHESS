@@ -22,6 +22,7 @@ import {
   type GameState,
   type Outcome,
   type Piece,
+  stackOf,
   type PromotionType,
   type Square,
 } from '../engine';
@@ -52,8 +53,9 @@ import { prefersReducedMotion, useStagingLook } from './stagingLook';
 import type { FxShow } from '../scene/FxLayer';
 import { duelLength, planDuel, simulateDuel, type DuelPlan, type DuelRun } from '../scene/duel';
 import { runLength, simulateFalls, simulateRomp, type BoardRun, type Mover } from '../scene/boardPhysics';
+import { riderTypes } from '../scene/piecePhysics';
 import { playChunkTracks, restingChunks } from '../scene/debris';
-import { receiveToy, setToySender } from '../scene/toys';
+import { playTakenTracks, receiveToy, setToySender, takenNow } from '../scene/toys';
 import type { PieceDirection } from '../scene/pieceMotion';
 
 interface LogLine extends LogEntry {
@@ -99,7 +101,7 @@ function moversOf(ev: Extract<GameEvent, { type: 'moved' }>, board: GameState['b
   const df = Math.abs(fileOf(ev.to) - fileOf(ev.from));
   const dr = Math.abs(rankOf(ev.to) - rankOf(ev.from));
   const jump = (df === 1 && dr === 2) || (df === 2 && dr === 1);
-  const movers: Mover[] = [{ id: piece.id, type: piece.type, ...(piece.rider && { rider: piece.rider.type }), from: ev.from, to: ev.to, mode: jump ? 'throw' : 'slide' }];
+  const movers: Mover[] = [{ id: piece.id, type: piece.type, riders: riderTypes(piece), from: ev.from, to: ev.to, mode: jump ? 'throw' : 'slide' }];
   if (ev.special?.kind === 'castle') {
     const rank = rankOf(ev.from);
     const [rf, rt] = ev.special.side === 'king' ? [7, 5] : [0, 3];
@@ -166,8 +168,8 @@ const DUEL_AFTERMATH_MS = 1300;
 /** A piece on the board or riding on one. */
 function findPiece(board: GameState['board'], id: string): Piece | undefined {
   for (const p of board) {
-    if (p?.id === id) return p;
-    if (p?.rider?.id === id) return p.rider;
+    const hit = p && stackOf(p).find((x) => x.id === id);
+    if (hit) return hit;
   }
   return undefined;
 }
@@ -377,7 +379,12 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       const startedAt = performance.now() + (lead - t0) * 1000;
       setStage({ show, startedAt, from, romps });
       // Chunks of shattered pieces the flights push about go along.
-      for (const r of romps) if (r.effect >= from) playChunkTracks(r.run.tracks, r.run.steps, r.run.dt, startedAt + (show.timeline.effectStarts[r.effect] ?? 0) * 1000);
+      for (const r of romps) {
+        if (r.effect < from) continue;
+        const at = startedAt + (show.timeline.effectStarts[r.effect] ?? 0) * 1000;
+        playChunkTracks(r.run.tracks, r.run.steps, r.run.dt, at);
+        playTakenTracks(r.run.tracks, r.run.steps, r.run.dt, at);
+      }
       if (!resumed) setCaption({ kind: show.kind, title: show.title, text: show.caption, outcome: show.outcome });
       // A clash (합) stops the show at its effect for the dice and the duel, then it goes on from there.
       const next = show.clashes.find((c) => (resumed ? c.effect > from : c.effect >= from));
@@ -458,11 +465,12 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     const startRomp = (batch: Batch, done: () => void) => {
       const ev = batch.events.find((e): e is Extract<GameEvent, { type: 'moved' }> => e.type === 'moved')!;
       const movers = moversOf(ev, batch.before.board);
-      void simulateRomp({ board: batch.before.board, movers, terrain: batch.before.terrain, debris: restingChunks(), seed: moveSeed(batch.before.turnNumber, ev.from, ev.to) })
+      void simulateRomp({ board: batch.before.board, movers, terrain: batch.before.terrain, debris: restingChunks(), taken: takenNow(), seed: moveSeed(batch.before.turnNumber, ev.from, ev.to) })
         .then((run) => {
           const start = performance.now();
           setRomp({ run, start });
           playChunkTracks(run.tracks, run.steps, run.dt, start);
+          playTakenTracks(run.tracks, run.steps, run.dt, start);
           setTimeout(done, Math.max(0, runLength(run) * 1000 - 60));
           setTimeout(() => setRomp((r) => (r?.run === run ? null : r)), runLength(run) * 1000 + 450);
         })
@@ -502,10 +510,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         try {
           const run = await simulateRomp({
             board: before.board,
-            movers: [{ id: piece.id, type: piece.type, ...(piece.rider && { rider: piece.rider.type }), from: e.from, to: e.to, mode: 'throw' }],
+            movers: [{ id: piece.id, type: piece.type, riders: riderTypes(piece), from: e.from, to: e.to, mode: 'throw' }],
             exclude: new Set(victim ? [victim.id] : []),
             terrain: before.terrain,
             debris: restingChunks(),
+            taken: takenNow(),
             seed: moveSeed(before.turnNumber, e.from, e.to) + i,
           });
           out.push({ effect: i, run });
@@ -906,7 +915,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         : chain
           ? `${squareName(chain.at)}의 기물을 한 번 더 움직이거나 턴 종료`
           : writeHelp
-            ? '행동할 내 기물을 누르세요'
+            ? '행동할 기물과 대상을 누르세요'
             : `${COLOR_NAME[sideToMove]}: 수 또는 특수 행동`;
 
   return (
@@ -1076,7 +1085,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             </form>
             <div className="panel-footer">
               <span className={`counter${writeHelp ? ' write-hint' : ''}`}>
-                {writeHelp ? (text.trim() ? '기물이나 칸을 누르면 이어 씁니다' : '행동할 내 기물부터 누르세요') : `${text.length}/${game.rules.actionMaxLength}`}
+                {writeHelp ? '기물이나 칸을 누르면 이어 씁니다' : `${text.length}/${game.rules.actionMaxLength}`}
               </span>
               <button
                 onClick={() => session.request({ type: 'endTurn' })}

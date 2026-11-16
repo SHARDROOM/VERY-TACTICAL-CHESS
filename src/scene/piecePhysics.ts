@@ -1,5 +1,5 @@
 import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
-import type { PieceType } from '../engine';
+import { ridersOf, type Piece, type PieceType } from '../engine';
 import { loadPhysics } from '../dice3d/simulate';
 import { TRAY } from '../dice3d/simulate';
 import { TRAY_SCALE, trayCenterX } from '../dice3d/DiceTray';
@@ -69,6 +69,20 @@ const scaled = (pts: Float32Array, s: number) => pts.map((x) => x * s);
 /** Where a rider's feet are on its carrier: on the carrier's top (unscaled; the same as drawn). */
 export const riderBase = (carrier: PieceType) => PIECE_HEIGHT[carrier] - 0.06;
 
+/** The kinds riding a piece, bottom first (for the physics). */
+export const riderTypes = (p: Piece): PieceType[] => ridersOf(p).map((r) => r.type);
+
+/** How tall a piece stands with everyone riding it. */
+export function stackHeight(p: Piece): number {
+  let h = 0;
+  let below: Piece = p;
+  for (const r of ridersOf(p)) {
+    h += riderBase(below.type);
+    below = r;
+  }
+  return h + PIECE_HEIGHT[below.type];
+}
+
 type Rapier = Awaited<ReturnType<typeof loadPhysics>>;
 
 /**
@@ -81,7 +95,7 @@ export function addPieceColliders(
   world: InstanceType<Rapier['World']>,
   body: InstanceType<Rapier['RigidBody']>,
   type: PieceType,
-  o: { rider?: PieceType; scale?: number; friction: number; restitution: number; footDensity: number; footFriction?: number },
+  o: { riders?: readonly PieceType[]; scale?: number; friction: number; restitution: number; footDensity: number; footFriction?: number },
 ): void {
   const k = o.scale ?? 1;
   world.createCollider(RAPIER.ColliderDesc.convexHull(scaled(hullPoints(type), k))!.setDensity(1).setFriction(o.friction).setRestitution(o.restitution), body);
@@ -89,15 +103,16 @@ export function addPieceColliders(
     RAPIER.ColliderDesc.cylinder(0.04 * k, 0.28 * k).setTranslation(0, 0.05 * k, 0).setDensity(o.footDensity).setFriction(o.footFriction ?? o.friction).setRestitution(o.restitution),
     body,
   );
-  if (o.rider) {
+  // Whoever rides it, stacked up: each stands on the top of the one below.
+  let below = type;
+  let base = 0;
+  for (const r of o.riders ?? []) {
+    base += riderBase(below);
     world.createCollider(
-      RAPIER.ColliderDesc.convexHull(scaled(hullPoints(o.rider), k))!
-        .setTranslation(0, riderBase(type) * k, 0)
-        .setDensity(1)
-        .setFriction(o.friction)
-        .setRestitution(o.restitution),
+      RAPIER.ColliderDesc.convexHull(scaled(hullPoints(r), k))!.setTranslation(0, base * k, 0).setDensity(1).setFriction(o.friction).setRestitution(o.restitution),
       body,
     );
+    below = r;
   }
 }
 
@@ -106,7 +121,7 @@ export function addPieceColliders(
  * (with their riders), chunks of shattered pieces, taken pieces beside the board, the dice.
  */
 export interface Obstacles {
-  pieces: { type: PieceType; rider?: PieceType; at: [number, number, number] }[];
+  pieces: { type: PieceType; riders?: PieceType[]; at: [number, number, number] }[];
   chunks: { hull: Float32Array; p: Vector3; q: Quaternion }[];
   taken?: Obstacle[];
   dice?: { hull: Float32Array; p: Vector3; q: Quaternion }[];
@@ -116,7 +131,7 @@ export interface Obstacles {
 export function addObstacles(RAPIER: Rapier, world: InstanceType<Rapier['World']>, fixed: InstanceType<Rapier['RigidBody']>, o: Obstacles): void {
   for (const p of o.pieces) {
     const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(...p.at));
-    addPieceColliders(RAPIER, world, b, p.type, { rider: p.rider, friction: 0.5, restitution: 0.25, footDensity: 1 });
+    addPieceColliders(RAPIER, world, b, p.type, { riders: p.riders, friction: 0.5, restitution: 0.25, footDensity: 1 });
   }
   const at = (hull: ReturnType<typeof RAPIER.ColliderDesc.convexHull>, p: Vector3, q: Quaternion, friction: number, restitution: number) => {
     if (hull) world.createCollider(hull.setTranslation(p.x, p.y, p.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }).setFriction(friction).setRestitution(restitution), fixed);
@@ -152,8 +167,8 @@ export function addTable(RAPIER: Rapier, world: InstanceType<Rapier['World']>, d
 
 export interface SimOptions {
   type: PieceType;
-  /** Whoever rides it, glued on top. */
-  rider?: PieceType;
+  /** Whoever rides it (bottom first), glued on top. */
+  riders?: PieceType[];
   scale: number;
   start: BodyPose;
   velocity: Vector3;
@@ -201,7 +216,7 @@ export async function simulatePiece(o: SimOptions): Promise<PieceRun> {
     );
     const restitution = o.bounce?.restitution ?? 0.22;
     const friction = o.bounce?.friction ?? 0.6;
-    addPieceColliders(RAPIER, world, body, o.type, { rider: o.rider, scale: o.scale, friction, restitution, footDensity: 6 });
+    addPieceColliders(RAPIER, world, body, o.type, { riders: o.riders, scale: o.scale, friction, restitution, footDensity: 6 });
 
     const maxSteps = Math.round(60 * (o.maxSeconds ?? 4));
     const frames: number[] = [];

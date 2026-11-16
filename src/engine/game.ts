@@ -19,7 +19,7 @@ import { isInCheck, legalTargets } from './moves';
 import { fileOf, isAir, opponent, rankOf, squareAt } from './squares';
 import { revokeCastling } from './castling';
 import { applyEffects, validateRuling, type EffectContext } from './effects';
-import { extinguish, isShielded, moveTimesOf, tickTags, unseat, withoutTag } from './tags';
+import { extinguish, isShielded, moveTimesOf, ridersOf, tickTags, unseat, withoutTag } from './tags';
 import { SHIELD } from './types';
 import { dropFromBridges, tickTerrain } from './terrain';
 import { capturedAfter } from './captured';
@@ -300,7 +300,7 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   ];
   // Whoever rode the captured piece is thrown off it, away from the attacker (a king's fall ends the game anyway).
   const falls = captured && captured.type !== 'king' ? unseat(captured, victimSquare, events, cmd.from) : [];
-  if (captured?.rider && captured.type === 'king') events.push({ type: 'removed', piece: captured.rider, at: victimSquare });
+  if (captured?.type === 'king') for (const r of ridersOf(captured)) events.push({ type: 'removed', piece: r, at: victimSquare });
   events.push(...fireOut);
 
   if (captured?.type === 'king') {
