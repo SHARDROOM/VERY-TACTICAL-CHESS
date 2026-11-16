@@ -19,20 +19,33 @@ const auraStrengthField = z.number().describe('오라 세기 1~3 (none이면 0)'
 
 const clashField = z.number().describe('합 배율 1.2~2.0 (검술처럼 싸움 실력을 주는 태그). 없으면 0');
 const propField = GmPropSchema.describe('조형물: 태그나 지형의 모습. 필요 없으면 preset "none"에 parts 빈 목록');
+export const MOVE_AS_DESCRIPTION = '태그가 있는 동안 원래 움직임에 더해 이 기물들처럼도 움직인다(잡기와 체크 포함). 예: 폰이 룩처럼 → ["rook"]. 없으면 빈 목록';
+export const MOVE_TIMES_DESCRIPTION = '태그가 있는 동안 한 턴에 일반 수를 연속으로 두는 횟수 2~3 (같은 기물로). 없으면 1';
+const moveAsField = z.array(z.enum(['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'])).describe(MOVE_AS_DESCRIPTION);
+const moveTimesField = z.number().int().describe(MOVE_TIMES_DESCRIPTION);
 
-function effectSchema<A extends z.ZodTypeAny, B extends z.ZodTypeAny, C extends z.ZodTypeAny, P extends z.ZodTypeAny>(aura: A, auraStrength: B, clash: C, prop: P) {
+function effectSchema<A extends z.ZodTypeAny, B extends z.ZodTypeAny, C extends z.ZodTypeAny, P extends z.ZodTypeAny, M extends z.ZodTypeAny, T extends z.ZodTypeAny>(
+  aura: A,
+  auraStrength: B,
+  clash: C,
+  prop: P,
+  moveAs: M,
+  moveTimes: T,
+) {
   return z.discriminatedUnion('type', [
     z.object({ type: z.literal('move'), from: square('기물이 있는 칸'), to: square('도착 칸') }),
     z.object({ type: z.literal('remove'), at: square('제거할 기물이 있는 칸') }),
     z.object({
       type: z.literal('tag'),
       at: square('태그를 붙일 기물의 칸'),
-      tag: z.string().describe('태그 이름. 핵심 태그: "기절", "보호막", "화상". 그 밖의 이름은 서사용 자유 태그'),
+      tag: z.string().describe('태그 이름. 핵심 태그: "기절", "보호막", "화상", "공중부양". 그 밖의 이름은 자유 태그 (합 배율이나 이동 능력을 줄 수 있음)'),
       turns: z.number().int().describe('지속 턴 수 (그 기물 주인의 턴 기준). 0이면 영구'),
       aura,
       auraStrength,
       clash,
       prop,
+      moveAs,
+      moveTimes,
     }),
     z.object({ type: z.literal('untag'), at: square('태그를 뗄 기물의 칸'), tag: z.string().describe('뗄 태그 이름') }),
     z.object({ type: z.literal('board'), rider: square('올라탈 기물의 칸'), carrier: square('태울 같은 편 기물의 칸') }),
@@ -113,8 +126,9 @@ function chaosSchema<E extends z.ZodTypeAny, S extends z.ZodTypeAny>(effect: E, 
   });
 }
 
-export const GmEffectSchema = effectSchema(auraField, auraStrengthField, clashField, propField);
-export const GmEffectReplySchema = effectSchema(auraField.optional(), auraStrengthField.optional(), clashField.optional(), z.unknown().optional());
+export const GmEffectSchema = effectSchema(auraField, auraStrengthField, clashField, propField, moveAsField, moveTimesField);
+// Reading a reply, odd move fields are cleaned up (parse.ts) rather than refused.
+export const GmEffectReplySchema = effectSchema(auraField.optional(), auraStrengthField.optional(), clashField.optional(), z.unknown().optional(), z.unknown().optional(), z.unknown().optional());
 
 export const GmRulingSchema = rulingSchema(
   GmEffectSchema,

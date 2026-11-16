@@ -1,4 +1,4 @@
-import { BURN, LEVITATE, RIDE, STUN, SHIELD, type Board, type Color, type GameEvent, type Piece, type Square, type Tag } from './types';
+import { BURN, LEVITATE, RIDE, STUN, SHIELD, type Board, type Color, type GameEvent, type Piece, type PieceType, type Square, type Tag } from './types';
 
 export const hasTag = (piece: Piece | null | undefined, name: string): boolean =>
   !!piece?.tags?.some((t) => t.name === name);
@@ -20,6 +20,21 @@ export function withoutTag(piece: Piece, name: string): Piece {
 export const CORE_TAGS: readonly string[] = [STUN, RIDE, SHIELD, BURN, LEVITATE];
 
 export const isFloating = (piece: Piece | null | undefined) => hasTag(piece, LEVITATE);
+
+/** Most normal moves a piece may make in a row in one turn (a tag's moveTimes). */
+export const MAX_MOVE_TIMES = 3;
+
+/** The kinds of piece this one moves like: its own, and any its tags lend it (moveAs). */
+export function movePatterns(piece: Piece): PieceType[] {
+  const kinds = new Set<PieceType>([piece.type]);
+  for (const t of piece.tags ?? []) for (const k of t.moveAs ?? []) kinds.add(k);
+  return [...kinds];
+}
+
+/** How many normal moves in a row this piece makes in one turn (1 = the usual one). */
+export function moveTimesOf(piece: Piece): number {
+  return Math.max(1, ...(piece.tags ?? []).map((t) => t.moveTimes ?? 1));
+}
 
 /**
  * A piece that moves off its square puts out its 화상, and so does whoever rides it.

@@ -1,8 +1,10 @@
-import { CLASH_MAX, CLASH_MIN, parseSquare, type ChaosEvent, type Effect, type Means, type Ruling, type Square } from '../engine';
+import { CLASH_MAX, CLASH_MIN, MAX_MOVE_TIMES, parseSquare, type ChaosEvent, type Effect, type Means, type PieceType, type Ruling, type Square } from '../engine';
 import { GmChaosReplySchema, GmRulingReplySchema } from './schema';
 import { cleanAura, cleanRulingStaging, cleanStaging } from './staging';
 import { propFromGm } from './props';
 import type { GmEffectReplyJson } from './types';
+
+const MOVE_KINDS: readonly PieceType[] = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'];
 
 export type ParseResult = { ok: true; ruling: Ruling } | { ok: false; error: string };
 
@@ -79,12 +81,23 @@ function convert(e: GmEffectReplyJson): Effect | string {
     squares[f] = s;
   }
   if (e.type === 'tag') {
-    const { aura, auraStrength, clash, prop, ...tag } = e;
+    const { aura, auraStrength, clash, prop, moveAs, moveTimes, ...tag } = e;
     const clean = cleanAura(aura, auraStrength);
     const look = propFromGm(prop);
     // A multiplier of 1 or less is none; past the range it is pulled in (it is a judgment, not a typo).
     const mult = typeof clash === 'number' && clash > 1 ? Math.min(CLASH_MAX, Math.max(CLASH_MIN, Math.round(clash * 10) / 10)) : undefined;
-    return { ...tag, ...squares, ...(clean && { aura: clean }), ...(mult && { clash: mult }), ...(look && { prop: look }) } as unknown as Effect;
+    // Likewise the move powers: unknown kinds are dropped, too many moves in a row pulled in.
+    const kinds = Array.isArray(moveAs) ? [...new Set(moveAs.filter((k): k is PieceType => typeof k === 'string' && MOVE_KINDS.includes(k as PieceType)))] : [];
+    const times = typeof moveTimes === 'number' && moveTimes >= 2 ? Math.min(MAX_MOVE_TIMES, Math.round(moveTimes)) : undefined;
+    return {
+      ...tag,
+      ...squares,
+      ...(clean && { aura: clean }),
+      ...(mult && { clash: mult }),
+      ...(look && { prop: look }),
+      ...(kinds.length > 0 && { moveAs: kinds }),
+      ...(times && { moveTimes: times }),
+    } as unknown as Effect;
   }
   if (e.type === 'terrain' || e.type === 'cover') {
     const { prop, ...rest } = e;

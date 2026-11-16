@@ -28,7 +28,17 @@ export const REJECT_MESSAGE: Record<RejectReason, string> = {
   clashRollsNeeded: '합 주사위가 없어 처리할 수 없습니다.',
   landingPending: '기물이 떨어지는 중입니다. 잠시 기다려 주세요.',
   nothingFalling: '떨어지는 기물이 없습니다.',
+  notChainedPiece: '연속 이동 중입니다. 방금 움직인 기물을 한 번 더 움직이거나 턴을 넘기세요.',
+  chainInProgress: '연속 이동 중에는 특수 행동을 할 수 없습니다. 기물을 한 번 더 움직이거나 턴을 넘기세요.',
 };
+
+/** What a tag lets its piece do beyond its own moves, e.g. "룩·비숍처럼도 이동, 한 턴에 2번 연속 이동" ('' if nothing). */
+export function movePowers(t: { moveAs?: readonly PieceType[]; moveTimes?: number }): string {
+  const out: string[] = [];
+  if (t.moveAs?.length) out.push(`${t.moveAs.map((k) => PIECE_NAME[k]).join('·')}처럼도 이동`);
+  if (t.moveTimes && t.moveTimes > 1) out.push(`한 턴에 ${t.moveTimes}번 연속 이동`);
+  return out.join(', ');
+}
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
   critSuccess: '대성공!!',
@@ -78,9 +88,13 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         break;
       case 'tagged': {
         const who = name(e.pieceId);
-        add(`🏷 ${who}(${squareName(e.at)})에 '${e.tag}' ${e.turns === null ? '(영구)' : `(${e.turns}턴)`}`);
+        const powers = movePowers(e);
+        add(`🏷 ${who}(${squareName(e.at)})에 '${e.tag}' ${e.turns === null ? '(영구)' : `(${e.turns}턴)`}${powers ? ` — ${powers}` : ''}`);
         break;
       }
+      case 'moveAgain':
+        add(`👣 ${josa(name(e.pieceId), '이/가')} 한 번 더 움직일 수 있음 (${e.left}번 남음, 그만두려면 턴 종료)`, 'warn');
+        break;
       case 'untagged':
         if (e.tag === BURN) add(`💨 ${josa(name(e.pieceId), '이/가')} ${josa(squareName(e.at), '으로/로')} 움직여 불이 꺼짐`);
         else add(`${name(e.pieceId)}(${squareName(e.at)})의 '${e.tag}' 태그가 사라짐`);

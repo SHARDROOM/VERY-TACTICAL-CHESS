@@ -4,7 +4,7 @@ import { parseDoodleChange, parseDoodleOp, type Doodle, type DoodleChange, type 
 
 
 /** 3: the air layer (128-square boards, falling pieces). */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 /**
  * `id` is a random per-browser id, so a guest coming back gets their seat again.

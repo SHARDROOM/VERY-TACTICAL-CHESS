@@ -34,6 +34,13 @@ export interface Tag {
   clash?: number;
   /** What the tag looks like on the piece (a sword for 검술); goes with the tag. */
   prop?: Prop;
+  /**
+   * Moves this piece also has while the tag lasts, as if it were these kinds too (a pawn with
+   * ['rook'] moves, captures and checks like a pawn or a rook). See movePatterns in tags.ts.
+   */
+  moveAs?: PieceType[];
+  /** Normal moves this piece makes in a row in one turn (2..MAX_MOVE_TIMES), see GameState.chain. */
+  moveTimes?: number;
 }
 
 /** A piece beside the board, and how it left (as the GM staged it; missing = knocked off). */
@@ -100,8 +107,11 @@ export type CastlingRights = Record<Color, { kingSide: boolean; queenSide: boole
 export type Effect =
   | { type: 'move'; from: Square; to: Square }
   | { type: 'remove'; at: Square }
-  /** turns: 0 = permanent. Not for 탑승 (use 'board'). `clash`: a clash multiplier; `prop`: its look on the piece. */
-  | { type: 'tag'; at: Square; tag: string; turns: number; aura?: Aura; clash?: number; prop?: Prop }
+  /**
+   * turns: 0 = permanent. Not for 탑승 (use 'board'). `clash`: a clash multiplier; `prop`: its look
+   * on the piece; `moveAs`: kinds it also moves like; `moveTimes`: moves in a row in one turn.
+   */
+  | { type: 'tag'; at: Square; tag: string; turns: number; aura?: Aura; clash?: number; prop?: Prop; moveAs?: PieceType[]; moveTimes?: number }
   | { type: 'untag'; at: Square; tag: string }
   /** The piece on `rider` climbs onto the friendly piece on `carrier`. */
   | { type: 'board'; rider: Square; carrier: Square }
@@ -248,6 +258,20 @@ export interface GameState {
   terrain?: TerrainCell[];
   /** Pieces falling from the air, waiting for the `land` command (missing = none). Nothing else happens meanwhile. */
   falling?: FallingPiece[];
+  /**
+   * A piece with moveTimes made a normal move and may move again this turn: only it may move
+   * (`left` more times), or the turn is ended. Missing = no chain.
+   */
+  chain?: Chain;
+}
+
+/** The piece in the middle of moving several times in a row (see GameState.chain). */
+export interface Chain {
+  pieceId: string;
+  /** Where it stands now. */
+  at: Square;
+  /** Moves it may still make this turn (at least 1). */
+  left: number;
 }
 
 export type Command =
@@ -295,6 +319,8 @@ export type GameEvent =
     }
   /** `cause`: burnt up by 화상, fell into a pit, or lost a clash it started. `exit`: how it goes, if the rules say. */
   | { type: 'removed'; piece: Piece; at: Square; cause?: 'burn' | 'pit' | 'clash' | 'fall'; exit?: Exit }
+  /** The piece that just moved may move again this turn (`left` more times), or the turn may be ended. */
+  | { type: 'moveAgain'; pieceId: string; at: Square; left: number }
   /** A piece given 공중부양 rises from its square to the air above it. */
   | { type: 'lifted'; pieceId: string; from: Square; to: Square }
   /** A floating piece's levitation ended (it ran out, or was taken away): it falls (see `fell`). */
@@ -310,7 +336,8 @@ export type GameEvent =
       seed: number;
       falls: { pieceId: string; from: Square; to: Square | null; result: 'landed' | 'pushed' | 'buried' | 'shattered' }[];
     }
-  | { type: 'tagged'; pieceId: string; at: Square; tag: string; turns: number | null }
+  /** `moveAs`, `moveTimes`: the moves the tag lends the piece, if any. */
+  | { type: 'tagged'; pieceId: string; at: Square; tag: string; turns: number | null; moveAs?: PieceType[]; moveTimes?: number }
   | { type: 'untagged'; pieceId: string; at: Square; tag: string }
   | { type: 'tagExpired'; pieceId: string; tag: string }
   | { type: 'boarded'; riderId: string; carrierId: string; from: Square; at: Square }
@@ -381,7 +408,11 @@ export type RejectReason =
   | 'clashRollsNeeded'
   /** A piece is falling: only `land` may come next. */
   | 'landingPending'
-  | 'nothingFalling';
+  | 'nothingFalling'
+  /** Mid-chain only the piece moving in a row may move. */
+  | 'notChainedPiece'
+  /** Mid-chain: no special actions (or chaos) until the turn is over. */
+  | 'chainInProgress';
 
 export type CommandResult =
   | { ok: true; state: GameState; events: GameEvent[] }

@@ -233,6 +233,7 @@ export class Authority {
     // Cheap checks first, so a doomed declaration never costs a GM call.
     if (s.status.kind !== 'playing') return notice(REJECT_MESSAGE.gameOver);
     if (s.pending) return notice(REJECT_MESSAGE.actionPending);
+    if (s.chain) return notice(REJECT_MESSAGE.chainInProgress);
     if (!trimmed) return notice(REJECT_MESSAGE.emptyAction);
     if (trimmed.length > s.rules.actionMaxLength) return notice(REJECT_MESSAGE.actionTooLong);
 

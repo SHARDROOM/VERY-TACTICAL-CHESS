@@ -20,7 +20,7 @@ import {
 } from './types';
 import type { RuleConfig } from './config';
 import { SQUARES, airOf, isAir, rankOf, sameLayer, squareName } from './squares';
-import { extinguish, isShielded, isStunned, withTag, withoutTag } from './tags';
+import { MAX_MOVE_TIMES, extinguish, isShielded, isStunned, withTag, withoutTag } from './tags';
 import { SHIELD } from './types';
 import { MAX_TERRAIN, dropFromBridges } from './terrain';
 import { capturedAfter } from './captured';
@@ -233,6 +233,15 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (e.clash !== undefined && (typeof e.clash !== 'number' || !(e.clash >= CLASH_MIN && e.clash <= CLASH_MAX))) {
           return fail(`합 배율은 ×${CLASH_MIN}~×${CLASH_MAX}`);
         }
+        const MOVE_KINDS: readonly PieceType[] = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'];
+        if (e.moveAs !== undefined && (!Array.isArray(e.moveAs) || !e.moveAs.every((k) => MOVE_KINDS.includes(k)))) {
+          return fail('moveAs는 기물 종류(king, queen, rook, bishop, knight, pawn)의 목록이어야 함');
+        }
+        if (e.moveTimes !== undefined && (!isInt(e.moveTimes) || e.moveTimes < 1 || e.moveTimes > MAX_MOVE_TIMES)) {
+          return fail(`연속 이동 횟수는 1~${MAX_MOVE_TIMES}`);
+        }
+        // Lending a piece its own moves changes nothing.
+        const moveAs = [...new Set(e.moveAs ?? [])].filter((k) => k !== piece.type);
         const prop = e.prop ? cleanProp(e.prop) : null;
         // 공중부양 lifts a piece on the ground into the air above it (already floating: it lasts longer).
         let at = e.at as Square;
@@ -252,8 +261,11 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           ...(e.aura && { aura: e.aura }),
           ...(e.clash !== undefined && { clash: Math.round(e.clash * 10) / 10 }),
           ...(prop && { prop }),
+          ...(moveAs.length > 0 && { moveAs }),
+          ...(e.moveTimes !== undefined && e.moveTimes > 1 && { moveTimes: e.moveTimes }),
         });
-        events.push({ type: 'tagged', pieceId: piece.id, at, tag: name, turns: turnsLeft });
+        const moveTimes = e.moveTimes !== undefined && e.moveTimes > 1 ? e.moveTimes : undefined;
+        events.push({ type: 'tagged', pieceId: piece.id, at, tag: name, turns: turnsLeft, ...(moveAs.length > 0 && { moveAs }), ...(moveTimes && { moveTimes }) });
         break;
       }
       case 'untag': {

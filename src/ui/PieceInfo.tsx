@@ -1,10 +1,12 @@
 import { BURN, ELEMENT_NAME, RIDE, squareName, type Piece, type Square, type Tag } from '../engine';
 import { ELEMENT_LOOK } from '../scene/fxLooks';
-import { COLOR_NAME, PIECE_NAME } from './messages';
+import { COLOR_NAME, PIECE_NAME, movePowers } from './messages';
 
 function tagText(t: Tag) {
   if (t.name === BURN && t.turnsLeft !== null) return `${t.name} (${t.turnsLeft}턴 안에 움직이지 않으면 타 버림)`;
-  return t.turnsLeft === null ? `${t.name} (영구)` : `${t.name} (${t.turnsLeft}턴 남음)`;
+  const powers = [movePowers(t), t.clash ? `합 ×${t.clash}` : ''].filter(Boolean).join(', ');
+  const time = t.turnsLeft === null ? '영구' : `${t.turnsLeft}턴 남음`;
+  return `${t.name} (${time})${powers ? `: ${powers}` : ''}`;
 }
 
 /** The element a tag wraps its piece in, as a swatch of its colour and its name. */

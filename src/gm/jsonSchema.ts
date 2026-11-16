@@ -1,6 +1,7 @@
 import { ELEMENTS, MEANS } from '../engine';
 import { GM_RULING_STAGING_JSON_SCHEMA, GM_STAGING_JSON_SCHEMA } from './staging';
 import { GM_PROP_JSON_SCHEMA } from './props';
+import { MOVE_AS_DESCRIPTION, MOVE_TIMES_DESCRIPTION } from './schema';
 
 const prop = { ...GM_PROP_JSON_SCHEMA, description: '조형물: 태그나 지형의 모습. 필요 없으면 preset "none"에 parts 빈 목록' };
 
@@ -28,12 +29,14 @@ export const GM_EFFECT_JSON_SCHEMAS = [
   effect('remove', { at: sq('제거할 기물이 있는 칸, 예: "d7"') }),
   effect('tag', {
     at: sq('태그를 붙일 기물의 칸'),
-    tag: { type: 'string', description: '태그 이름. 핵심 태그: "기절", "보호막", "화상". 그 밖의 이름은 서사용 자유 태그' },
+    tag: { type: 'string', description: '태그 이름. 핵심 태그: "기절", "보호막", "화상", "공중부양". 그 밖의 이름은 자유 태그 (합 배율이나 이동 능력을 줄 수 있음)' },
     turns: { type: 'integer', description: '지속 턴 수 (그 기물 주인의 턴 기준). 0이면 영구' },
     aura: { type: 'string', enum: ['none', ...ELEMENTS], description: '태그가 남아 있는 동안 기물에 두를 원소 오라' },
     auraStrength: { type: 'number', description: '오라 세기 1~3 (none이면 0)' },
     clash: { type: 'number', description: '합 배율 1.2~2.0 (검술처럼 싸움 실력을 주는 태그). 없으면 0' },
     prop,
+    moveAs: { type: 'array', items: { type: 'string', enum: ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'] }, description: MOVE_AS_DESCRIPTION },
+    moveTimes: { type: 'integer', description: MOVE_TIMES_DESCRIPTION },
   }),
   effect('untag', { at: sq('태그를 뗄 기물의 칸'), tag: { type: 'string', description: '뗄 태그 이름' } }),
   effect('board', { rider: sq('올라탈 기물의 칸'), carrier: sq('태울 같은 편 기물의 칸') }),

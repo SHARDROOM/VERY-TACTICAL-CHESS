@@ -34,6 +34,8 @@ function lastPieceWord(text: string): Exclude<PieceType, 'king'> | null {
  * - "e2 폰이 d4와 e4에 벽을 세운다" → 2-turn walls (up to 3); "… 구덩이를 판다" → a pit on the last
  * - "e2 폰이 d4 벽을 부순다" → clear it
  * - "e2 폰이 d4 구덩이에 다리를 놓는다" / "… d4 벽에 사다리를 건다" → a 2-turn bridge / ladder; "… 다리를 끊는다" → cut it
+ * - "a2 폰이 룩처럼 이동한다" → for 2 turns it also moves like a rook (any kinds named before 처럼)
+ * - "a2 폰이 연속으로 두 번 이동한다" → for 1 turn it moves twice in a row ("세 번": three times)
  * - "e2 폰이 영감을 얻어 검술에 눈을 뜬다" → 검술 ×1.5 with a sword in hand (창술: a spear)
  * - "f1 비숍이 g8 나이트를 기절시킨다"; "e2 폰이 e1 킹에 보호막" (or "e1 킹에 보호막" on itself)
  * - "d1 퀸이 d3에 나이트를 되살린다" / "… 소환한다" → revive / spawn one for the player
@@ -86,7 +88,12 @@ const beat = (effect: number, extra: Partial<BeatJson> = {}): BeatJson => ({
 type PropJson = { preset: 'none' | PropPreset; color: string; scale: number; attach: AttachPoint; parts: string };
 /** A ready-made prop as the GM writes it ("none" for no prop). */
 const look3d = (preset: 'none' | PropPreset = 'none', attach: AttachPoint = 'rightHand', color = ''): PropJson => ({ preset, color, scale: 1, attach, parts: '' });
-const tag = (at: string, name: string, turns: number, extra: { aura?: string; auraStrength?: number; clash?: number; prop?: PropJson } = {}) => ({
+const tag = (
+  at: string,
+  name: string,
+  turns: number,
+  extra: { aura?: string; auraStrength?: number; clash?: number; prop?: PropJson; moveAs?: PieceType[]; moveTimes?: number } = {},
+) => ({
   type: 'tag' as const,
   at,
   tag: name,
@@ -95,7 +102,12 @@ const tag = (at: string, name: string, turns: number, extra: { aura?: string; au
   auraStrength: extra.auraStrength ?? 0,
   clash: extra.clash ?? 0,
   prop: extra.prop ?? look3d(),
+  moveAs: extra.moveAs ?? [],
+  moveTimes: extra.moveTimes ?? 1,
 });
+
+const MOVE_LIKE: [RegExp, PieceType][] = [[/퀸|여왕/, 'queen'], [/룩|성탑/, 'rook'], [/비숍|주교/, 'bishop'], [/나이트|기사/, 'knight'], [/킹/, 'king'], [/폰|병사/, 'pawn']];
+const MOVE_KIND_KO: Record<PieceType, string> = { king: '킹', ...PIECE_KO };
 
 /** A bigger version of a success look, for a natural 20. */
 function grander(s: StagingJson): StagingJson {
@@ -241,6 +253,44 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       effects: [{ type: 'cover', at: last, kind: ladder ? 'ladder' : 'bridge', turns: 2, prop: look3d() }],
       look: look({ fx: [fx(ladder ? 'wind' : 'earth', 'burst', last, { strength: 2, withEffect: 1 })] }),
       narration: { success: ladder ? `${last}의 벽에 튼튼한 사다리가 걸렸다!` : `${last}의 구덩이 위로 널빤지 다리가 놓였다!`, failure: '널빤지가 미끄러져 떨어졌다.' },
+    };
+  }
+
+  // The kinds named just before 처럼 ("룩처럼", "퀸과 나이트처럼"), not the piece doing it.
+  const likeText = action.match(/((?:[가-힣]+(?:과|와|이나|,|·)\s*)*[가-힣]+)처럼/)?.[1] ?? '';
+  const likeKinds = MOVE_LIKE.filter(([re]) => re.test(likeText)).map(([, k]) => k);
+  if (squares.length >= 1 && likeKinds.length && /이동|움직|걷|뛴|뛰|달린|달려|날아/.test(action)) {
+    // A piece that also moves like other kinds for a while (on itself, or lent by another).
+    if (!actor) return needsActor()!;
+    const kinds = likeKinds.map((k) => MOVE_KIND_KO[k]).join('·');
+    const strong = likeKinds.includes('queen');
+    return {
+      interpretation: `${last}의 기물이 두 턴 동안 원래 움직임에 더해 ${kinds}처럼도 움직인다.`,
+      actor,
+      means: far <= 1 ? 'touch' : 'magic',
+      feasible: true,
+      dc: strong ? 15 : 11,
+      cost: strong ? 3 : 2,
+      effects: [tag(last, `${kinds}의 걸음`, 2, { moveAs: likeKinds, aura: 'wind', auraStrength: 1 })],
+      look: look({ fx: [fx('wind', 'burst', last, { strength: 3, radius: 0.7, withEffect: 1 })], acts: [{ at: last, act: 'spin', delay: 0.2 }] }),
+      narration: { success: `${last}의 기물이 ${kinds}의 걸음을 익혔다!`, failure: '발이 꼬여 제자리에서 비틀거렸다.' },
+    };
+  }
+
+  if (squares.length >= 1 && /연속|두\s*번|세\s*번|[23]\s*번|한 번 더/.test(action) && /이동|움직|둔다|두기|전진|달린|달려/.test(action)) {
+    // Several normal moves in a row this turn (and next).
+    if (!actor) return needsActor()!;
+    const times = /세\s*번|3\s*번/.test(action) ? 3 : 2;
+    return {
+      interpretation: `${last}의 기물이 이번 턴(과 다음 내 턴)에 일반 수를 ${times}번 연속으로 둔다.`,
+      actor,
+      means: far <= 1 ? 'touch' : 'magic',
+      feasible: true,
+      dc: times === 3 ? 17 : 13,
+      cost: times === 3 ? 3 : 2,
+      effects: [tag(last, '질주', 1, { moveTimes: times, aura: 'wind', auraStrength: 2 })],
+      look: look({ fx: [fx('wind', 'burst', last, { strength: 3, radius: 0.8, withEffect: 1 })], acts: [{ at: last, act: 'hop', delay: 0.2 }] }),
+      narration: { success: `${last}의 기물이 바람처럼 몸을 풀었다. 한 번에 ${times}걸음!`, failure: '숨이 차서 멈춰 섰다.' },
     };
   }
 

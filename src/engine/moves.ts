@@ -1,7 +1,7 @@
 import type { Board, Color, GameState, MoveSpecial, Square, TerrainCell } from './types';
 import { AIR, SQUARES, fileOf, isAir, rankOf, squareAt as groundAt } from './squares';
 import { KING_START, ROOK_START } from './castling';
-import { isStunned } from './tags';
+import { isStunned, movePatterns } from './tags';
 import { blockedSquares, terrainBlocks } from './terrain';
 
 const KNIGHT_STEPS = [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]];
@@ -16,6 +16,7 @@ const BISHOP_DIRS = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
  * allows them (the king is captured, not mated).
  * Walls and pits (`terrain`) can be neither entered nor passed; knights still jump over them.
  * A piece in the air moves (and captures) on the air layer only, over all terrain.
+ * A piece whose tags lend it other kinds' moves (moveAs) has those too, on top of its own.
  */
 export function movesFrom(board: Board, from: Square, terrain?: readonly TerrainCell[]): Square[] {
   const piece = board[from];
@@ -59,7 +60,7 @@ export function movesFrom(board: Board, from: Square, terrain?: readonly Terrain
     }
   };
 
-  switch (piece.type) {
+  for (const kind of movePatterns(piece)) switch (kind) {
     case 'knight':
       steps(KNIGHT_STEPS);
       break;
@@ -91,7 +92,8 @@ export function movesFrom(board: Board, from: Square, terrain?: readonly Terrain
       break;
     }
   }
-  return out;
+  // Two kinds can reach the same square.
+  return [...new Set(out)];
 }
 
 /** True if any piece of `by` could move onto `target`. */
@@ -130,8 +132,8 @@ export function legalTargets(state: GameState, from: Square): Target[] {
   const out: Target[] = movesFrom(board, from, terrain).map((to) => ({ to }));
   const blocked = blockedSquares(terrain);
 
-  // En passant is a ground move (the skipped square is on the ground).
-  if (piece.type === 'pawn' && state.enPassant !== null && !isAir(from)) {
+  // En passant is a ground move (the skipped square is on the ground), for anything that moves like a pawn.
+  if (movePatterns(piece).includes('pawn') && state.enPassant !== null && !isAir(from)) {
     const ep = state.enPassant;
     const dir = piece.color === 'white' ? 1 : -1;
     const victim = groundAt(fileOf(ep), rankOf(ep) - dir);

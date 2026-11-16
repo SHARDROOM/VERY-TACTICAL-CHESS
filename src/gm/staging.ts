@@ -72,9 +72,12 @@ export const GmStagingSchema = z.object({
     .describe('보드를 바꾸지 않는 제자리 연기'),
 });
 
+/** A plain failure has no effects, so nothing to stage effect by effect (and the schema stays small, see jsonSchema.test). */
+const GmFailureStagingSchema = GmStagingSchema.omit({ beats: true });
+
 export const GmRulingStagingSchema = z.object({
   success: GmStagingSchema,
-  failure: GmStagingSchema,
+  failure: GmFailureStagingSchema,
   critSuccess: GmStagingSchema,
   critFailure: GmStagingSchema,
 });
@@ -131,9 +134,13 @@ export const GM_STAGING_JSON_SCHEMA = obj({
   },
 });
 
+const { beats: _noBeats, ...failureStaging } = GM_STAGING_JSON_SCHEMA.properties;
+void _noBeats;
+
+/** Mirrors GmRulingStagingSchema: the failure has no beats. */
 export const GM_RULING_STAGING_JSON_SCHEMA = obj({
   success: GM_STAGING_JSON_SCHEMA,
-  failure: GM_STAGING_JSON_SCHEMA,
+  failure: obj(failureStaging),
   critSuccess: GM_STAGING_JSON_SCHEMA,
   critFailure: GM_STAGING_JSON_SCHEMA,
 });

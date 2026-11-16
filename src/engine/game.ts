@@ -16,10 +16,10 @@ import {
 } from './types';
 import type { Exit, Staging } from './staging';
 import { isInCheck, legalTargets } from './moves';
-import { fileOf, opponent, rankOf, squareAt } from './squares';
+import { fileOf, isAir, opponent, rankOf, squareAt } from './squares';
 import { revokeCastling } from './castling';
 import { applyEffects, validateRuling, type EffectContext } from './effects';
-import { extinguish, isShielded, tickTags, withoutTag } from './tags';
+import { extinguish, isShielded, moveTimesOf, tickTags, withoutTag } from './tags';
 import { SHIELD } from './types';
 import { dropFromBridges, tickTerrain } from './terrain';
 import { capturedAfter } from './captured';
@@ -43,10 +43,15 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
   if (state.pending && !actionCommand) return { ok: false, reason: 'actionPending' };
   if (!state.pending && actionCommand) return { ok: false, reason: 'noPendingAction' };
 
+  // Moving several times in a row: only that piece moves, until the moves run out or the turn is ended.
+  if (state.chain && (cmd.type === 'proposeSpecial' || cmd.type === 'chaos')) return { ok: false, reason: 'chainInProgress' };
+
   switch (cmd.type) {
     case 'move':
       return applyMove(state, cmd);
     case 'endTurn':
+      // Stopping a run of moves early: the en passant chance its last move opened still stands.
+      if (state.chain) return { ok: true, ...passTurn(state, state.board, state.enPassant, []) };
       // Passing is for a turn spent on special actions. Doing nothing at all is not a turn,
       // unless there is no normal move to make (e.g. every piece is stunned or blocked).
       if (!state.usedApThisTurn && hasAnyMove(state)) return { ok: false, reason: 'nothingDoneThisTurn' };
@@ -181,9 +186,11 @@ function passTurn(
   if (ticked.events.some((e) => e.type === 'removed' || e.type === 'pushed') || land.events.length) {
     for (const c of ['white', 'black'] as const) if (isInCheck(ticked.board, c, land.terrain)) events.push({ type: 'check', color: c });
   }
+  const { chain: _chain, ...rest } = withCaptured(state, ticked.events);
+  void _chain;
   return {
     state: {
-      ...withCaptured(state, ticked.events),
+      ...rest,
       board: ticked.board,
       terrain: land.terrain,
       turn: next,
@@ -209,6 +216,7 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   const piece = state.board[cmd.from];
   if (!piece) return { ok: false, reason: 'noPiece' };
   if (piece.color !== state.turn) return { ok: false, reason: 'notYourPiece' };
+  if (state.chain && cmd.from !== state.chain.at) return { ok: false, reason: 'notChainedPiece' };
   const target = legalTargets(state, cmd.from).find((t) => t.to === cmd.to);
   if (!target) return { ok: false, reason: 'illegalMove' };
   // One-turn-kill guard: after any special-action attempt this turn, kings are off limits.
@@ -301,11 +309,25 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
     };
   }
 
-  const doubleStep = piece.type === 'pawn' && Math.abs(rankOf(cmd.to) - rankOf(cmd.from)) === 2;
-  const enPassant = doubleStep ? squareAt(fileOf(cmd.from), (rankOf(cmd.from) + rankOf(cmd.to)) / 2) : null;
+  // A pawn's double step from its first rank (not a pawn that slid two squares like a rook elsewhere).
+  const dir = piece.color === 'white' ? 1 : -1;
+  const doubleStep =
+    piece.type === 'pawn' && !isAir(cmd.from) && fileOf(cmd.to) === fileOf(cmd.from) && rankOf(cmd.from) === (dir === 1 ? 1 : 6) && rankOf(cmd.to) === rankOf(cmd.from) + 2 * dir;
+  const enPassant = doubleStep ? squareAt(fileOf(cmd.from), rankOf(cmd.from) + dir) : null;
 
   events.push(...checkEvents(board, piece.color, state.terrain));
   const withRights = withCaptured({ ...state, castling: revokeCastling(state.castling, touched) }, events);
+
+  // A piece that moves several times in a row (moveTimes) goes again, unless it gave check
+  // (the opponent always gets to answer a check) or has nowhere left to go.
+  const left = (state.chain ? state.chain.left : moveTimesOf(board[cmd.to]!)) - 1;
+  if (left > 0 && !events.some((e) => e.type === 'check')) {
+    const chain = { pieceId: piece.id, at: cmd.to, left };
+    const next: GameState = { ...withRights, board, enPassant, chain };
+    if (legalTargets(next, cmd.to).length) {
+      return { ok: true, state: next, events: [...events, { type: 'moveAgain', pieceId: piece.id, at: cmd.to, left }] };
+    }
+  }
   return { ok: true, ...passTurn(withRights, board, enPassant, events) };
 }
 

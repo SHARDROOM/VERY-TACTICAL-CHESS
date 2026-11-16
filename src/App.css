@@ -78,6 +78,8 @@ select option { background: var(--walnut); }
 .badge { padding: 7px 12px; border-radius: 12px; font-weight: 600; font-size: 0.9375rem; border: 1px solid var(--line); background: var(--panel); }
 .badge.check { background: var(--wax); border-color: #b5463b; color: #fbe9e3; font-family: var(--font-voice); font-weight: 700; }
 .badge.warn { color: var(--warn); border-color: rgba(226, 180, 90, 0.5); }
+.badge.chain { color: var(--accent); border-color: var(--accent); font-family: var(--font-voice); }
+.panel-footer button.end-turn-ready { border-color: var(--accent); color: var(--accent); }
 .badge.busy { color: var(--text); }
 .badge.busy::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--accent); animation: gm-think 1.2s ease-in-out infinite; vertical-align: 1px; }
 @keyframes gm-think { 50% { opacity: 0.25; } }

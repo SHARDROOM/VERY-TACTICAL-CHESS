@@ -9,6 +9,7 @@ import {
   legalTargets,
   opponent,
   parseMoveText,
+  fileOf,
   rankOf,
   squareName,
   DUEL_TIMING,
@@ -91,7 +92,11 @@ interface Romp {
 function moversOf(ev: Extract<GameEvent, { type: 'moved' }>, board: GameState['board']): Mover[] {
   const piece = board[ev.from];
   if (!piece) return [];
-  const movers: Mover[] = [{ id: piece.id, type: piece.type, from: ev.from, to: ev.to, mode: piece.type === 'knight' ? 'throw' : 'slide' }];
+  // A knight's jump is thrown over whatever is between (also by a piece lent the knight's moves).
+  const df = Math.abs(fileOf(ev.to) - fileOf(ev.from));
+  const dr = Math.abs(rankOf(ev.to) - rankOf(ev.from));
+  const jump = (df === 1 && dr === 2) || (df === 2 && dr === 1);
+  const movers: Mover[] = [{ id: piece.id, type: piece.type, from: ev.from, to: ev.to, mode: jump ? 'throw' : 'slide' }];
   if (ev.special?.kind === 'castle') {
     const rank = rankOf(ev.from);
     const [rf, rt] = ev.special.side === 'king' ? [7, 5] : [0, 3];
@@ -783,7 +788,14 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const locked = !playing || view.gmBusy || !!pending || !myTurn || !connected || !!dice || !!stage || !!duel || !!romp;
   // A turn has to be used for something: a normal move ends it by itself, so passing is only
   // for after a special action (or when no piece can move at all).
-  const canEndTurn = game.usedApThisTurn || !hasAnyMove(game);
+  // Mid-way through moving several times in a row, the rest may be let go.
+  const chain = game.chain;
+  const canEndTurn = !!chain || game.usedApThisTurn || !hasAnyMove(game);
+  // When the show of its first move is over, the piece that goes again is picked up for its next move.
+  const chainAt = chain && myTurn && !locked ? chain.at : null;
+  useEffect(() => {
+    if (chainAt !== null) setSelected(chainAt);
+  }, [chainAt]);
   const winner = game.status.kind === 'won' ? game.status.winner : null;
 
   const promotes = (from: Square, to: Square) => {
@@ -800,7 +812,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       setSelected(null);
       return;
     }
-    if (piece && piece.color === sideToMove) setSelected(sq === selected ? null : sq);
+    // Moving several times in a row: only that piece can be picked up.
+    if (piece && piece.color === sideToMove && (!chain || sq === chain.at)) setSelected(sq === selected ? null : sq);
     else setSelected(null);
   };
 
@@ -859,7 +872,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       ? '연결을 기다리는 중'
       : !myTurn
         ? `${COLOR_NAME[sideToMove]}의 차례입니다`
-        : `${COLOR_NAME[sideToMove]}: 수 또는 특수 행동`;
+        : chain
+          ? `${squareName(chain.at)}의 기물을 한 번 더 움직이거나 턴 종료`
+          : `${COLOR_NAME[sideToMove]}: 수 또는 특수 행동`;
 
   return (
     <div className="app">
@@ -905,6 +920,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         {spectator && <div className="badge me">관전 중</div>}
         {online && watchers > 0 && <div className="badge muted-badge">관전 {watchers}명</div>}
         {inCheck && <div className="badge check">체크!</div>}
+        {chain && playing && <div className="badge chain">👣 연속 이동 {chain.left}번 남음</div>}
         {view.gmBusy && <div className="badge busy">GM 판정 중…</div>}
         {warning && !winner && <div className="badge warn">⚠ {warning}</div>}
         {absent && playing && <div className="badge warn">{absent.name}님 연결 끊김, 다시 들어오기를 기다리는 중</div>}
@@ -1018,7 +1034,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
               <button
                 onClick={() => session.request({ type: 'endTurn' })}
                 disabled={locked || !canEndTurn}
-                title={canEndTurn ? '이번 턴을 마칩니다' : '수를 두거나 특수 행동을 시도해야 턴을 끝낼 수 있습니다'}
+                title={chain ? '남은 연속 이동을 쓰지 않고 턴을 마칩니다' : canEndTurn ? '이번 턴을 마칩니다' : '수를 두거나 특수 행동을 시도해야 턴을 끝낼 수 있습니다'}
+                className={chain && !locked ? 'end-turn-ready' : undefined}
               >
                 턴 종료
               </button>

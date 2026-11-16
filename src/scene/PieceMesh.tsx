@@ -201,14 +201,16 @@ function poseRotation(pose: Pose, dirX: number, dirZ: number, out: Quaternion): 
   return out;
 }
 
-/** How a piece travels between two points: knights jump, sliders glide with a small lift. */
-function planMove(piece: Piece, from: Vector3, to: Vector3, captured: boolean): Omit<Motion, 'from' | 'to' | 'fromScale' | 'toScale' | 'startedAt'> {
+/** How a piece travels between two points: knight jumps hop, slides glide with a small lift. */
+function planMove(from: Vector3, to: Vector3, captured: boolean): Omit<Motion, 'from' | 'to' | 'fromScale' | 'toScale' | 'startedAt'> {
   const dist = Math.hypot(to.x - from.x, to.z - from.z);
   if (captured) {
     // Knocked off when the attacker lands, then carried to the side.
     return { delay: 0.3, duration: 0.75, arc: 1.4, kind: 'captured' };
   }
-  if (piece.type === 'knight' && dist < 2.5) return { delay: 0, duration: 0.42, arc: 0.85, kind: 'move' };
+  // A knight's jump (by a knight, or anything lent its moves): an L, hopped over whatever is between.
+  const [ax, az] = [Math.round(Math.abs(to.x - from.x)), Math.round(Math.abs(to.z - from.z))];
+  if ((ax === 1 && az === 2) || (ax === 2 && az === 1)) return { delay: 0, duration: 0.42, arc: 0.85, kind: 'move' };
   // Long special-action flights arc higher.
   const arc = dist > 3.2 ? Math.min(1.8, 0.3 * dist) : 0.16 + 0.05 * dist;
   return { delay: 0, duration: Math.min(0.85, 0.26 + 0.07 * dist), arc, kind: 'move' };
@@ -431,7 +433,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     const trip = !captured ? direction?.motions[tripIndex.current] : undefined;
     if (trip) tripIndex.current++;
     travel.current = { x: to.x - from.x, z: to.z - from.z };
-    const scripted: Motion = { from, to, fromScale: shownScale.current, toScale: targetScale, startedAt: null, ...planMove(piece, from, to, captured) };
+    const scripted: Motion = { from, to, fromScale: shownScale.current, toScale: targetScale, startedAt: null, ...planMove(from, to, captured) };
     if (revived) {
       // Back from beside the board: it leaves its remains and comes back as the GM chose.
       physics?.resting.delete(piece.id);
