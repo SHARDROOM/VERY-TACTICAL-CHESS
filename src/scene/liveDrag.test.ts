@@ -46,4 +46,29 @@ describe('a thing held in the hand', () => {
     expect(at.x).toBeLessThan(1.2);
     d.free();
   });
+
+  it('a piece moving on the board shoves it out of the way, held or not', async () => {
+    // Held by its top, hanging on d4; a rook comes sliding along the 4th rank from a4 to h4.
+    const p = new Vector3(-0.5, 0, -0.5);
+    const q = new Quaternion();
+    const rook = { id: 'r', type: 'rook' as const, p: new Vector3(-3.5, 0, -0.5), q: new Quaternion() };
+    const d = await LiveDrag.start({ kind: 'piece', type: 'pawn', scale: 1 }, p.clone(), q.clone(), new Vector3(-0.5, 0.8, -0.5), none, 1, () => [rook]);
+    d.aim(new Vector3(-0.5, 0.85, -0.5));
+    const at = new Vector3();
+    const turned = new Quaternion();
+    run(d, 0.5, at, turned);
+    expect(Math.hypot(at.x + 0.5, at.z + 0.5)).toBeLessThan(0.2);
+    // The rook slides past at 3.5 squares a second, right through where it hangs.
+    let farthest = -Infinity;
+    for (let t = 0; t < 1.5; t += 1 / 60) {
+      rook.p.x = Math.min(3.5, -3.5 + t * 3.5);
+      d.step(1 / 60, at, turned);
+      farthest = Math.max(farthest, at.x);
+      // Never inside the rook: always ahead of it.
+      if (rook.p.x > -1) expect(at.x).toBeGreaterThan(rook.p.x + 0.3);
+    }
+    // Shoved a long way along, straining back toward the finger all the while.
+    expect(farthest).toBeGreaterThan(1.5);
+    d.free();
+  });
 });

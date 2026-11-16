@@ -6,6 +6,7 @@ import { diceObstacles } from './toys';
 import { TABLE_TOP_Y } from './WoodTable';
 import { restingChunks } from './debris';
 import { riderTypes, stackHeight, type Obstacle, type Obstacles } from './piecePhysics';
+import type { ShownPiece } from './liveDrag';
 
 /*
  * Picking things up off the table (docs/SPEC.md, "만지작거리기"): taken pieces beside the board and
@@ -22,6 +23,8 @@ export interface TableHands {
   taken(): Obstacle[];
   /** Which side of the board the dice tray is on. */
   diceSide(): 1 | -1;
+  /** The board's pieces where they are shown right now (moving or not). */
+  piecesShown(): ShownPiece[];
 }
 
 export const TableContext = createContext<TableHands | null>(null);

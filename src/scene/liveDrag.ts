@@ -9,9 +9,20 @@ import { G, addObstacles, addPieceColliders, addTable, type Obstacles } from './
  * soft, springy band: it lags behind, overshoots and bobs. Whatever is in its way (the board's
  * pieces, chunks, taken pieces, the dice, the tray, the table) stops it: it strains toward the
  * finger but cannot get through. Let go of, it flies on as it was moving, falls and comes to rest.
+ * The board's pieces follow where they are shown, frame by frame: one moving past (a move, a romp,
+ * a throw) shoves the thing out of its way, held or not (사용자 요청).
  */
 
 export type HeldThing = { kind: 'piece'; type: PieceType; scale: number } | { kind: 'chunk'; hull: Float32Array };
+
+/** A piece on the board where it is shown right now (with whoever rides it). */
+export interface ShownPiece {
+  id: string;
+  type: PieceType;
+  riders?: PieceType[];
+  p: Vector3;
+  q: Quaternion;
+}
 
 type Rapier = Awaited<ReturnType<typeof loadPhysics>>;
 
@@ -32,27 +43,40 @@ export class LiveDrag {
   private still = 0;
   private after = 0;
   private freed = false;
+  /** The board's pieces, moved to where they are shown (kinematic: they push, nothing pushes them). */
+  private readonly movers = new Map<string, { body: InstanceType<Rapier['RigidBody']>; from: Vector3; fromQ: Quaternion; to: Vector3; toQ: Quaternion }>();
 
   private constructor(
+    private readonly RAPIER: Rapier,
     private readonly world: InstanceType<Rapier['World']>,
     private readonly body: InstanceType<Rapier['RigidBody']>,
     /** The spot it was picked up by, in its own frame. */
     private readonly anchor: Vector3,
     grab: Vector3,
+    private readonly shown?: () => readonly ShownPiece[],
   ) {
     this.target = grab.clone();
   }
 
   /**
    * Picks up `thing`, lying at `p`, `q` (world), by the spot `grab` (world), among `obstacles` on a
-   * table whose dice tray is on `diceSide`.
+   * table whose dice tray is on `diceSide`. With `shown`, the board's pieces are taken from it every
+   * frame (where they are shown) instead of standing still where `obstacles` has them.
    */
-  static async start(thing: HeldThing, p: Vector3, q: Quaternion, grab: Vector3, obstacles: Obstacles, diceSide: 1 | -1): Promise<LiveDrag> {
+  static async start(
+    thing: HeldThing,
+    p: Vector3,
+    q: Quaternion,
+    grab: Vector3,
+    obstacles: Obstacles,
+    diceSide: 1 | -1,
+    shown?: () => readonly ShownPiece[],
+  ): Promise<LiveDrag> {
     const RAPIER = await loadPhysics();
     const world = new RAPIER.World({ x: 0, y: -G, z: 0 });
     world.timestep = DT;
     const fixed = addTable(RAPIER, world, diceSide);
-    addObstacles(RAPIER, world, fixed, obstacles);
+    addObstacles(RAPIER, world, fixed, shown ? { ...obstacles, pieces: [] } : obstacles);
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic()
         .setTranslation(p.x, p.y, p.z)
@@ -65,7 +89,9 @@ export class LiveDrag {
     if (thing.kind === 'piece') addPieceColliders(RAPIER, world, body, thing.type, { scale: thing.scale, friction: 0.5, restitution: 0.25, footDensity: 6 });
     else world.createCollider(RAPIER.ColliderDesc.convexHull(thing.hull)!.setDensity(1).setFriction(0.5).setRestitution(0.3), body);
     const anchor = grab.clone().sub(p).applyQuaternion(q.clone().invert());
-    return new LiveDrag(world, body, anchor, grab);
+    const drag = new LiveDrag(RAPIER, world, body, anchor, grab, shown);
+    drag.follow();
+    return drag;
   }
 
   /** Where the finger is now (world). */
@@ -89,10 +115,11 @@ export class LiveDrag {
   step(dt: number, p: Vector3, q: Quaternion): boolean {
     if (this.freed) return true;
     this.acc += Math.min(dt, 0.1);
-    let n = 0;
-    while (this.acc >= DT && n < 6) {
+    const steps = Math.min(6, Math.floor(this.acc / DT));
+    if (steps > 0) this.follow();
+    for (let n = 0; n < steps; n++) {
       this.acc -= DT;
-      n++;
+      this.moveMovers((n + 1) / steps);
       if (!this.released) this.pull();
       this.world.step();
       if (this.released) {
@@ -107,6 +134,49 @@ export class LiveDrag {
     p.set(t.x, t.y, t.z);
     q.set(r.x, r.y, r.z, r.w);
     return this.released && (this.still >= STILL_STEPS || this.after >= MAX_AFTER);
+  }
+
+  /**
+   * Where the board's pieces are shown now: each is moved there over the coming steps. A piece new
+   * to the board gets a body; one gone from it loses its own.
+   */
+  private follow(): void {
+    if (!this.shown) return;
+    const RAPIER = this.RAPIER;
+    const seen = new Set<string>();
+    for (const s of this.shown()) {
+      seen.add(s.id);
+      const m = this.movers.get(s.id);
+      if (m) {
+        const t = m.body.translation();
+        const r = m.body.rotation();
+        m.from.set(t.x, t.y, t.z);
+        m.fromQ.set(r.x, r.y, r.z, r.w);
+        m.to.copy(s.p);
+        m.toQ.copy(s.q);
+        continue;
+      }
+      const body = this.world.createRigidBody(
+        RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(s.p.x, s.p.y, s.p.z).setRotation({ x: s.q.x, y: s.q.y, z: s.q.z, w: s.q.w }),
+      );
+      addPieceColliders(RAPIER, this.world, body, s.type, { riders: s.riders, friction: 0.5, restitution: 0.25, footDensity: 1 });
+      this.movers.set(s.id, { body, from: s.p.clone(), fromQ: s.q.clone(), to: s.p.clone(), toQ: s.q.clone() });
+    }
+    for (const [id, m] of this.movers) {
+      if (seen.has(id)) continue;
+      this.world.removeRigidBody(m.body);
+      this.movers.delete(id);
+    }
+  }
+
+  /** The board's pieces `f` of the way from where they were to where they are shown. */
+  private moveMovers(f: number): void {
+    for (const m of this.movers.values()) {
+      const p = m.from.clone().lerp(m.to, f);
+      const q = m.fromQ.clone().slerp(m.toQ, f);
+      m.body.setNextKinematicTranslation({ x: p.x, y: p.y, z: p.z });
+      m.body.setNextKinematicRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
+    }
   }
 
   /** The band's pull at the spot it is held by: springy, a little damped, never too strong. */

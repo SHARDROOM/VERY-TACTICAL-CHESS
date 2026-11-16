@@ -223,7 +223,7 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
     if (!table) return;
     c.held = true;
     c.track = undefined;
-    LiveDrag.start({ kind: 'chunk', hull: c.hull }, c.p.clone(), c.q.clone(), d.grab, tableObstacles(table, { chunkKey: c.key }), table.diceSide())
+    LiveDrag.start({ kind: 'chunk', hull: c.hull }, c.p.clone(), c.q.clone(), d.grab, tableObstacles(table, { chunkKey: c.key }), table.diceSide(), table.piecesShown)
       .then((hand) => {
         hand.aim(d.target);
         if (d.released) hand.letGo();

@@ -388,7 +388,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   /** Once it really moves: in the hand, simulated as it happens (liveDrag.ts), hanging by where it was picked up. */
   const takeInHand = (h: NonNullable<typeof held.current>) => {
     if (!table || !physics) return;
-    LiveDrag.start({ kind: 'piece', type: piece.type, scale: shownScale.current }, shownAt.current.clone(), shownQ.current.clone(), h.grab, tableObstacles(table, { takenId: piece.id }), physics.diceSide)
+    LiveDrag.start({ kind: 'piece', type: piece.type, scale: shownScale.current }, shownAt.current.clone(), shownQ.current.clone(), h.grab, tableObstacles(table, { takenId: piece.id }), physics.diceSide, table.piecesShown)
       .then((d) => {
         d.aim(h.target);
         if (h.released) d.letGo();

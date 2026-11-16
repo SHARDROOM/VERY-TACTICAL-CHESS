@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
-import { CanvasTexture, SRGBColorSpace, Vector3, type Group } from 'three';
+import { CanvasTexture, Quaternion, SRGBColorSpace, Vector3, type Group } from 'three';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { CameraControls, Environment, Lightformer } from '@react-three/drei';
 import { fileOf, isAir, rankOf, type Board, type CapturedPiece, type Color, type FallingPiece, type Square, type TerrainCell } from '../engine';
@@ -9,7 +9,8 @@ import { TableContext, depthMoved, holdingSomething, type TableHands } from './t
 import { diceObstacles, setTakenSource } from './toys';
 import { clearChunks, restingChunks } from './debris';
 import { PieceMesh, PiecePhysicsContext, type PiecePhysics } from './PieceMesh';
-import type { Obstacle } from './piecePhysics';
+import { riderTypes, type Obstacle } from './piecePhysics';
+import type { ShownPiece } from './liveDrag';
 import { TABLE_TOP_Y, WoodTable } from './WoodTable';
 import { CoinTable } from '../coins/CoinTable';
 import { DiceTray, trayCenterX, type ActiveRoll } from '../dice3d/DiceTray';
@@ -269,7 +270,7 @@ function TwoFingerDepth() {
  * Development only: lets a test script find things on screen (window.__vtcProbe): the camera,
  * the chunks lying about and the taken pieces beside the board, as screen points.
  */
-function DevProbe({ resting }: { resting: Map<string, Obstacle> }) {
+function DevProbe({ resting, shown }: { resting: Map<string, Obstacle>; shown: () => ShownPiece[] }) {
   const { camera, size } = useThree();
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -282,8 +283,9 @@ function DevProbe({ resting }: { resting: Map<string, Obstacle> }) {
       chunks: restingChunks().map((c) => ({ key: c.key, at: c.p.toArray().map((n) => Math.round(n * 100) / 100), screen: screen(c.p) })),
       taken: [...resting.entries()].map(([id, o]) => ({ id, at: o.pose.position.toArray().map((n) => Math.round(n * 100) / 100), screen: screen(o.pose.position.clone().setY(o.pose.position.y + 0.25)) })),
       dice: diceObstacles().map((d) => ({ at: d.p.toArray().map((n) => Math.round(n * 100) / 100), screen: screen(d.p) })),
+      pieces: shown().map((s) => ({ id: s.id, at: s.p.toArray().map((n) => Math.round(n * 100) / 100), screen: screen(s.p) })),
     });
-  }, [camera, size, resting]);
+  }, [camera, size, resting, shown]);
   return null;
 }
 
@@ -418,6 +420,17 @@ export function BoardScene({
       board: () => boardNow.current,
       taken: () => [...resting.current.entries()].map(([id, o]) => ({ ...o, id })),
       diceSide: () => diceSideNow.current,
+      piecesShown: () => {
+        const out: ShownPiece[] = [];
+        boardNow.current.forEach((p, sq) => {
+          if (!p) return;
+          const g = objects.current.get(p.id);
+          const at = g ? g.getWorldPosition(new Vector3()) : new Vector3(...squareToWorld(sq));
+          const q = g ? g.getWorldQuaternion(new Quaternion()) : new Quaternion();
+          out.push({ id: p.id, type: p.type, riders: riderTypes(p), p: at, q });
+        });
+        return out;
+      },
     }),
     [],
   );
@@ -453,7 +466,7 @@ export function BoardScene({
         <CameraRig camera={camera} diceSide={diceSide} locked={!!doodle?.tool || holding} holdNow={holdNow} />
       )}
       <TwoFingerDepth />
-      {import.meta.env.DEV && <DevProbe resting={resting.current} />}
+      {import.meta.env.DEV && <DevProbe resting={resting.current} shown={hands.piecesShown} />}
 
       <ShakeGroup shake={shake}>
       <WoodTable />
