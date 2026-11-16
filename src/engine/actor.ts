@@ -60,16 +60,15 @@ export function checkActor(board: Board, ruling: Ruling, color: Color, ctx: Effe
   if (!means || !MEANS.includes(means)) return '수단(means)이 올바르지 않음';
   if (means !== 'touch') return null;
   // A touch reaches 1 square from wherever the actor stands when it acts (it may step up first).
-  for (const [label, list] of [['', ruling.effects], ['대성공 ', ruling.critSuccessEffects ?? []]] as const) {
-    for (let i = 0; i < list.length; i++) {
-      const before = i === 0 ? { ok: true as const, board } : applyEffects(board, list.slice(0, i), ctx);
-      if (!before.ok) return null; // the effects themselves are checked (and reported) elsewhere
-      const from = squareOf(before.board, piece.id);
-      if (from === null) break;
-      for (const t of targetsOf(list[i])) {
-        const d = distance(from, t);
-        if (t !== from && d > 1) return `${label}효과 ${i + 1}: ${MEANS_NAME.touch} 행동인데 ${squareName(t)}이(가) 주체에서 ${d}칸 떨어져 있음 (1칸 이내만)`;
-      }
+  const list = ruling.effects;
+  for (let i = 0; i < list.length; i++) {
+    const before = i === 0 ? { ok: true as const, board } : applyEffects(board, list.slice(0, i), ctx);
+    if (!before.ok) return null; // the effects themselves are checked (and reported) elsewhere
+    const from = squareOf(before.board, piece.id);
+    if (from === null) break;
+    for (const t of targetsOf(list[i])) {
+      const d = distance(from, t);
+      if (t !== from && d > 1) return `효과 ${i + 1}: ${MEANS_NAME.touch} 행동인데 ${squareName(t)}이(가) 주체에서 ${d}칸 떨어져 있음 (1칸 이내만)`;
     }
   }
   return null;

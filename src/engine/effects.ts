@@ -487,7 +487,6 @@ export function validateRuling(board: Board, ruling: Ruling, rules: RuleConfig, 
   }
   const lists: [string, Effect[] | undefined][] = [
     ['', ruling.effects],
-    ['대성공 ', ruling.critSuccessEffects],
     ['대실패 ', ruling.critFailureEffects],
   ];
   for (const [label, list] of lists) {

@@ -199,7 +199,6 @@ select option { background: var(--walnut); }
 .odds-faces { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
 .odds-face { height: 30px; border-radius: 4px; background: rgba(43, 33, 25, 0.12); color: rgba(43, 33, 25, 0.55); font-size: 0.9375rem; display: grid; place-items: center; font-variant-numeric: tabular-nums; }
 .odds-face.win { background: #4e8a68; color: #eaf5ee; }
-.odds-face.crit { background: #c8963e; color: #2b2119; font-weight: 800; }
 .odds-face.fumble { background: var(--wax); color: #f7e3d3; font-weight: 800; }
 .odds-caption { margin-top: 6px; font-size: 0.875rem; color: #4a3b2d; }
 .ruling-facts { display: flex; gap: 24px; margin: 12px 0 0; flex-wrap: wrap; }
@@ -238,7 +237,6 @@ select option { background: var(--walnut); }
 .dice-result { display: flex; align-items: baseline; gap: 10px; animation: dice-pop 0.35s ease-out; }
 .dice-number { font-family: var(--font-voice); font-size: 2.25rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
 .dice-label { font-family: var(--font-voice); font-size: 1.125rem; font-weight: 700; }
-.dice-result.critSuccess { color: var(--accent-bright); text-shadow: 0 0 14px rgba(226, 180, 90, 0.6); }
 .dice-result.success { color: var(--success); }
 .dice-result.failure { color: var(--failure); }
 .dice-result.critFailure { color: #e8604f; text-shadow: 0 0 12px rgba(200, 60, 40, 0.6); }
@@ -304,7 +302,6 @@ select option { background: var(--walnut); }
 .show-caption.success .show-title { color: var(--success); }
 .show-caption.failure { border-left-color: var(--failure); }
 .show-caption.failure .show-title { color: var(--failure); }
-.show-caption.critSuccess { border-left-color: var(--accent-bright); box-shadow: var(--shadow), 0 0 26px rgba(226, 180, 90, 0.35); }
 .show-caption.critFailure { border-left-color: #e8604f; }
 .show-caption.critFailure .show-title { color: #e8604f; }
 /* Chaos comes from outside the game: its own colour, and a bigger entrance. */
@@ -368,7 +365,6 @@ select option { background: var(--walnut); }
 .precedent-head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8125rem; color: var(--muted); }
 .precedent-action { margin: 4px 0; font-family: var(--font-voice); font-weight: 600; }
 .precedents .muted { color: var(--muted); font-size: 0.875rem; line-height: 1.5; }
-.outcome.critSuccess { color: var(--accent-bright); font-weight: 700; }
 .outcome.success { color: var(--success); }
 .outcome.failure { color: var(--failure); }
 .outcome.critFailure { color: #e8604f; font-weight: 700; }

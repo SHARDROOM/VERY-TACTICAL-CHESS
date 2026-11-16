@@ -103,14 +103,10 @@ function rulingSchema<E extends z.ZodTypeAny, S extends z.ZodTypeAny>(effect: E,
     dc: z.number().int().describe('난이도. d6 결과가 이 값 이상이면 성공. 불가능하면 0'),
     cost: z.number().int().describe('시도할 때 드는 AP. 불가능하면 0'),
     effects: z.array(effect).describe('성공했을 때 순서대로 적용할 효과'),
-    critSuccessEffects: z
-      .array(effect)
-      .describe('주사위 6(대성공)일 때 effects 대신 적용할 효과. 성공보다 조금 더 좋은 결과. 비우면 effects가 적용됨'),
     critFailureEffects: z.array(effect).describe('주사위 1(대실패)일 때 적용할 역효과. 비우면 아무 일도 없음'),
     narration: z.object({
       success: z.string().describe('성공했을 때의 서술 (한국어, 1~2문장)'),
       failure: z.string().describe('실패했을 때의 서술 (한국어, 1~2문장)'),
-      critSuccess: z.string().describe('대성공(6)일 때의 서술 (한국어, 1~2문장)'),
       critFailure: z.string().describe('대실패(1)일 때의 서술 (한국어, 1~2문장)'),
     }),
     staging,
@@ -132,7 +128,7 @@ export const GmEffectReplySchema = effectSchema(auraField.optional(), auraStreng
 
 export const GmRulingSchema = rulingSchema(
   GmEffectSchema,
-  GmRulingStagingSchema.describe('결과 넷 각각이 화면에서 어떻게 보일지 (보기용 연출, 규칙에는 영향 없음)'),
+  GmRulingStagingSchema.describe('결과 셋 각각이 화면에서 어떻게 보일지 (보기용 연출, 규칙에는 영향 없음)'),
 );
 /** A chaos event (the 혼돈 rule): something odd happens at the start of a turn. */
 export const GmChaosSchema = chaosSchema(GmEffectSchema, GmStagingSchema.describe('사건이 화면에서 어떻게 보일지 (보기용 연출)'));

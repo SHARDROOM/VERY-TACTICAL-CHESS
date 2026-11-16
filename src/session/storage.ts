@@ -160,7 +160,9 @@ export function loadSavedGame(storage?: Storage): SavedGame | null {
   const game = raw as unknown as SavedGame;
   const black = isObj(raw.black) && typeof raw.black.id === 'string' && typeof raw.black.name === 'string' ? { id: raw.black.id, name: raw.black.name } : undefined;
   // Saves from before a rule existed get its default; from before the air, an empty air layer.
-  return { ...game, black, state: { ...game.state, rules: withDefaultRules(game.state.rules), board: withAir(game.state.board) } };
+  // From before critical successes were dropped: those count as plain successes now.
+  const precedents = game.state.precedents.map((p) => ((p.outcome as string) === 'critSuccess' ? { ...p, outcome: 'success' as const } : p));
+  return { ...game, black, state: { ...game.state, precedents, rules: withDefaultRules(game.state.rules), board: withAir(game.state.board) } };
 
   function bad() {
     clearSavedGame(storage);

@@ -15,7 +15,7 @@ describe('staging in the GM prompts', () => {
 
   it('with the light principles: match the narration and the size of the outcome', () => {
     expect(ruling).toContain('서술과 맞게');
-    expect(ruling).toContain('대성공은 화려하게, 실패는 짧게, 대실패는 행동한 쪽에 역효과처럼');
+    expect(ruling).toContain('성공은 화려하게, 실패는 짧게, 대실패는 행동한 쪽에 역효과처럼');
     expect(ruling).toContain('6초');
   });
 

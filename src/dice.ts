@@ -10,9 +10,9 @@ export function rollDie(): number {
   }
 }
 
-/** Probability that an attempt succeeds: a natural 6 always does, a natural 1 never does. */
+/** Probability that an attempt succeeds: the roll must reach the DC, and a natural 1 never does. */
 export function successChance(dc: number): number {
   let wins = 0;
-  for (let roll = 1; roll <= DIE_SIDES; roll++) if (roll === DIE_SIDES || (roll !== 1 && roll >= dc)) wins++;
+  for (let roll = 1; roll <= DIE_SIDES; roll++) if (roll !== 1 && roll >= dc) wins++;
   return wins / DIE_SIDES;
 }

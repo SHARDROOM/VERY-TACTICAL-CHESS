@@ -20,7 +20,6 @@ export type SfxName =
   | 'carve'
   | 'chat'
   | 'ruling'
-  | 'critSuccess'
   | 'critFailure'
   | 'chaos'
   | 'timeout'
@@ -211,9 +210,6 @@ const SOUNDS: Record<SfxName, (t: number, s: number) => void> = {
   ruling: (t) => {
     burst(t, { freq: 2500, q: 0.6, peak: 0.05, attack: 0.03, decay: 0.2, type: 'highpass' });
     tone(t + 0.05, 392, { type: 'triangle', peak: 0.05, decay: 0.3 });
-  },
-  critSuccess: (t) => {
-    [1047, 1319, 1568, 2093].forEach((f, i) => tone(t + i * 0.08, f, { peak: 0.08, decay: 0.5 }));
   },
   critFailure: (t) => {
     tone(t, 196, { type: 'sawtooth', peak: 0.06, attack: 0.02, decay: 0.6, to: 82 });

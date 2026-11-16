@@ -11,9 +11,8 @@ const ruling = {
   dc: 5,
   cost: 2,
   effects: [{ type: 'move', from: 'b1', to: 'e5' }],
-  critSuccessEffects: [],
   critFailureEffects: [{ type: 'tag', at: 'b1', tag: '기절', turns: 1 }],
-  narration: { success: '성공!', failure: '실패!', critSuccess: '대성공!', critFailure: '대실패!' },
+  narration: { success: '성공!', failure: '실패!', critFailure: '대실패!' },
 };
 
 const message = (text: string, stop_reason = 'end_turn') => ({
@@ -139,12 +138,12 @@ describe('prompt shows precedents', () => {
     const state = {
       ...createInitialState(),
       precedents: [
-        { turnNumber: 3, color: 'white' as const, action: '나이트 <발사>', interpretation: '투석기', dc: 4, cost: 1, roll: 6, outcome: 'critSuccess' as const },
+        { turnNumber: 3, color: 'white' as const, action: '나이트 <발사>', interpretation: '투석기', dc: 4, cost: 1, roll: 6, outcome: 'success' as const },
         { turnNumber: 4, color: 'black' as const, action: '폰 저격', interpretation: '저격', dc: 5, cost: 2, roll: 1, outcome: 'critFailure' as const },
       ],
     };
     const m = buildUserMessage('x', state);
-    expect(m).toContain('- 턴 3 백: "나이트 ‹발사›" → 투석기 / DC 4, AP 1, 주사위 6 (대성공)');
+    expect(m).toContain('- 턴 3 백: "나이트 ‹발사›" → 투석기 / DC 4, AP 1, 주사위 6 (성공)');
     expect(m.indexOf('턴 3 백')).toBeLessThan(m.indexOf('턴 4 흑'));
     expect(m).toContain('주사위 1 (대실패)');
   });

@@ -164,16 +164,15 @@ export interface Ruling {
   cost: number;
   /** Applied in order when the attempt succeeds. */
   effects: Effect[];
-  /** Applied instead of `effects` on a natural 6. Empty or missing: `effects` apply. */
-  critSuccessEffects?: Effect[];
   /** Backfire applied on a natural 1. Empty or missing: nothing happens. */
   critFailureEffects?: Effect[];
-  narration: { success: string; failure: string; critSuccess?: string; critFailure?: string };
+  narration: { success: string; failure: string; critFailure?: string };
   /** How each outcome looks (GM staging, already cleaned; purely visual). */
   staging?: Partial<Record<Outcome, Staging>>;
 }
 
-export type Outcome = 'critSuccess' | 'success' | 'failure' | 'critFailure';
+/** No critical success (사용자 요청): a 6 is just a roll, a natural 1 still backfires. */
+export type Outcome = 'success' | 'failure' | 'critFailure';
 
 /** A past ruling in this game, shown to the GM so similar declarations get similar rulings. */
 export interface Precedent {

@@ -17,9 +17,8 @@ describe('parseGmRuling', () => {
       { type: 'move', from: 'b1', to: 'e5' },
       { type: 'remove', at: 'D7' },
     ],
-    critSuccessEffects: [{ type: 'move', from: 'b1', to: 'e6' }],
     critFailureEffects: [],
-    narration: { success: 's', failure: 'f', critSuccess: 'cs', critFailure: 'cf' },
+    narration: { success: 's', failure: 'f', critFailure: 'cf' },
   };
 
   it('converts algebraic squares to engine squares', () => {
@@ -32,7 +31,6 @@ describe('parseGmRuling', () => {
           { type: 'move', from: sq('b1'), to: sq('e5') },
           { type: 'remove', at: sq('d7') },
         ],
-        critSuccessEffects: [{ type: 'move', from: sq('b1'), to: sq('e6') }],
         critFailureEffects: [],
       },
     });
@@ -92,11 +90,11 @@ describe('dice', () => {
     expect(seen.size).toBe(6);
   });
 
-  it('computes success chance, counting a natural 6 as a win and a natural 1 as a loss', () => {
+  it('computes success chance: the roll must reach the DC, and a natural 1 is always a loss', () => {
     expect(successChance(4)).toBe(0.5);
     expect(successChance(2)).toBeCloseTo(5 / 6);
     expect(successChance(6)).toBeCloseTo(1 / 6);
-    expect(successChance(9)).toBeCloseTo(1 / 6);
+    expect(successChance(1)).toBeCloseTo(5 / 6);
   });
 });
 
@@ -117,9 +115,8 @@ describe('full effect vocabulary through the GM boundary', () => {
         { type: 'transform', at: 'a3', into: 'queen' },
         { type: 'spawn', at: 'e4', color: 'black', piece: 'knight' },
       ],
-      critSuccessEffects: [],
       critFailureEffects: [],
-      narration: { success: 's', failure: 'f', critSuccess: 'cs', critFailure: 'cf' },
+      narration: { success: 's', failure: 'f', critFailure: 'cf' },
     };
     const r = parseGmRuling(raw);
     if (!r.ok) throw new Error(r.error);
@@ -141,9 +138,8 @@ describe('full effect vocabulary through the GM boundary', () => {
       feasible: true,
       dc: 4,
       cost: 1,
-      critSuccessEffects: [],
       critFailureEffects: [],
-      narration: { success: 's', failure: 'f', critSuccess: 'cs', critFailure: 'cf' },
+      narration: { success: 's', failure: 'f', critFailure: 'cf' },
     };
     expect(parseGmRuling({ ...base, effects: [{ type: 'spawn', at: 'e4', color: 'white', piece: 'king' }] }).ok).toBe(false);
     expect(parseGmRuling({ ...base, effects: [{ type: 'transform', at: 'e4', into: 'king' }] }).ok).toBe(false);
@@ -169,9 +165,8 @@ describe('swap, revive, burn and terrain through the GM boundary', () => {
     feasible: true,
     dc: 4,
     cost: 1,
-    critSuccessEffects: [],
     critFailureEffects: [],
-    narration: { success: 's', failure: 'f', critSuccess: 'cs', critFailure: 'cf' },
+    narration: { success: 's', failure: 'f', critFailure: 'cf' },
   };
 
   it('parses the new effects and converts their squares', () => {
@@ -229,7 +224,7 @@ describe('swap, revive, burn and terrain through the GM boundary', () => {
 });
 
 describe('clash multipliers, props, bridges and ladders through the GM boundary', () => {
-  const base = { interpretation: 'x', actor: 'e2', means: 'magic', feasible: true, dc: 4, cost: 1, critSuccessEffects: [], critFailureEffects: [], narration: { success: 's', failure: 'f', critSuccess: 'cs', critFailure: 'cf' } };
+  const base = { interpretation: 'x', actor: 'e2', means: 'magic', feasible: true, dc: 4, cost: 1, critFailureEffects: [], narration: { success: 's', failure: 'f', critFailure: 'cf' } };
   const sword = { preset: 'sword', color: '', scale: 1, attach: 'rightHand', parts: '' };
   const none = { preset: 'none', color: '', scale: 1, attach: 'rightHand', parts: '' };
 

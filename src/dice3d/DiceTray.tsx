@@ -39,7 +39,6 @@ const TINT: Record<Color, { body: string; ink: string }> = {
 };
 
 const LOOK: Record<Outcome, { body: string; emissive: string; glow: number; text: string }> = {
-  critSuccess: { body: '#e8c35a', emissive: '#ffcc33', glow: 0.55, text: '#f5d76e' },
   success: { body: '#d9d2c2', emissive: '#000000', glow: 0, text: '#8fe0a6' },
   failure: { body: '#d9d2c2', emissive: '#000000', glow: 0, text: '#f0a39d' },
   critFailure: { body: '#7a1f1f', emissive: '#ff3b2f', glow: 0.35, text: '#ff6b5e' },
@@ -224,7 +223,6 @@ export function DiceTray({ side, roll, onLanded, onFirstLanded }: Props) {
       rest.current = { position: g.position.clone(), quaternion: g.quaternion.clone() };
       restSkin.current = roll.skin.clone();
       setLit(roll.outcome);
-      if (roll.outcome === 'critSuccess') playSfx('critSuccess');
       if (roll.outcome === 'critFailure') playSfx('critFailure');
       if (second) {
         // A clash: the attacker's die is down; the defender's goes next.

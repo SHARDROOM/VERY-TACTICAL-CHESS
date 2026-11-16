@@ -31,7 +31,7 @@ export function LobbyBackdrop({ inset }: { inset: TourInset }) {
 
   const throwDie = () => {
     const number = 1 + Math.floor(Math.random() * 6);
-    const outcome: Outcome = number === 6 ? 'critSuccess' : number === 1 ? 'critFailure' : 'success';
+    const outcome: Outcome = number === 1 ? 'critFailure' : 'success';
     setRoll({ run: null, skin: new Quaternion(), outcome, skipped: false });
     simulateRoll()
       .then((run) => setRoll((r) => (r ? { ...r, run, skin: skinRotationFor(number, run.final) } : r)))

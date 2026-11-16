@@ -178,6 +178,14 @@ describe('saved games', () => {
     expect(loadSavedGame(storage)?.state.rules).toMatchObject({ turnSeconds: 0, chaosChance: 0, doodle: true, timeoutPenalty: 1 });
   });
 
+  it('old saves with critical successes in the precedents load them as plain successes', () => {
+    const storage = new MemoryStorage();
+    const state = createInitialState();
+    const old = { turnNumber: 1, color: 'white' as const, action: 'a', interpretation: 'x', dc: 4, cost: 1, roll: 6, outcome: 'critSuccess' as never };
+    saveGame({ kind: 'hotseat', state: { ...state, precedents: [old] }, gm: { provider: 'fake' } }, storage);
+    expect(loadSavedGame(storage)?.state.precedents).toEqual([{ ...old, outcome: 'success' }]);
+  });
+
   it('a host save remembers who sat at black', () => {
     const storage = new MemoryStorage();
     saveGame({ kind: 'host', code: 'ABC234', state: createInitialState(), gm: { provider: 'fake' }, black: { id: 'guest-1', name: '친구' } }, storage);

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { applyCommand, createInitialState, distance, type Effect, type GameState, type Means, type Ruling } from './index';
 import { ok, sq } from './testUtil';
 
-const ruling = (actor: string | null, means: Means, effects: Effect[], crit: Effect[] = []): Ruling => ({
+const ruling = (actor: string | null, means: Means, effects: Effect[]): Ruling => ({
   interpretation: 'x',
   feasible: true,
   dc: 4,
@@ -10,7 +10,6 @@ const ruling = (actor: string | null, means: Means, effects: Effect[], crit: Eff
   actor: actor === null ? null : sq(actor),
   means,
   effects,
-  critSuccessEffects: crit,
   narration: { success: 's', failure: 'f' },
 });
 const propose = (state: GameState, r: Ruling) => applyCommand({ ...state, ap: { white: 5, black: 5 } }, { type: 'proposeSpecial', action: 'a', ruling: r });
@@ -54,8 +53,6 @@ describe('who does it (주체)', () => {
     ok(propose(board(), ruling('e6', 'touch', [burn('e7')])));
     ok(propose(board(), ruling('e6', 'touch', [burn('d7')])));
     expect(problem(board(), ruling('e2', 'touch', [burn('e7')]))).toContain('5칸');
-    // ...including the better result of a natural 6.
-    expect(problem(board(), ruling('e6', 'touch', [burn('e7')], [burn('e7'), burn('b7')]))).toContain('대성공 효과 2');
   });
 
   it('a touch counts from where the actor stands when it acts (it may step up first)', () => {

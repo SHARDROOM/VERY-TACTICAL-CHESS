@@ -712,7 +712,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   // Let the result sink in for a moment, then reveal it on the board.
   useEffect(() => {
     if (!dice?.landed) return;
-    const crit = dice.outcome === 'critSuccess' || dice.outcome === 'critFailure';
+    const crit = dice.outcome === 'critFailure';
     // A clash's two scores take a moment longer to read.
     const t = setTimeout(finishRoll, crit ? 2000 : dice.clash ? 2300 : 1400);
     return () => clearTimeout(t);
@@ -1201,7 +1201,6 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
                   </div>
                 </dl>
                 <ul className="crit-notes">
-                  <li>6이 나오면 대성공: {pending.ruling.critSuccessEffects?.length ? '성공보다 더 좋은 결과가 납니다.' : '성공과 같은 결과입니다.'}</li>
                   <li>1이 나오면 대실패: {pending.ruling.critFailureEffects?.length ? '역효과가 있습니다.' : '아무 일도 일어나지 않습니다.'}</li>
                 </ul>
                 {!canAfford && <p className="infeasible">AP가 부족해서 {retry ? '다시 굴릴' : '시도할'} 수 없습니다.</p>}
@@ -1386,7 +1385,7 @@ function TimerBadge({ timer, mine }: { timer: TurnTimer; mine: boolean }) {
 /** The six faces of the die, marking which of them succeed against this DC. */
 function DieOdds({ dc }: { dc: number }) {
   const faces = Array.from({ length: DIE_SIDES }, (_, i) => i + 1);
-  const kind = (n: number) => (n === DIE_SIDES ? 'crit' : n === 1 ? 'fumble' : n >= dc ? 'win' : '');
+  const kind = (n: number) => (n === 1 ? 'fumble' : n >= dc ? 'win' : '');
   return (
     <div className="odds">
       <div className="odds-faces" aria-hidden>
@@ -1404,12 +1403,11 @@ function DieOdds({ dc }: { dc: number }) {
 /** One sentence about how the game went. */
 function recap(game: GameState): string {
   const specials = game.precedents.length;
-  const crits = game.precedents.filter((p) => p.outcome === 'critSuccess').length;
   const fumbles = game.precedents.filter((p) => p.outcome === 'critFailure').length;
   const chaos = game.chaosLog?.length ?? 0;
   const parts: string[] = [];
   if (specials) {
-    const extra = [crits && `대성공 ${crits}번`, fumbles && `대실패 ${fumbles}번`].filter(Boolean).join(', ');
+    const extra = fumbles ? `대실패 ${fumbles}번` : '';
     parts.push(`특수 행동 ${specials}번${extra ? `(${extra})` : ''}`);
   }
   if (chaos) parts.push(`혼돈 ${chaos}번`);

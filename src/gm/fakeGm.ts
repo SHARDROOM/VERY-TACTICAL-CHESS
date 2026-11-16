@@ -109,34 +109,26 @@ const tag = (
 const MOVE_LIKE: [RegExp, PieceType][] = [[/퀸|여왕/, 'queen'], [/룩|성탑/, 'rook'], [/비숍|주교/, 'bishop'], [/나이트|기사/, 'knight'], [/킹/, 'king'], [/폰|병사/, 'pawn']];
 const MOVE_KIND_KO: Record<PieceType, string> = { king: '킹', ...PIECE_KO };
 
-/** A bigger version of a success look, for a natural 6. */
-function grander(s: StagingJson): StagingJson {
-  return { ...s, shake: Math.min(3, s.shake + 1), fx: s.fx.map((f) => ({ ...f, strength: Math.min(5, f.strength + 1), radius: Math.min(3, f.radius + 0.5) })) };
-}
-
 /**
  * The fake GM's ruling for a declaration by `color`. With the board it checks that the acting
  * piece is really the player's; without it (tests) it takes the first square on trust.
  */
 export function fakeRuling(action: string, color: Color = 'white', board?: Board): GmRulingJson {
   const base = fakeBaseRuling(action, color, board);
-  // The fake GM keeps crits simple: a 6 does the same thing, a 1 stuns the acting piece for a turn.
+  // The fake GM keeps the backfire simple: a 1 stuns the acting piece for a turn.
   const actorSquare = base.feasible && base.actor ? base.actor : null;
   const success = base.look ?? look();
   const { look: _look, ...rest } = base;
   void _look;
   return {
     ...rest,
-    critSuccessEffects: [],
     critFailureEffects: actorSquare ? [tag(actorSquare, '기절', 1)] : [],
     narration: {
       ...base.narration,
-      critSuccess: base.narration.success ? `완벽하다! ${base.narration.success}` : '',
       critFailure: actorSquare ? `대참사! 기물이 비틀거리다 정신을 잃었다.` : base.narration.failure,
     },
     staging: {
       success,
-      critSuccess: grander(success),
       // A miss: the piece stumbles where it stands.
       failure: actorSquare ? look({ acts: [{ at: actorSquare, act: 'stagger', delay: 0 }], fx: [fx('wind', 'burst', actorSquare, { strength: 1, duration: 0.8 })] }) : look(),
       critFailure: actorSquare
@@ -150,7 +142,7 @@ export function fakeRuling(action: string, color: Color = 'white', board?: Board
   };
 }
 
-type BaseRuling = Omit<GmRulingJson, 'critSuccessEffects' | 'critFailureEffects' | 'narration' | 'staging'> & {
+type BaseRuling = Omit<GmRulingJson, 'critFailureEffects' | 'narration' | 'staging'> & {
   narration: { success: string; failure: string };
   look?: StagingJson;
 };

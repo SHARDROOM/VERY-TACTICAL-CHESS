@@ -14,9 +14,8 @@ const ruling = {
   dc: 11,
   cost: 1,
   effects: [{ type: 'move', from: 'a1', to: 'a5' }, { type: 'remove', at: 'd7' }],
-  critSuccessEffects: [],
   critFailureEffects: [],
-  narration: { success: '성공!', failure: '실패!', critSuccess: '대성공!', critFailure: '대실패!' },
+  narration: { success: '성공!', failure: '실패!', critFailure: '대실패!' },
 };
 const state = createInitialState();
 const req = { action: 'a1 룩이 성벽을 타고 미끄러진다', state };

@@ -41,7 +41,6 @@ export function movePowers(t: { moveAs?: readonly PieceType[]; moveTimes?: numbe
 }
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
-  critSuccess: '대성공!!',
   success: '성공!',
   failure: '실패',
   critFailure: '대실패!!',

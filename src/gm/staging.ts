@@ -78,7 +78,6 @@ const GmFailureStagingSchema = GmStagingSchema.omit({ beats: true });
 export const GmRulingStagingSchema = z.object({
   success: GmStagingSchema,
   failure: GmFailureStagingSchema,
-  critSuccess: GmStagingSchema,
   critFailure: GmStagingSchema,
 });
 
@@ -141,7 +140,6 @@ void _noBeats;
 export const GM_RULING_STAGING_JSON_SCHEMA = obj({
   success: GM_STAGING_JSON_SCHEMA,
   failure: obj(failureStaging),
-  critSuccess: GM_STAGING_JSON_SCHEMA,
   critFailure: GM_STAGING_JSON_SCHEMA,
 });
 
@@ -217,11 +215,11 @@ export function cleanStaging(raw: unknown, effectCount: number): Staging {
   return { fx, shake: Math.round(clamp(raw.shake, 0, 3, 0)), beats, acts };
 }
 
-/** The staging of all four outcomes of a ruling, each checked against its own effects. */
+/** The staging of all three outcomes of a ruling, each checked against its own effects. */
 export function cleanRulingStaging(raw: unknown, counts: Record<Outcome, number>): Partial<Record<Outcome, Staging>> {
   if (!isObj(raw)) return {};
   const out: Partial<Record<Outcome, Staging>> = {};
-  for (const outcome of ['success', 'failure', 'critSuccess', 'critFailure'] as const) {
+  for (const outcome of ['success', 'failure', 'critFailure'] as const) {
     if (raw[outcome] !== undefined) out[outcome] = cleanStaging(raw[outcome], counts[outcome]);
   }
   return out;

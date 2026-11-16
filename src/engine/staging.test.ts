@@ -58,11 +58,11 @@ describe('cleaning GM staging', () => {
 
   it('a ruling with broken staging still parses; its staging is cleaned per outcome', () => {
     const raw = fakeRuling('b1 나이트를 투석기로 e5까지 날린다');
-    const broken = { ...raw, staging: { ...raw.staging, failure: 'nonsense', critSuccess: { fx: [fxItem({ element: '???' })] } } };
+    const broken = { ...raw, staging: { ...raw.staging, failure: 'nonsense', critFailure: { fx: [fxItem({ element: '???' })] } } };
     const parsed = parseGmRuling(broken);
     if (!parsed.ok) throw new Error(parsed.error);
     expect(parsed.ruling.staging?.failure).toEqual({ fx: [], shake: 0, beats: [], acts: [] });
-    expect(parsed.ruling.staging?.critSuccess?.fx).toEqual([]);
+    expect(parsed.ruling.staging?.critFailure?.fx).toEqual([]);
     expect(parsed.ruling.staging?.success?.beats[0]).toMatchObject({ effect: 0, motion: 'spin' });
     // And without any staging at all.
     const { staging: _gone, ...bare } = raw;

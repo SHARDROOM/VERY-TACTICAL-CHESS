@@ -24,11 +24,10 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - dc: 난이도 (${rules.dcMin}~${rules.dcMax}의 정수). 6면 주사위(d6)를 굴려 이 값 이상이 나오면 성공. 성공 확률은 DC 2 83%, 3 67%, 4 50%, 5 33%, 6 17%(6이 나와야만).
 - cost: 시도에 드는 AP (${rules.costMin}~${rules.costMax}의 정수).
 - effects: 성공했을 때 보드에 적용할 효과 목록 (최대 ${rules.maxEffects}개).
-- critSuccessEffects: 주사위 6(대성공)일 때 effects 대신 적용할 효과. 성공보다 조금 더 좋은 결과로 하되, 게임을 끝낼 정도는 아니게. 차이가 없으면 빈 목록.
 - critFailureEffects: 주사위 1(대실패)일 때의 역효과. 보통은 주체가 1턴 기절하는 정도로 가볍게(역효과는 주체가 받습니다). 역효과가 어울리지 않으면 빈 목록.
-- narration.success / failure / critSuccess / critFailure: 네 가지 결과의 서술. 판타지 전장 해설자 같은 생생한 한국어로, 각각 1~2문장.
+- narration.success / failure / critFailure: 세 가지 결과의 서술. 판타지 전장 해설자 같은 생생한 한국어로, 각각 1~2문장.
 
-6은 DC와 상관없이 항상 대성공, 1은 항상 대실패입니다. 그 사이는 DC 이상이면 성공, 미만이면 실패(효과 없음, AP만 소모)입니다.
+대성공은 없습니다(6도 보통 결과). 1은 DC와 상관없이 항상 대실패입니다. 그 밖에는 DC 이상이면 성공, 미만이면 실패(효과 없음, AP만 소모)입니다.
 
 ## 주체와 거리 (행동에는 당위성이 있어야 합니다)
 - 모든 특수 행동에는 그것을 하는 선언자 쪽 기물(주체)이 있어야 합니다. 선언에 주체가 없으면(예: "폰에 불을 붙인다", "하늘에서 번개가 떨어진다") feasible: false로 하고, interpretation에 "누가 하는지 정해 주세요. 예: e6의 폰이 e7의 폰에 불을 붙인다"처럼 다시 선언하는 법을 쓰세요. 주체를 지어내지 마세요.
@@ -141,7 +140,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - 한 번의 특수 행동이 게임을 사실상 끝내지 않도록 효과를 선언에 꼭 필요한 만큼만 넣으세요.
 
 ## 연출 (staging, 보기용)
-판정과 함께 결과 넷(success, failure, critSuccess, critFailure)이 화면에서 어떻게 보일지 정합니다. 규칙에는 영향이 없고, 서술을 눈으로 보여 주는 도구입니다. 서술과 맞게, 결과의 크기에 맞게 쓰세요. 대성공은 화려하게, 실패는 짧게, 대실패는 행동한 쪽에 역효과처럼. 무엇을 어떻게 보여 줄지는 당신이 정합니다.
+판정과 함께 결과 셋(success, failure, critFailure)이 화면에서 어떻게 보일지 정합니다. 규칙에는 영향이 없고, 서술을 눈으로 보여 주는 도구입니다. 서술과 맞게, 결과의 크기에 맞게 쓰세요. 성공은 화려하게, 실패는 짧게, 대실패는 행동한 쪽에 역효과처럼. 무엇을 어떻게 보여 줄지는 당신이 정합니다.
 - fx: 이펙트 (최대 6개). element는 fire, light, water, nature, darkness, lightning, ice, wind, poison, arcane, earth, impact. shape는 burst(at 칸 중심, radius 0.5~3), beam(at에서 to까지), area(at과 to를 모서리로 하는 직사각형, 둘 다 ""이면 보드 전체), trail(withEffect 번호의 효과로 움직이는 기물을 따라감). strength 1~5, duration 0.5~5초. withEffect(1부터, 0이면 연출 시작 기준)와 delay(초)로 시점을 정합니다.
 - shake: 화면 흔들림 0~3. 큰 사건에만.
 - beats: 효과별 연출. effect(효과 번호, 1부터), wait(이 효과 전 대기 0~2초), motion(move·unboard·swap: default, fly, hop, slide, teleport, charge, sneak, spin, burrow), speed(slow, normal, fast), entrance(spawn·revive: default, drop, rise, materialize), exit(remove, move로 잡히거나 구덩이에 빠진 기물: default, knock, burn, ash, vanish, sink, shatter). 벽은 솟아오르고 구덩이는 꺼지는 모습이 따로 나옵니다.
@@ -233,7 +232,7 @@ function terrainList(state: GameState): string {
 }
 
 const MAX_PRECEDENTS = 20;
-const OUTCOME: Record<Outcome, string> = { critSuccess: '대성공', success: '성공', failure: '실패', critFailure: '대실패' };
+const OUTCOME: Record<Outcome, string> = { success: '성공', failure: '실패', critFailure: '대실패' };
 
 function precedentList(state: GameState): string {
   const recent = state.precedents.slice(-MAX_PRECEDENTS);

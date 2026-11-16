@@ -380,12 +380,11 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
   if (state.ap[color] < cost) return { ok: false, reason: 'notEnoughAp' };
   if (!Number.isInteger(roll) || roll < 1 || roll > DIE_SIDES) return { ok: false, reason: 'invalidRoll' };
 
-  // A natural 6 always succeeds and a natural 1 always fails, whatever the DC.
-  const outcome: Outcome =
-    roll === DIE_SIDES ? 'critSuccess' : roll === 1 ? 'critFailure' : roll >= ruling.dc ? 'success' : 'failure';
-  const success = outcome === 'critSuccess' || outcome === 'success';
-  const crit = ruling.critSuccessEffects?.length ? ruling.critSuccessEffects : ruling.effects;
-  let toApply = outcome === 'critSuccess' ? crit : outcome === 'success' ? ruling.effects : outcome === 'critFailure' ? ruling.critFailureEffects ?? [] : [];
+  // A natural 1 always fails, and backfires, whatever the DC; otherwise the DC decides (a 6 is
+  // nothing special: there is no critical success).
+  const outcome: Outcome = roll === 1 ? 'critFailure' : roll >= ruling.dc ? 'success' : 'failure';
+  const success = outcome === 'success';
+  let toApply = outcome === 'success' ? ruling.effects : outcome === 'critFailure' ? ruling.critFailureEffects ?? [] : [];
 
   let board = state.board;
   let terrain = state.terrain;
@@ -414,13 +413,7 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
   }
 
   const narration =
-    outcome === 'critSuccess'
-      ? ruling.narration.critSuccess || ruling.narration.success
-      : outcome === 'critFailure'
-        ? ruling.narration.critFailure || ruling.narration.failure
-        : success
-          ? ruling.narration.success
-          : ruling.narration.failure;
+    outcome === 'critFailure' ? ruling.narration.critFailure || ruling.narration.failure : success ? ruling.narration.success : ruling.narration.failure;
 
   const staging = ruling.staging?.[outcome];
   const events: GameEvent[] = [
