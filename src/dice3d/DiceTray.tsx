@@ -121,6 +121,7 @@ function initialPose(): { position: Vector3; quaternion: Quaternion } {
 function Tray() {
   const { halfX, halfZ } = TRAY;
   const rim = 0.3;
+  const h = TRAY.rim;
   return (
     <>
       <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
@@ -128,10 +129,10 @@ function Tray() {
         <meshStandardMaterial color="#1f3b2d" roughness={0.95} />
       </mesh>
       {[
-        [0, 0.2, halfZ + rim / 2, halfX * 2 + rim * 2, 0.4, rim],
-        [0, 0.2, -halfZ - rim / 2, halfX * 2 + rim * 2, 0.4, rim],
-        [halfX + rim / 2, 0.2, 0, rim, 0.4, halfZ * 2],
-        [-halfX - rim / 2, 0.2, 0, rim, 0.4, halfZ * 2],
+        [0, h / 2, halfZ + rim / 2, halfX * 2 + rim * 2, h, rim],
+        [0, h / 2, -halfZ - rim / 2, halfX * 2 + rim * 2, h, rim],
+        [halfX + rim / 2, h / 2, 0, rim, h, halfZ * 2],
+        [-halfX - rim / 2, h / 2, 0, rim, h, halfZ * 2],
       ].map(([x, y, z, w, h, d], i) => (
         <mesh key={i} position={[x, y, z]} receiveShadow castShadow>
           <boxGeometry args={[w, h, d]} />

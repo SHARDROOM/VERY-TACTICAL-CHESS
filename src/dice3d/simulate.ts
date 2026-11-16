@@ -2,7 +2,9 @@ import { Quaternion } from 'three';
 import { findImpacts } from '../audio/impacts';
 
 /** Size of the dice tray (inner half-extents, in die-sized units) and of the die. */
-export const TRAY = { halfX: 3.2, halfZ: 2.2, wallHeight: 3 };
+/** `rim`: how high the tray's wooden rim stands (drawn; hard throws hit it high). `wallHeight`: the
+ * invisible walls above it that keep a die in. */
+export const TRAY = { halfX: 3.2, halfZ: 2.2, wallHeight: 3, rim: 1.0 };
 /** The die is a cube with rounded edges: its faces are DIE_HALF from its centre. */
 export const DIE_HALF = 0.42;
 export const DIE_ROUNDING = 0.07;
@@ -19,6 +21,11 @@ export interface DiceRun {
 }
 
 const MAX_STEPS = 60 * 8;
+/**
+ * How hard a die is thrown (사용자 요청: harder): across the tray at 12–16 per second, a little
+ * up, spinning fast. It slams into the far wall and comes back before it settles.
+ */
+const THROW = { height: [1.0, 0.4], speed: [12, 4], up: [-1, 1.5], side: 3, spin: 32 } as const;
 const GRAVITY = 9.81 * 2.2;
 
 let physics: Promise<typeof import('@dimforge/rapier3d-compat').default> | null = null;
@@ -66,6 +73,13 @@ export async function simulateRollsInTurn(count: number, random: () => number = 
   return runs;
 }
 
+/** How squarely a die in orientation `q` lies on a face: 1 flat, less when tilted (its most upward axis' height). */
+function uprightness(q: { x: number; y: number; z: number; w: number }): number {
+  const { x, y, z, w } = q;
+  // The y components of the die's own x, y and z axes turned by q.
+  return Math.max(Math.abs(2 * (x * y + w * z)), Math.abs(1 - 2 * (x * x + z * z)), Math.abs(2 * (y * z - w * x)));
+}
+
 async function throwDice(
   count: number,
   random: () => number,
@@ -105,7 +119,7 @@ async function throwDice(
     }
     const bodies = Array.from({ length: count }, (_, i) => {
       const start = new Quaternion(r(), r(), r(), r()).normalize();
-      const height = 2.2 + random() * 0.6;
+      const height = THROW.height[0] + random() * THROW.height[1];
       // One die: anywhere across; several: each in its own lane.
       const lane =
         opts.lane !== undefined
@@ -117,8 +131,8 @@ async function throwDice(
         RAPIER.RigidBodyDesc.dynamic()
           .setTranslation(-TRAY.halfX + 0.9, height, lane)
           .setRotation({ x: start.x, y: start.y, z: start.z, w: start.w })
-          .setLinvel(7 + random() * 3, 1 + random() * 2, r() * 2)
-          .setAngvel({ x: r() * 18, y: r() * 18, z: r() * 18 })
+          .setLinvel(THROW.speed[0] + random() * THROW.speed[1], THROW.up[0] + random() * THROW.up[1], r() * THROW.side)
+          .setAngvel({ x: r() * THROW.spin, y: r() * THROW.spin, z: r() * THROW.spin })
           .setLinearDamping(0.15)
           .setAngularDamping(0.35)
           .setCcdEnabled(true),
@@ -129,6 +143,7 @@ async function throwDice(
 
     const frames = bodies.map(() => new Float32Array(MAX_STEPS * 7));
     let steps = 0;
+    let nudges = 0;
     while (steps < MAX_STEPS) {
       world.step();
       bodies.forEach((body, i) => {
@@ -137,7 +152,18 @@ async function throwDice(
         frames[i].set([p.x, p.y, p.z, q.x, q.y, q.z, q.w], steps * 7);
       });
       steps++;
-      if (bodies.every((b) => b.isSleeping())) break;
+      if (!bodies.every((b) => b.isSleeping())) continue;
+      // One came to rest leaning on a wall (a cocked die: no clear face up): nudge it off and on.
+      const cocked = bodies.filter((b) => uprightness(b.rotation()) < 0.97);
+      if (!cocked.length || nudges >= 4) break;
+      nudges++;
+      for (const b of cocked) {
+        const p = b.translation();
+        const m = b.mass();
+        b.wakeUp();
+        b.applyImpulse({ x: -Math.sign(p.x) * 1.2 * m, y: 2.2 * m, z: -Math.sign(p.z) * 1.2 * m }, true);
+        b.applyTorqueImpulse({ x: r() * 0.15 * m, y: 0, z: r() * 0.15 * m }, true);
+      }
     }
     return bodies.map((body, i) => {
       const q = body.rotation();

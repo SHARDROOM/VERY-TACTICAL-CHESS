@@ -153,7 +153,7 @@ export function addTable(RAPIER: Rapier, world: InstanceType<Rapier['World']>, d
   const hx = TRAY.halfX * TRAY_SCALE;
   const hz = TRAY.halfZ * TRAY_SCALE;
   const rim = 0.3 * TRAY_SCALE;
-  const wallH = 0.4 * TRAY_SCALE;
+  const wallH = TRAY.rim * TRAY_SCALE;
   for (const [x, z, w, d] of [
     [tx, hz + rim / 2, hx + rim, rim / 2],
     [tx, -hz - rim / 2, hx + rim, rim / 2],
