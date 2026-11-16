@@ -42,10 +42,34 @@ export async function simulateRoll(random: () => number = Math.random): Promise<
 }
 
 /**
- * Throws `count` d20s together (a clash rolls two): they fly side by side, can knock into each
- * other, and are recorded until all of them rest, so every run has the same number of steps.
+ * Throws `count` d20s together: they fly side by side, can knock into each other, and are
+ * recorded until all of them rest, so every run has the same number of steps.
  */
 export async function simulateRolls(count: number, random: () => number = Math.random): Promise<DiceRun[]> {
+  return throwDice(count, random);
+}
+
+/**
+ * Throws `count` d20s one after another (a clash: the attacker's, then the defender's): each is
+ * thrown in its own lane once the ones before it rest, and lands among them (they stay put).
+ */
+export async function simulateRollsInTurn(count: number, random: () => number = Math.random): Promise<DiceRun[]> {
+  const runs: DiceRun[] = [];
+  for (let i = 0; i < count; i++) {
+    const resting = runs.map((r) => {
+      const o = (r.steps - 1) * 7;
+      return { position: [r.frames[o], r.frames[o + 1], r.frames[o + 2]] as [number, number, number], rotation: r.final };
+    });
+    runs.push((await throwDice(1, random, { lane: ((i + 0.5) / count - 0.5) * (TRAY.halfZ * 1.4), resting }))[0]);
+  }
+  return runs;
+}
+
+async function throwDice(
+  count: number,
+  random: () => number,
+  opts: { lane?: number; resting?: { position: [number, number, number]; rotation: Quaternion }[] } = {},
+): Promise<DiceRun[]> {
   const RAPIER = await loadPhysics();
   const world = new RAPIER.World({ x: 0, y: -GRAVITY, z: 0 });
   try {
@@ -68,11 +92,25 @@ export async function simulateRolls(count: number, random: () => number = Math.r
 
     const r = () => random() * 2 - 1;
     const points = new Float32Array(d20Vertices(DIE_RADIUS).flatMap((v) => [v.x, v.y, v.z]));
+    // Dice already thrown lie where they came to rest.
+    for (const d of opts.resting ?? []) {
+      const still = world.createRigidBody(
+        RAPIER.RigidBodyDesc.fixed()
+          .setTranslation(...d.position)
+          .setRotation({ x: d.rotation.x, y: d.rotation.y, z: d.rotation.z, w: d.rotation.w }),
+      );
+      world.createCollider(RAPIER.ColliderDesc.convexHull(points)!.setFriction(0.5).setRestitution(0.35), still);
+    }
     const bodies = Array.from({ length: count }, (_, i) => {
       const start = new Quaternion(r(), r(), r(), r()).normalize();
       const height = 2.2 + random() * 0.6;
       // One die: anywhere across; several: each in its own lane.
-      const lane = count === 1 ? r() * (TRAY.halfZ - 0.9) : ((i + 0.5) / count - 0.5) * (TRAY.halfZ * 1.4) + r() * 0.2;
+      const lane =
+        opts.lane !== undefined
+          ? opts.lane + r() * 0.2
+          : count === 1
+            ? r() * (TRAY.halfZ - 0.9)
+            : ((i + 0.5) / count - 0.5) * (TRAY.halfZ * 1.4) + r() * 0.2;
       const body = world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic()
           .setTranslation(-TRAY.halfX + 0.9, height, lane)

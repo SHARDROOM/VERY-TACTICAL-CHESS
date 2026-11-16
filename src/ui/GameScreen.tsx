@@ -25,7 +25,7 @@ import {
   type Square,
 } from '../engine';
 import { BoardScene, type CameraRequest } from '../scene/BoardScene';
-import { COLOR_NAME, OUTCOME_LABEL, PIECE_NAME, REJECT_MESSAGE, describeEvents, score, type LogEntry, type LogTone } from './messages';
+import { COLOR_NAME, OUTCOME_LABEL, PIECE_NAME, REJECT_MESSAGE, describeEvents, type LogEntry, type LogTone } from './messages';
 import { PrecedentList } from './PrecedentList';
 import { josa } from './josa';
 import { GmSettings, type GmConfig } from './GmSettings';
@@ -33,7 +33,7 @@ import { PieceInfo } from './PieceInfo';
 import { SettingsMenu, useFullscreen } from './SettingsMenu';
 import { playSfx } from '../audio/sfx';
 import { successChance } from '../dice';
-import { loadPhysics, simulateRoll, simulateRolls } from '../dice3d/simulate';
+import { loadPhysics, simulateRoll, simulateRollsInTurn } from '../dice3d/simulate';
 import { skinRotationFor } from '../dice3d/d20';
 import type { ActiveRoll } from '../dice3d/DiceTray';
 import { CHAT_MAX_LENGTH, timeLeft, type Session, type SessionView, type TurnTimer } from '../session/types';
@@ -170,8 +170,15 @@ function pieceName(game: GameState, id: string): string {
   return type ? PIECE_NAME[type] : '기물';
 }
 
-/** A clash's deciding round: each side's die times its multiplier, the winner lit up. */
-function ClashResult({ clash, name }: { clash: ClashEvent; name: (id: string) => string }) {
+/** A clash's score as shown big: the die times the multiplier, to two decimals at most. */
+const total = (roll: number, mult: number) => String(Math.round(roll * mult * 100) / 100);
+
+/**
+ * A clash's deciding round, side by side: each side's final score big (its die and multiplier
+ * small beneath), the winner lit up. While the defender's die is still rolling, only the
+ * attacker's score is in.
+ */
+function ClashResult({ clash, name, defenderRolling = false }: { clash: ClashEvent; name: (id: string) => string; defenderRolling?: boolean }) {
   const last = clash.rounds[clash.rounds.length - 1];
   if (!last) return null;
   const ties = clash.rounds.length - 1;
@@ -180,23 +187,33 @@ function ClashResult({ clash, name }: { clash: ClashEvent; name: (id: string) =>
     const roll = who === 'attacker' ? last.attack : last.defense;
     const mult = who === 'attacker' ? clash.attack : clash.defense;
     const id = who === 'attacker' ? clash.attackerId : clash.defenderId;
+    const waiting = who === 'defender' && defenderRolling;
+    const won = !defenderRolling && clash.winner === who;
     return (
-      <span className={`clash-side clash-${color}${clash.winner === who ? ' won' : ''}`}>
+      <span className={`clash-side clash-${color}${won ? ' won' : ''}${!defenderRolling && !won ? ' lost' : ''}${waiting ? ' waiting' : ''}`}>
         <span className="clash-who">
           {COLOR_NAME[color]} {name(id)}
           {who === 'defender' && clash.shield ? ' (보호막)' : ''}
         </span>
-        <span className="clash-score">{score(roll, mult)}</span>
+        {waiting ? (
+          <span className="clash-total">…</span>
+        ) : (
+          <>
+            <span className="clash-total">{total(roll, mult)}</span>
+            <span className="clash-formula">{mult === 1 ? `주사위 ${roll}` : `주사위 ${roll} × ${mult}`}</span>
+          </>
+        )}
+        {won && <span className="clash-win">승</span>}
       </span>
     );
   };
   return (
-    <div className="clash-result" role="status">
+    <div className={`clash-result${defenderRolling ? '' : ' done'}`} role="status">
       <span className="clash-title">합</span>
       {side('attacker')}
       <span className="clash-vs">대</span>
       {side('defender')}
-      {ties > 0 && <span className="clash-ties">동점 {ties}번 끝에</span>}
+      {ties > 0 && !defenderRolling && <span className="clash-ties">동점 {ties}번 끝에</span>}
     </div>
   );
 }
@@ -279,7 +296,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
    * The roll being shown on the table, and the board as it was before it (kept on screen
    * until the die lands). `landed` flips when the die stops; `done` reveals the result.
    */
-  const [dice, setDice] = useState<{ roll: number; outcome: Outcome | null; done: () => void; landed: boolean; clash?: ClashEvent } | null>(null);
+  /** The roll on screen. A clash's dice go one after another: `firstLanded` once the attacker's is down. */
+  const [dice, setDice] = useState<{ roll: number; outcome: Outcome | null; done: () => void; landed: boolean; firstLanded?: boolean; clash?: ClashEvent } | null>(null);
   const [diceRoll, setDiceRoll] = useState<ActiveRoll | null>(null);
   const [frozen, setFrozen] = useState<GameState | null>(null);
   const queueRef = useRef<Batch[]>([]);
@@ -501,7 +519,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       setDice({ roll: last.attack, outcome: null, done, landed: false, clash });
       setDiceRoll({ run: null, skin: new Quaternion(), outcome: null, skipped: false, second: { run: null, skin: new Quaternion() }, tints: [clash.attacker, defender] });
       lookAtDice();
-      simulateRolls(2)
+      simulateRollsInTurn(2)
         .then(([a, d]) =>
           setDiceRoll((r) => (r ? { ...r, run: a, skin: skinRotationFor(last.attack, a.final), second: { run: d, skin: skinRotationFor(last.defense, d.final) } } : r)),
         )
@@ -657,7 +675,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   useEffect(() => {
     if (!dice?.landed) return;
     const crit = dice.outcome === 'critSuccess' || dice.outcome === 'critFailure';
-    const t = setTimeout(finishRoll, crit ? 2000 : 1400);
+    // A clash's two scores take a moment longer to read.
+    const t = setTimeout(finishRoll, crit ? 2000 : dice.clash ? 2300 : 1400);
     return () => clearTimeout(t);
   }, [dice?.landed]);
 
@@ -855,6 +874,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         diceSide={seat === 'black' ? 1 : -1}
         diceRoll={diceRoll}
         onDiceLanded={onDiceLanded}
+        onDiceFirstLanded={() => setDice((d) => (d ? { ...d, firstLanded: true } : d))}
         ap={game.ap}
         captured={game.captured ?? []}
         terrain={game.terrain}
@@ -1219,15 +1239,17 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
 
       {dice && (
         <div className="hud dice-hud">
-          {dice.landed && dice.clash ? (
-            <ClashResult clash={dice.clash} name={(id) => pieceName(game, id)} />
+          {dice.clash && (dice.landed || dice.firstLanded) ? (
+            <ClashResult clash={dice.clash} name={(id) => pieceName(game, id)} defenderRolling={!dice.landed} />
           ) : dice.landed && dice.outcome ? (
             <div className={`dice-result ${dice.outcome}`}>
               <span className="dice-number">{dice.roll}</span>
               <span className="dice-label">{OUTCOME_LABEL[dice.outcome]}</span>
             </div>
           ) : (
-            <div className="dice-rolling">{dice.clash ? '⚔ 합! 주사위를 굴리는 중…' : '🎲 주사위를 굴리는 중…'}</div>
+            <div className="dice-rolling">
+              {dice.clash ? `⚔ 합! ${COLOR_NAME[dice.clash.attacker]} ${pieceName(game, dice.clash.attackerId)}의 주사위…` : '🎲 주사위를 굴리는 중…'}
+            </div>
           )}
           <button onClick={dice.landed ? finishRoll : skipRoll}>{dice.landed ? '확인' : '건너뛰기'}</button>
         </div>

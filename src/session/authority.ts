@@ -45,6 +45,8 @@ export const FALL_SHOW_MS = 3200;
 
 /** Extra time after an attempt, for the dice to roll on screen. */
 export const DICE_GRACE_MS = 4000;
+/** A clash's two dice, thrown one after the other, and a moment to read both scores. */
+export const CLASH_DICE_GRACE_MS = 7500;
 
 /** How long a staged show takes on screen, in ms (the clock does not run during it). */
 export function showMs(staging: Staging | undefined, effects: Effect[]): number {
@@ -201,7 +203,7 @@ export class Authority {
   private afterChange(events: GameEvent[]): void {
     if (this.state.status.kind !== 'playing') return this.restartClock();
     // A clash's dice (and its duel) do not eat the time of whoever moves next.
-    const clashTime = events.reduce((t, e) => t + (e.type === 'clash' ? DICE_GRACE_MS + Math.round(duelSeconds(e.exchanges) * 1000) : 0), 0);
+    const clashTime = events.reduce((t, e) => t + (e.type === 'clash' ? CLASH_DICE_GRACE_MS + Math.round(duelSeconds(e.exchanges) * 1000) : 0), 0);
     const passed = events.find((e) => e.type === 'turnPassed');
     if (passed) {
       this.restartClock();

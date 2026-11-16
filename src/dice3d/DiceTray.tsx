@@ -24,7 +24,7 @@ export interface ActiveRoll {
   outcome: Outcome | null;
   /** Jump straight to the resting pose. */
   skipped: boolean;
-  /** A clash (합): the defender's die, thrown with the first (same length of run). */
+  /** A clash (합): the defender's die, thrown once the first (the attacker's) has landed. */
   second?: { run: DiceRun | null; skin: Quaternion };
   /** A clash: each die in its side's colour (attacker, defender). */
   tints?: [Color, Color];
@@ -139,14 +139,20 @@ function Tray() {
 interface Props {
   side: 1 | -1;
   roll: ActiveRoll | null;
+  /** Every die of the roll is at rest. */
   onLanded: () => void;
+  /** A clash: the first (attacker's) die is at rest and the second is about to be thrown. */
+  onFirstLanded?: () => void;
 }
+
+/** A clash: the pause between the attacker's die landing and the defender's being thrown (s). */
+const SECOND_DIE_PAUSE = 0.45;
 
 /**
  * The dice tray on the table beside the board. Between rolls the die rests where it
  * last stopped; during a roll it plays back the recorded physics flight.
  */
-export function DiceTray({ side, roll, onLanded }: Props) {
+export function DiceTray({ side, roll, onLanded, onFirstLanded }: Props) {
   const die = useRef<Group>(null);
   const skinGroup = useRef<Group>(null);
   const die2 = useRef<Group>(null);
@@ -157,6 +163,10 @@ export function DiceTray({ side, roll, onLanded }: Props) {
   const startedAt = useRef<number | null>(null);
   const soundedTo = useRef(-1);
   const landedFor = useRef<DiceRun | null>(null);
+  /** A clash: when the first die landed (clock seconds), and how far the second's sounds got. */
+  const firstLandedAt = useRef<number | null>(null);
+  const soundedTo2 = useRef(-1);
+  const landed2For = useRef<DiceRun | null>(null);
   const [lit, setLit] = useState<Outcome | null>(null);
 
   // A new roll: start the clock again and drop the previous glow.
@@ -164,6 +174,9 @@ export function DiceTray({ side, roll, onLanded }: Props) {
     startedAt.current = null;
     landedFor.current = null;
     soundedTo.current = -1;
+    firstLandedAt.current = null;
+    soundedTo2.current = -1;
+    landed2For.current = null;
     if (!roll) setLit(null);
   }, [roll?.run, roll === null]);
 
@@ -189,15 +202,7 @@ export function DiceTray({ side, roll, onLanded }: Props) {
     g.position.set(run.frames[o], run.frames[o + 1], run.frames[o + 2]);
     g.quaternion.set(run.frames[o + 3], run.frames[o + 4], run.frames[o + 5], run.frames[o + 6]);
     sk.quaternion.copy(roll.skin);
-    // The clash's second die, on the same clock.
-    const run2 = roll.second?.run;
-    const g2 = die2.current;
-    if (run2 && g2 && skinGroup2.current) {
-      const o2 = Math.min(run2.steps - 1, step) * 7;
-      g2.position.set(run2.frames[o2], run2.frames[o2 + 1], run2.frames[o2 + 2]);
-      g2.quaternion.set(run2.frames[o2 + 3], run2.frames[o2 + 4], run2.frames[o2 + 5], run2.frames[o2 + 6]);
-      skinGroup2.current.quaternion.copy(roll.second!.skin);
-    }
+    const second = roll.second;
     if (step === last && landedFor.current !== run) {
       landedFor.current = run;
       rest.current = { position: g.position.clone(), quaternion: g.quaternion.clone() };
@@ -205,7 +210,35 @@ export function DiceTray({ side, roll, onLanded }: Props) {
       setLit(roll.outcome);
       if (roll.outcome === 'critSuccess') playSfx('critSuccess');
       if (roll.outcome === 'critFailure') playSfx('critFailure');
-      onLanded();
+      if (second) {
+        // A clash: the attacker's die is down; the defender's goes next.
+        firstLandedAt.current = clock.elapsedTime;
+        onFirstLanded?.();
+      } else onLanded();
+    }
+    // A clash's second die: thrown after a moment, once the first rests.
+    const run2 = second?.run;
+    const g2 = die2.current;
+    if (g2) g2.visible = false;
+    if (second && run2 && g2 && skinGroup2.current && firstLandedAt.current !== null) {
+      const last2 = run2.steps - 1;
+      const t2 = clock.elapsedTime - firstLandedAt.current - (roll.skipped ? 0 : SECOND_DIE_PAUSE);
+      if (t2 >= 0 || roll.skipped) {
+        const step2 = roll.skipped ? last2 : Math.min(last2, Math.floor(t2 / run2.dt));
+        if (!roll.skipped) {
+          for (const hit of run2.impacts) if (hit.step > soundedTo2.current && hit.step <= step2) playSfx('diceHit', { strength: hit.strength });
+        }
+        soundedTo2.current = step2;
+        const o2 = step2 * 7;
+        g2.visible = true;
+        g2.position.set(run2.frames[o2], run2.frames[o2 + 1], run2.frames[o2 + 2]);
+        g2.quaternion.set(run2.frames[o2 + 3], run2.frames[o2 + 4], run2.frames[o2 + 5], run2.frames[o2 + 6]);
+        skinGroup2.current.quaternion.copy(second.skin);
+        if (step2 === last2 && landed2For.current !== run2) {
+          landed2For.current = run2;
+          onLanded();
+        }
+      }
     }
   });
 

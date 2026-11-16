@@ -42,6 +42,8 @@ interface Props {
   diceSide: 1 | -1;
   diceRoll: ActiveRoll | null;
   onDiceLanded: () => void;
+  /** A clash: the attacker's die has landed (the defender's is thrown next). */
+  onDiceFirstLanded?: () => void;
   /** Each player's AP, shown as gold coins on the table (opposite side from the dice). */
   ap: Record<Color, number>;
   /** Pieces taken off the board, shown small beside it (on the dice side, near whoever took them). */
@@ -296,6 +298,7 @@ export function BoardScene({
   diceSide,
   diceRoll,
   onDiceLanded,
+  onDiceFirstLanded,
   ap,
   captured,
   tour,
@@ -349,7 +352,7 @@ export function BoardScene({
 
       <ShakeGroup shake={shake}>
       <WoodTable />
-      <DiceTray side={diceSide} roll={diceRoll} onLanded={onDiceLanded} />
+      <DiceTray side={diceSide} roll={diceRoll} onLanded={onDiceLanded} onFirstLanded={onDiceFirstLanded} />
       <CoinTable ap={ap} side={diceSide === 1 ? -1 : 1} />
       <LabeledFrame />
       {doodle && <DoodleLayer {...doodle} />}
