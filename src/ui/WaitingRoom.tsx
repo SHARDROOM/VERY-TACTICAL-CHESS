@@ -82,7 +82,7 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
   const conn = view.connection;
   return (
     <div className="waiting">
-      <LobbyBackdrop inset={inset} />
+      <LobbyBackdrop key={rules.map} inset={inset} map={rules.map} />
       <div className="lobby-shade" />
       <div className="waiting-scroll">
         <div className="waiting-card">

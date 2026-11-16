@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Quaternion } from 'three';
-import { createInitialState, type Color, type Outcome } from '../engine';
+import { createInitialState, type Color, type Outcome , setBoardMap, type BoardMap } from '../engine';
 import { BoardScene } from '../scene/BoardScene';
 import type { TourInset, TourPhase } from '../scene/TourCamera';
 import type { ActiveRoll } from '../dice3d/DiceTray';
@@ -18,8 +18,11 @@ const CUE_DELAY = { dice: 1.6, coins: 1.8 };
  * toured by a slow camera. When the camera reaches the dice tray a d6 is thrown; at the
  * dishes the dealer throws gold coins in. Both are live physics, different every time.
  */
-export function LobbyBackdrop({ inset }: { inset: TourInset }) {
-  const board = useMemo(() => createInitialState().board, []);
+export function LobbyBackdrop({ inset, map = 'classic' }: { inset: TourInset; map?: BoardMap }) {
+  // The board the room will play on (the title screen: the classic one). Its geometry is in play
+  // while the backdrop is up; a change of board builds the table afresh (see the key below).
+  setBoardMap(map);
+  const board = useMemo(() => createInitialState(undefined, map).board, [map]);
   const [roll, setRoll] = useState<ActiveRoll | null>(null);
   const [ap, setAp] = useState<Record<Color, number>>({ white: 0, black: 0, red: 0 });
   const timers = useRef<number[]>([]);
@@ -65,7 +68,7 @@ export function LobbyBackdrop({ inset }: { inset: TourInset }) {
         camera={{ mode: 'side', side: 'white', nonce: 0 }}
         onSquareClick={noop}
         onHoverSquare={noop}
-        diceSide={-1}
+        diceSide={map === 'hex3' ? 1 : -1}
         diceRoll={roll}
         onDiceLanded={noop}
         ap={ap}

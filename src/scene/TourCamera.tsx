@@ -1,3 +1,4 @@
+import { isHex } from '../engine';
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Vector3 } from 'three';
@@ -96,8 +97,10 @@ export function TourCamera({ diceSide, inset, onPhase }: Props) {
     if (phase === 'board') {
       // A wide circle around the board, picking up where the last lap left off.
       const a = 0.35 + st.lap * 1.3 + u * 2.6;
-      const r = 11.5 * back;
-      want.pos.set(Math.sin(a) * r, 6.4 * back, Math.cos(a) * r);
+      // The hexagon is about twice as wide: further out and up.
+      const grow = isHex() ? 1.75 : 1;
+      const r = 11.5 * back * grow;
+      want.pos.set(Math.sin(a) * r, 6.4 * back * grow, Math.cos(a) * r);
       want.look.set(0, 0.2, 0);
     } else if (phase === 'dice') {
       // Close on the tray, swinging round its outer side.

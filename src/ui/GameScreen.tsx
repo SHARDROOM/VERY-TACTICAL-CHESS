@@ -943,7 +943,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
 
   return (
     <div className="app">
+      {/* A new board (the waiting room switching between the classic board and the hexagon) is a new table: built afresh. */}
       <BoardScene
+        key={game.map ?? 'classic'}
         board={game.board}
         selected={selected}
         targets={targets}

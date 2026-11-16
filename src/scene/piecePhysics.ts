@@ -142,20 +142,29 @@ export function addObstacles(RAPIER: Rapier, world: InstanceType<Rapier['World']
   for (const d of o.dice ?? []) at(RAPIER.ColliderDesc.convexHull(d.hull), d.p, d.q, 0.5, 0.35);
 }
 
+/**
+ * The hexagon's slab (its frame included, top at y = 0) as three boxes, each joining a pair of
+ * opposite sides: together exactly the hexagon. Boxes, not one convex hull: pieces stand still on
+ * a box's flat top, while on the big hull they crept and trembled.
+ */
+function hexSlab(RAPIER: Rapier): InstanceType<typeof RAPIER.ColliderDesc>[] {
+  const boardH = -TABLE_TOP_Y / 2;
+  const apothem = HEX_FRAME_R * Math.cos(Math.PI / 6);
+  return [0, 60, 120].map((deg) => {
+    const half = (deg * Math.PI) / 360;
+    return RAPIER.ColliderDesc.cuboid(HEX_FRAME_R / 2, boardH, apothem)
+      .setTranslation(0, TABLE_TOP_Y + boardH, 0)
+      .setRotation({ x: 0, y: Math.sin(half), z: 0, w: Math.cos(half) });
+  });
+}
+
 /** The table top and the board raised on it (the classic square or the hexagon), on `fixed`. */
 export function addFloor(RAPIER: Rapier, world: InstanceType<Rapier['World']>, fixed: InstanceType<Rapier['RigidBody']>, friction = 0.7, restitution = 0.15): void {
   const [hw, hd] = tableHalf();
   world.createCollider(RAPIER.ColliderDesc.cuboid(hw + 1, 0.3, hd + 0.5).setTranslation(0, TABLE_TOP_Y - 0.3, 0).setFriction(friction).setRestitution(restitution), fixed);
   const boardH = -TABLE_TOP_Y / 2;
-  if (isHex()) {
-    const pts: number[] = [];
-    for (let k = 0; k < 6; k++) {
-      const a = (k * Math.PI) / 3;
-      pts.push(HEX_FRAME_R * Math.cos(a), TABLE_TOP_Y, HEX_FRAME_R * Math.sin(a), HEX_FRAME_R * Math.cos(a), 0, HEX_FRAME_R * Math.sin(a));
-    }
-    const hull = RAPIER.ColliderDesc.convexHull(new Float32Array(pts));
-    if (hull) world.createCollider(hull.setFriction(0.55).setRestitution(0.2), fixed);
-  } else world.createCollider(RAPIER.ColliderDesc.cuboid(BOARD_HALF, boardH, BOARD_HALF).setTranslation(0, TABLE_TOP_Y + boardH, 0).setFriction(0.55).setRestitution(0.2), fixed);
+  if (isHex()) for (const desc of hexSlab(RAPIER)) world.createCollider(desc.setFriction(0.55).setRestitution(0.2), fixed);
+  else world.createCollider(RAPIER.ColliderDesc.cuboid(BOARD_HALF, boardH, BOARD_HALF).setTranslation(0, TABLE_TOP_Y + boardH, 0).setFriction(0.55).setRestitution(0.2), fixed);
 }
 
 /** The table top, the board raised on it and the dice tray's walls, fixed; returns their body. */
@@ -166,18 +175,8 @@ export function addTable(RAPIER: Rapier, world: InstanceType<Rapier['World']>, d
   const [hw, hd] = tableHalf();
   solid(RAPIER.ColliderDesc.cuboid(hw + 1, 0.3, hd + 0.5).setTranslation(0, TABLE_TOP_Y - 0.3, 0), 0.7, 0.15);
   const boardH = -TABLE_TOP_Y / 2;
-  if (isHex()) {
-    // The hexagon: a six-sided slab, its frame included.
-    const pts: number[] = [];
-    for (let k = 0; k < 6; k++) {
-      const a = (k * Math.PI) / 3;
-      const x = HEX_FRAME_R * Math.cos(a);
-      const z = HEX_FRAME_R * Math.sin(a);
-      pts.push(x, TABLE_TOP_Y, z, x, 0, z);
-    }
-    const hull = RAPIER.ColliderDesc.convexHull(new Float32Array(pts));
-    if (hull) solid(hull, 0.55, 0.2);
-  } else solid(RAPIER.ColliderDesc.cuboid(BOARD_HALF, boardH, BOARD_HALF).setTranslation(0, TABLE_TOP_Y + boardH, 0), 0.55, 0.2);
+  if (isHex()) for (const desc of hexSlab(RAPIER)) solid(desc, 0.55, 0.2);
+  else solid(RAPIER.ColliderDesc.cuboid(BOARD_HALF, boardH, BOARD_HALF).setTranslation(0, TABLE_TOP_Y + boardH, 0), 0.55, 0.2);
   const tx = trayCenterX(diceSide);
   const hx = TRAY.halfX * TRAY_SCALE;
   const hz = TRAY.halfZ * TRAY_SCALE;
