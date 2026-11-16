@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { Quaternion, Ray, Vector3 } from 'three';
+import { PerspectiveCamera, Quaternion, Ray, Vector3 } from 'three';
 import { createStateFrom, parseSquare } from '../engine';
 import { CHUNK, addChunk, chunkPose, clearChunks, getChunk, playChunk, restingChunks } from './debris';
-import { LIFT, TABLE_LIFT, carryPoint } from './tableDrag';
+import { Grip, LIFT, TABLE_LIFT, carryPoint } from './tableDrag';
 import { TABLE_TOP_Y } from './WoodTable';
 import { simulateRomp } from './boardPhysics';
 import { fragmentsOf } from './shatter';
@@ -81,5 +81,33 @@ describe('things thrown about the table hit the dice', () => {
     const blocked = await throwAt([{ hull, p: new Vector3(11.5, TABLE_TOP_Y + 0.42, 5), q: new Quaternion() }]);
     expect(free.final.position.x).toBeLessThan(11.6);
     expect(blocked.final.position.x).toBeGreaterThan(11.9);
+  });
+});
+
+describe('holding things up', () => {
+  const camera = new PerspectiveCamera(45, 1.5, 0.1, 100);
+  camera.position.set(0, 7.2, 8.8);
+  camera.lookAt(0, 0, 0.6);
+  camera.updateMatrixWorld();
+  const toward = (x: number, y: number, z: number) => new Ray(camera.position.clone(), new Vector3(x, y, z).sub(camera.position).normalize());
+
+  it('picked up off the board, it rises as the finger goes up and comes back down to the board', () => {
+    const grip = new Grip(camera, new Vector3(0, LIFT, 0));
+    const p = new Vector3();
+    expect(grip.at(toward(0, 2, 0), p)).toBe(true);
+    expect(p.y).toBeGreaterThan(1);
+    // Pointing lower than the board there: it slides along the board toward the eye.
+    expect(grip.at(toward(0, -1, 0), p)).toBe(true);
+    expect(p.y).toBeCloseTo(LIFT);
+    expect(p.z).toBeGreaterThan(0);
+  });
+
+  it('the wheel pushes it farther away', () => {
+    const grip = new Grip(camera, new Vector3(0, LIFT, 0));
+    const near = new Vector3();
+    const far = new Vector3();
+    grip.at(toward(0, 2, 0), near);
+    grip.push(1.5, far);
+    expect(far.distanceTo(camera.position)).toBeGreaterThan(near.distanceTo(camera.position) + 1);
   });
 });

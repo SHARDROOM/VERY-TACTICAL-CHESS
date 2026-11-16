@@ -13,7 +13,7 @@ import { finishMaterial, type Finish } from './pieceFinish';
 import { AshPile, GATHER_SECONDS, Relic, SHATTER_SECONDS, ShardGather, ShardScatter, SmokeWisp } from './Remains';
 import { chunksOf } from './debris';
 import { seedOf, seeded } from './boardPhysics';
-import { Fling, carryPoint, tableObstacles, useTable } from './tableDrag';
+import { Grip, tableObstacles, useTable } from './tableDrag';
 import { newSeed, onToy, poseOf, readPose, tellToy } from './toys';
 import { PropOnPiece } from './PropMesh';
 
@@ -261,7 +261,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const [gather, setGather] = useState<{ start: number; seconds: number; to: [number, number, number] } | null>(null);
   const table = useTable();
   /** Being dragged about beside the board (a taken piece, for fun). */
-  const held = useRef<{ x: number; y: number; moved: boolean; fling: Fling } | null>(null);
+  const held = useRef<{ x: number; y: number; moved: boolean; grip: Grip } | null>(null);
   /** An exit being played (the remains show once it is over). */
   /** A staged exit playing: how, from when (performance.now() ms), and where it stood (world). */
   const [exiting, setExiting] = useState<{ kind: Exit; start: number; from: [number, number, number] } | null>(null);
@@ -344,16 +344,26 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     table.hold(true);
-    held.current = { x: e.clientX, y: e.clientY, moved: false, fling: new Fling() };
+    held.current = { x: e.clientX, y: e.clientY, moved: false, grip: new Grip(e.camera, shownAt.current) };
   };
   const carry = (e: ThreeEvent<PointerEvent>) => {
     const h = held.current;
     if (!h) return;
     if (!h.moved && Math.hypot(e.clientX - h.x, e.clientY - h.y) < 6) return;
     h.moved = true;
-    if (carryPoint(e.ray, TMP_V, table?.board())) {
+    if (h.grip.at(e.ray, TMP_V, table?.board())) {
       shownAt.current.copy(TMP_V);
-      h.fling.add(TMP_V);
+      tellToy({ op: 'hold', id: piece.id, pose: poseOf(shownAt.current, shownQ.current) });
+    }
+  };
+  /** The wheel, while holding it: farther away or nearer. */
+  const nearer = (e: ThreeEvent<WheelEvent>) => {
+    const h = held.current;
+    if (!h) return;
+    e.stopPropagation();
+    h.moved = true;
+    if (h.grip.push(e.deltaY * 0.004, TMP_V, table?.board())) {
+      shownAt.current.copy(TMP_V);
       tellToy({ op: 'hold', id: piece.id, pose: poseOf(shownAt.current, shownQ.current) });
     }
   };
@@ -363,7 +373,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     table?.hold(false);
     (e.target as Element).releasePointerCapture?.(e.pointerId);
     if (!h?.moved || !physics) return;
-    const velocity = h.fling.velocity();
+    const velocity = h.grip.fling.velocity();
     const seed = newSeed();
     const at = shownAt.current.clone();
     const q = shownQ.current.clone();
@@ -1060,6 +1070,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       onPointerMove={captured ? carry : undefined}
       onPointerUp={captured ? letGo : undefined}
       onPointerCancel={captured ? letGo : undefined}
+      onWheel={captured ? nearer : undefined}
       onPointerOver={(e) => {
         if (captured) return;
         e.stopPropagation();

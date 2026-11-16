@@ -7,7 +7,7 @@ import { fragmentsOf, simulateChunkThrow, simulateShatter } from './shatter';
 import { CHUNK, addChunk, chunkKey, chunkPose, chunkWaiting, chunksOf, getChunk, playChunk, removeChunks, type Chunk } from './debris';
 import { newSeed, onToy, poseOf, readPose, tellToy } from './toys';
 import type { Pose } from '../session/toy';
-import { Fling, carryPoint, tableObstacles, useTable } from './tableDrag';
+import { Grip, tableObstacles, useTable } from './tableDrag';
 
 /*
  * What is left of a piece after a staged exit (docs/SPEC.md, "GM 연출"): beside the board a
@@ -120,7 +120,7 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
   }, [type, id, cx, cy, cz]);
   const refs = useRef<(Mesh | null)[]>([]);
   const look = LOOK[color];
-  const drag = useRef<{ key: string; x: number; y: number; moved: boolean; fling: Fling } | null>(null);
+  const drag = useRef<{ key: string; x: number; y: number; moved: boolean; grip: Grip } | null>(null);
   /** Where another screen is carrying a chunk (it is eased there). */
   const carried = useRef(new Map<string, { p: Vector3; q: Quaternion }>());
 
@@ -196,7 +196,7 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     table?.hold(true);
-    drag.current = { key: c.key, x: e.clientX, y: e.clientY, moved: false, fling: new Fling() };
+    drag.current = { key: c.key, x: e.clientX, y: e.clientY, moved: false, grip: new Grip(e.camera, c.p) };
   };
   const move = (e: ThreeEvent<PointerEvent>) => {
     const d = drag.current;
@@ -205,9 +205,21 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
     if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
     d.moved = true;
     c.held = true;
-    if (carryPoint(e.ray, TMP_P, table?.board())) {
+    if (d.grip.at(e.ray, TMP_P, table?.board())) {
       c.p.copy(TMP_P);
-      d.fling.add(TMP_P);
+      tellToy({ op: 'hold', id: CHUNK + c.key, pose: poseOf(c.p, c.q) });
+    }
+  };
+  /** The wheel, while holding one: farther away or nearer. */
+  const wheel = (e: ThreeEvent<WheelEvent>) => {
+    const d = drag.current;
+    const c = d && getChunk(d.key);
+    if (!d || !c) return;
+    e.stopPropagation();
+    d.moved = true;
+    c.held = true;
+    if (d.grip.push(e.deltaY * 0.004, TMP_P, table?.board())) {
+      c.p.copy(TMP_P);
       tellToy({ op: 'hold', id: CHUNK + c.key, pose: poseOf(c.p, c.q) });
     }
   };
@@ -218,7 +230,7 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
     (e.target as Element).releasePointerCapture?.(e.pointerId);
     const c = d && getChunk(d.key);
     if (!d || !c || !d.moved) return;
-    const velocity = d.fling.velocity();
+    const velocity = d.grip.fling.velocity();
     const seed = newSeed();
     void drop(c, velocity, seed).then((done) => {
       if (!done) return;
@@ -248,6 +260,7 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
           onPointerMove={move}
           onPointerUp={up}
           onPointerCancel={up}
+          onWheel={wheel}
         >
           <meshPhysicalMaterial color={f.accent ? look.accent : look.body} roughness={0.38} clearcoat={0.5} flatShading />
         </mesh>
