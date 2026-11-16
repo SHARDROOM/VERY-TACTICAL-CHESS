@@ -21,6 +21,8 @@ export interface TableHands {
   board(): Board;
   /** The taken pieces beside the board, where they lie. */
   taken(): Obstacle[];
+  /** Which side of the board the dice tray is on. */
+  diceSide(): 1 | -1;
 }
 
 export const TableContext = createContext<TableHands | null>(null);

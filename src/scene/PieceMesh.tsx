@@ -14,7 +14,8 @@ import { AshPile, GATHER_SECONDS, Relic, SHATTER_SECONDS, ShardGather, ShardScat
 import { chunksOf } from './debris';
 import { seedOf, seeded } from './boardPhysics';
 import { Grip, tableObstacles, useTable } from './tableDrag';
-import { newSeed, onToy, poseOf, readPose, tellToy } from './toys';
+import { LiveDrag } from './liveDrag';
+import { onToy, poseOf, readPose, tellToy } from './toys';
 import { PropOnPiece } from './PropMesh';
 
 /** What the pieces share for physics: which side the dice are on, and where taken pieces lie. */
@@ -261,7 +262,9 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const [gather, setGather] = useState<{ start: number; seconds: number; to: [number, number, number] } | null>(null);
   const table = useTable();
   /** Being dragged about beside the board (a taken piece, for fun). */
-  const held = useRef<{ x: number; y: number; moved: boolean; grip: Grip } | null>(null);
+  const held = useRef<{ x: number; y: number; moved: boolean; grip: Grip; grab: Vector3; target: Vector3; released: boolean } | null>(null);
+  /** In the hand (or just let go of): the live simulation it follows. */
+  const live = useRef<LiveDrag | null>(null);
   /** An exit being played (the remains show once it is over). */
   /** A staged exit playing: how, from when (performance.now() ms), and where it stood (world). */
   const [exiting, setExiting] = useState<{ kind: Exit; start: number; from: [number, number, number] } | null>(null);
@@ -340,20 +343,34 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
 
   // A taken piece beside the board can be picked up, carried about and let go of (or thrown).
   const pickUp = (e: ThreeEvent<PointerEvent>) => {
-    if (!captured || !table || !physics || phys.current || motion.current || exitingRef.current || carriedThere.current) return;
+    if (!captured || !table || !physics || phys.current || motion.current || exitingRef.current || carriedThere.current || live.current) return;
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     table.hold(true);
-    held.current = { x: e.clientX, y: e.clientY, moved: false, grip: new Grip(e.camera, shownAt.current) };
+    held.current = { x: e.clientX, y: e.clientY, moved: false, grip: new Grip(e.camera, e.point), grab: e.point.clone(), target: e.point.clone(), released: false };
+  };
+  /** Once it really moves: in the hand, simulated as it happens (liveDrag.ts), hanging by where it was picked up. */
+  const takeInHand = (h: NonNullable<typeof held.current>) => {
+    if (!table || !physics) return;
+    LiveDrag.start({ kind: 'piece', type: piece.type, scale: shownScale.current }, shownAt.current.clone(), shownQ.current.clone(), h.grab, tableObstacles(table, { takenId: piece.id }), physics.diceSide)
+      .then((d) => {
+        d.aim(h.target);
+        if (h.released) d.letGo();
+        phys.current = null;
+        motion.current = null;
+        live.current = d;
+      })
+      .catch(() => {});
   };
   const carry = (e: ThreeEvent<PointerEvent>) => {
     const h = held.current;
     if (!h) return;
     if (!h.moved && Math.hypot(e.clientX - h.x, e.clientY - h.y) < 6) return;
+    if (!h.moved) takeInHand(h);
     h.moved = true;
     if (h.grip.at(e.ray, TMP_V, table?.board())) {
-      shownAt.current.copy(TMP_V);
-      tellToy({ op: 'hold', id: piece.id, pose: poseOf(shownAt.current, shownQ.current) });
+      h.target.copy(TMP_V);
+      live.current?.aim(h.target);
     }
   };
   /** The wheel, while holding it: farther away or nearer. */
@@ -361,10 +378,11 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     const h = held.current;
     if (!h) return;
     e.stopPropagation();
+    if (!h.moved) takeInHand(h);
     h.moved = true;
     if (h.grip.push(e.deltaY * 0.004, TMP_V, table?.board())) {
-      shownAt.current.copy(TMP_V);
-      tellToy({ op: 'hold', id: piece.id, pose: poseOf(shownAt.current, shownQ.current) });
+      h.target.copy(TMP_V);
+      live.current?.aim(h.target);
     }
   };
   const letGo = (e: ThreeEvent<PointerEvent>) => {
@@ -372,15 +390,22 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     held.current = null;
     table?.hold(false);
     (e.target as Element).releasePointerCapture?.(e.pointerId);
-    if (!h?.moved || !physics) return;
-    const velocity = h.grip.fling.velocity();
-    const seed = newSeed();
-    const at = shownAt.current.clone();
-    const q = shownQ.current.clone();
-    throwTaken(at, q, velocity, seed, undefined, (run) =>
-      tellToy({ op: 'drop', id: piece.id, pose: poseOf(at, q), velocity: [velocity.x, velocity.y, velocity.z], seed, final: poseOf(run.final.position, run.final.quaternion) }),
-    );
+    if (!h?.moved) return;
+    // It flies on as it was swung and falls (the simulation runs on until it lies still).
+    h.released = true;
+    live.current?.letGo();
   };
+  /** In the hand and then let go of: lies still at last. Every screen is told where. */
+  const putDown = () => {
+    const d = live.current;
+    live.current = null;
+    d?.free();
+    const pose = { position: shownAt.current.clone(), quaternion: shownQ.current.clone() };
+    physics?.resting.set(piece.id, { type: piece.type, scale: shownScale.current, pose });
+    const at = poseOf(pose.position, pose.quaternion);
+    tellToy({ op: 'drop', id: piece.id, pose: at, velocity: [0, 0, 0], seed: 0, final: at });
+  };
+  useEffect(() => () => live.current?.free(), []);
 
   /**
    * A taken piece let go of at `at` (turned `q`) at `velocity`, spun as `seed` says: it falls or
@@ -712,6 +737,17 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     const g = group.current;
     if (!g) return;
     const now = performance.now();
+    // In the player's hand: where the live simulation has it.
+    const hand = live.current;
+    if (hand) {
+      const done = hand.step(dt, shownAt.current, shownQ.current);
+      g.position.copy(shownAt.current);
+      g.quaternion.copy(shownQ.current);
+      g.scale.setScalar(shownScale.current);
+      if (done) putDown();
+      else tellToy({ op: 'hold', id: piece.id, pose: poseOf(shownAt.current, shownQ.current) });
+      return;
+    }
     const height = PIECE_HEIGHT[piece.type];
     let squash = 1;
     // A recording (a duel, a romp) drives the piece; when it is over it eases back where it belongs.

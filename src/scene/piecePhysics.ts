@@ -33,7 +33,7 @@ export interface Obstacle {
  * Pieces are heavy little things: strong gravity (for the scene's scale) makes them fall and
  * settle briskly, and a weighted base keeps their centre of mass low, like a real Staunton set.
  */
-const G = 9.81 * 2.5;
+export const G = 9.81 * 2.5;
 const BOARD_HALF = 4.6;
 
 const hullCache = new Map<PieceType, Float32Array>();
@@ -126,6 +126,30 @@ export function addObstacles(RAPIER: Rapier, world: InstanceType<Rapier['World']
   for (const d of o.dice ?? []) at(RAPIER.ColliderDesc.convexHull(d.hull), d.p, d.q, 0.5, 0.35);
 }
 
+/** The table top, the board raised on it and the dice tray's walls, fixed; returns their body. */
+export function addTable(RAPIER: Rapier, world: InstanceType<Rapier['World']>, diceSide: 1 | -1): InstanceType<Rapier['RigidBody']> {
+  const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+  const solid = (desc: InstanceType<typeof RAPIER.ColliderDesc>, friction = 0.6, restitution = 0.2) =>
+    world.createCollider(desc.setFriction(friction).setRestitution(restitution), fixed);
+  solid(RAPIER.ColliderDesc.cuboid(14, 0.3, 9).setTranslation(0, TABLE_TOP_Y - 0.3, 0), 0.7, 0.15);
+  const boardH = -TABLE_TOP_Y / 2;
+  solid(RAPIER.ColliderDesc.cuboid(BOARD_HALF, boardH, BOARD_HALF).setTranslation(0, TABLE_TOP_Y + boardH, 0), 0.55, 0.2);
+  const tx = trayCenterX(diceSide);
+  const hx = TRAY.halfX * TRAY_SCALE;
+  const hz = TRAY.halfZ * TRAY_SCALE;
+  const rim = 0.3 * TRAY_SCALE;
+  const wallH = 0.4 * TRAY_SCALE;
+  for (const [x, z, w, d] of [
+    [tx, hz + rim / 2, hx + rim, rim / 2],
+    [tx, -hz - rim / 2, hx + rim, rim / 2],
+    [tx + hx + rim / 2, 0, rim / 2, hz],
+    [tx - hx - rim / 2, 0, rim / 2, hz],
+  ]) {
+    solid(RAPIER.ColliderDesc.cuboid(w, wallH / 2, d).setTranslation(x, TABLE_TOP_Y + wallH / 2, z));
+  }
+  return fixed;
+}
+
 export interface SimOptions {
   type: PieceType;
   /** Whoever rides it, glued on top. */
@@ -153,27 +177,9 @@ export async function simulatePiece(o: SimOptions): Promise<PieceRun> {
   const RAPIER = await loadPhysics();
   const world = new RAPIER.World({ x: 0, y: -G, z: 0 });
   try {
-    const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+    const fixed = addTable(RAPIER, world, o.diceSide);
     const solid = (desc: InstanceType<typeof RAPIER.ColliderDesc>, friction = 0.6, restitution = 0.2) =>
       world.createCollider(desc.setFriction(friction).setRestitution(restitution), fixed);
-    // Table top, and the board raised on it.
-    solid(RAPIER.ColliderDesc.cuboid(14, 0.3, 9).setTranslation(0, TABLE_TOP_Y - 0.3, 0), 0.7, 0.15);
-    const boardH = -TABLE_TOP_Y / 2;
-    solid(RAPIER.ColliderDesc.cuboid(BOARD_HALF, boardH, BOARD_HALF).setTranslation(0, TABLE_TOP_Y + boardH, 0), 0.55, 0.2);
-    // The dice tray's walls.
-    const tx = trayCenterX(o.diceSide);
-    const hx = TRAY.halfX * TRAY_SCALE;
-    const hz = TRAY.halfZ * TRAY_SCALE;
-    const rim = 0.3 * TRAY_SCALE;
-    const wallH = 0.4 * TRAY_SCALE;
-    for (const [x, z, w, d] of [
-      [tx, hz + rim / 2, hx + rim, rim / 2],
-      [tx, -hz - rim / 2, hx + rim, rim / 2],
-      [tx + hx + rim / 2, 0, rim / 2, hz],
-      [tx - hx - rim / 2, 0, rim / 2, hz],
-    ]) {
-      solid(RAPIER.ColliderDesc.cuboid(w, wallH / 2, d).setTranslation(x, TABLE_TOP_Y + wallH / 2, z));
-    }
     if (o.extra) addObstacles(RAPIER, world, fixed, o.extra);
     for (const ob of o.obstacles ?? []) {
       const hull = RAPIER.ColliderDesc.convexHull(scaled(hullPoints(ob.type), ob.scale));

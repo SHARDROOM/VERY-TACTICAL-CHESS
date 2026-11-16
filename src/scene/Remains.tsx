@@ -5,9 +5,10 @@ import type { Color, PieceType } from '../engine';
 import { featureParts } from './pieceGeometry';
 import { fragmentsOf, simulateChunkThrow, simulateShatter } from './shatter';
 import { CHUNK, addChunk, chunkKey, chunkPose, chunkWaiting, chunksOf, getChunk, playChunk, removeChunks, type Chunk } from './debris';
-import { newSeed, onToy, poseOf, readPose, tellToy } from './toys';
+import { onToy, poseOf, readPose, tellToy } from './toys';
 import type { Pose } from '../session/toy';
 import { Grip, tableObstacles, useTable } from './tableDrag';
+import { LiveDrag } from './liveDrag';
 
 /*
  * What is left of a piece after a staged exit (docs/SPEC.md, "GM 연출"): beside the board a
@@ -120,7 +121,10 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
   }, [type, id, cx, cy, cz]);
   const refs = useRef<(Mesh | null)[]>([]);
   const look = LOOK[color];
-  const drag = useRef<{ key: string; x: number; y: number; moved: boolean; grip: Grip } | null>(null);
+  const drag = useRef<{ key: string; x: number; y: number; moved: boolean; grip: Grip; grab: Vector3; target: Vector3; released: boolean } | null>(null);
+  /** A chunk in this screen's hand (or just let go of): the live simulation it follows. */
+  const live = useRef<{ key: string; hand: LiveDrag } | null>(null);
+  useEffect(() => () => live.current?.hand.free(), []);
   /** Where another screen is carrying a chunk (it is eased there). */
   const carried = useRef(new Map<string, { p: Vector3; q: Quaternion }>());
 
@@ -167,9 +171,22 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, id, fragments]);
 
-  useFrame(() => {
+  useFrame((_, dt) => {
     if (!ready) return;
     const now = performance.now();
+    // The one in this screen's hand: where the live simulation has it.
+    const l = live.current;
+    const lc = l && getChunk(l.key);
+    if (l && lc) {
+      if (l.hand.step(dt, lc.p, lc.q)) {
+        live.current = null;
+        l.hand.free();
+        lc.held = false;
+        lc.track = undefined;
+        const at = poseOf(lc.p, lc.q);
+        tellToy({ op: 'drop', id: CHUNK + lc.key, pose: at, velocity: [0, 0, 0], seed: 0, final: at });
+      } else tellToy({ op: 'hold', id: CHUNK + lc.key, pose: poseOf(lc.p, lc.q) });
+    }
     fragments.forEach((_, i) => {
       const m = refs.current[i];
       const c = getChunk(chunkKey(id, i));
@@ -191,23 +208,38 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
   if (!ready) return null;
   const down = (i: number) => (e: ThreeEvent<PointerEvent>) => {
     const c = getChunk(chunkKey(id, i));
-    // Still flying (its burst, a shove), or in someone else's hand: it cannot be caught.
-    if (!c || c.held || (c.track && performance.now() < c.track.start + c.track.steps * c.track.dt * 1000)) return;
+    // Still flying (its burst, a shove), in someone's hand, or one of ours is: it cannot be caught.
+    if (!c || c.held || live.current || (c.track && performance.now() < c.track.start + c.track.steps * c.track.dt * 1000)) return;
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     table?.hold(true);
-    drag.current = { key: c.key, x: e.clientX, y: e.clientY, moved: false, grip: new Grip(e.camera, c.p) };
+    drag.current = { key: c.key, x: e.clientX, y: e.clientY, moved: false, grip: new Grip(e.camera, e.point), grab: e.point.clone(), target: e.point.clone(), released: false };
+  };
+  /** Once it really moves: in the hand, simulated as it happens, hanging by where it was picked up. */
+  const takeInHand = (d: NonNullable<typeof drag.current>, c: Chunk) => {
+    if (!table) return;
+    c.held = true;
+    c.track = undefined;
+    LiveDrag.start({ kind: 'chunk', hull: c.hull }, c.p.clone(), c.q.clone(), d.grab, tableObstacles(table, { chunkKey: c.key }), table.diceSide())
+      .then((hand) => {
+        hand.aim(d.target);
+        if (d.released) hand.letGo();
+        live.current = { key: c.key, hand };
+      })
+      .catch(() => {
+        c.held = false;
+      });
   };
   const move = (e: ThreeEvent<PointerEvent>) => {
     const d = drag.current;
     const c = d && getChunk(d.key);
     if (!d || !c) return;
     if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
+    if (!d.moved) takeInHand(d, c);
     d.moved = true;
-    c.held = true;
     if (d.grip.at(e.ray, TMP_P, table?.board())) {
-      c.p.copy(TMP_P);
-      tellToy({ op: 'hold', id: CHUNK + c.key, pose: poseOf(c.p, c.q) });
+      d.target.copy(TMP_P);
+      live.current?.hand.aim(d.target);
     }
   };
   /** The wheel, while holding one: farther away or nearer. */
@@ -216,11 +248,11 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
     const c = d && getChunk(d.key);
     if (!d || !c) return;
     e.stopPropagation();
+    if (!d.moved) takeInHand(d, c);
     d.moved = true;
-    c.held = true;
     if (d.grip.push(e.deltaY * 0.004, TMP_P, table?.board())) {
-      c.p.copy(TMP_P);
-      tellToy({ op: 'hold', id: CHUNK + c.key, pose: poseOf(c.p, c.q) });
+      d.target.copy(TMP_P);
+      live.current?.hand.aim(d.target);
     }
   };
   const up = (e: ThreeEvent<PointerEvent>) => {
@@ -228,23 +260,10 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
     drag.current = null;
     table?.hold(false);
     (e.target as Element).releasePointerCapture?.(e.pointerId);
-    const c = d && getChunk(d.key);
-    if (!d || !c || !d.moved) return;
-    const velocity = d.grip.fling.velocity();
-    const seed = newSeed();
-    void drop(c, velocity, seed).then((done) => {
-      if (!done) return;
-      const k = (done.run.steps - 1) * 7;
-      const f = done.run.tracks[0];
-      tellToy({
-        op: 'drop',
-        id: CHUNK + c.key,
-        pose: poseOf(done.from.p, done.from.q),
-        velocity: [velocity.x, velocity.y, velocity.z],
-        seed,
-        final: poseOf(new Vector3(f[k], f[k + 1], f[k + 2]), new Quaternion(f[k + 3], f[k + 4], f[k + 5], f[k + 6])),
-      });
-    });
+    if (!d?.moved) return;
+    // It flies on as it was swung and falls (the simulation runs on until it lies still).
+    d.released = true;
+    live.current?.hand.letGo();
   };
   return (
     <group>

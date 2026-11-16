@@ -367,6 +367,8 @@ export function BoardScene({
   const holdNow = useRef<(on: boolean) => void>(() => {});
   const boardNow = useRef(board);
   boardNow.current = board;
+  const diceSideNow = useRef(diceSide);
+  diceSideNow.current = diceSide;
   const hands = useMemo<TableHands>(
     () => ({
       hold: (on) => {
@@ -375,6 +377,7 @@ export function BoardScene({
       },
       board: () => boardNow.current,
       taken: () => [...resting.current.entries()].map(([id, o]) => ({ ...o, id })),
+      diceSide: () => diceSideNow.current,
     }),
     [],
   );
