@@ -29,6 +29,9 @@ export const REJECT_MESSAGE: Record<RejectReason, string> = {
   landingPending: '기물이 떨어지는 중입니다. 잠시 기다려 주세요.',
   nothingFalling: '떨어지는 기물이 없습니다.',
   notChainedPiece: '연속 이동 중입니다. 방금 움직인 기물을 한 번 더 움직이거나 턴을 넘기세요.',
+  surrenderPending: '항복한 쪽이 남길 기물을 고르는 중입니다.',
+  noSurrender: '항복한 플레이어가 없습니다.',
+  notExiledPiece: '항복한 쪽의 기물만 남길 수 있습니다.',
   chainInProgress: '연속 이동 중에는 특수 행동을 할 수 없습니다. 기물을 한 번 더 움직이거나 턴을 넘기세요.',
 };
 
@@ -186,6 +189,21 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         break;
       case 'kingCaptured':
         add(`👑 킹을 잡았습니다! ${COLOR_NAME[e.winner]} 승리.`);
+        break;
+      case 'surrendered':
+        add(`🏳 ${COLOR_NAME[e.loser]}의 킹이 ${COLOR_NAME[e.to]}에게 항복했습니다.`, 'warn');
+        if (!e.keepsOne) add(`${COLOR_NAME[e.loser]}에게는 남은 기물이 없어 탈락합니다.`);
+        break;
+      case 'exiled':
+        {
+          const name = PIECE_NAME[e.piece.type];
+          // The particle follows the piece's name, not the square in brackets after it.
+          const particle = josa(name, '이/가').slice(name.length);
+          add(`${COLOR_NAME[e.loser]}의 ${name}(${squareName(e.at)})${particle} 누더기 후드를 뒤집어쓰고 망명합니다… 나머지는 모두 ${COLOR_NAME[e.to]}의 지휘를 받습니다.`, 'warn');
+        }
+        break;
+      case 'crowned':
+        add(`👑 망명자가 킹을 잡고 ${COLOR_NAME[e.color]}의 새 킹이 되었습니다!`, 'warn');
         break;
       case 'turnPassed':
         add(`${COLOR_NAME[e.turn]}의 차례 (AP +${e.apGained})`, 'turnbreak');

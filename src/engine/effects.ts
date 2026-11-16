@@ -180,7 +180,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
             touched.push(e.from);
             events.push({ type: 'removed', piece, at: e.from, cause: 'clash', ...(exit && { exit }) });
             throwOff(piece, e.from, e.to);
-            if (piece.type === 'king') events.push({ type: 'kingCaptured', winner: occupant.color });
+            if (piece.type === 'king') events.push({ type: 'kingCaptured', winner: occupant.color, loser: piece.color });
             cut = i;
             break;
           }

@@ -118,3 +118,80 @@ describe('the three-player board', () => {
     expect(r2.state.board[sq('백e4')]).toBeNull();
   });
 });
+
+describe('surrender and exile on the hexagon', () => {
+  beforeAll(() => setBoardMap('hex3'));
+  afterAll(() => setBoardMap('classic'));
+  const P = (color: Color, type: PieceType) => ({ color, type });
+  const go = (s: GameState, cmd: Parameters<typeof applyCommand>[1]) => {
+    const r = applyCommand(s, cmd);
+    if (!r.ok) throw new Error(`${r.reason} ${r.detail ?? ''}`);
+    return r;
+  };
+
+  it('a king taken: its side surrenders, keeps the piece it picks under a hood, the rest turn', () => {
+    const s0 = hex({
+      '백e1': P('white', 'king'), '백d2': P('white', 'queen'),
+      '흑e1': P('black', 'king'), '흑a1': P('black', 'rook'), '흑b1': P('black', 'knight'), '흑h2': P('black', 'pawn'),
+      '적e1': P('red', 'king'),
+    });
+    // The white queen goes up white's d-file into red's e-file... a test position: put black's king in reach.
+    const s1 = hex({ ...{}, '백e1': P('white', 'king'), '백e3': P('white', 'rook'), '흑e1': P('black', 'king'), '흑a1': P('black', 'rook'), '흑b1': P('black', 'knight'), '적e1': P('red', 'king') });
+    void s0;
+    // White's e-file runs on into black's d-file: put black's king there.
+    const s2 = hex({ '백e1': P('white', 'king'), '백e3': P('white', 'rook'), '흑d2': P('black', 'king'), '흑a1': P('black', 'rook'), '흑b1': P('black', 'knight'), '적e1': P('red', 'king') });
+    void s1;
+    const r = go(s2, { type: 'move', from: sq('백e3'), to: sq('흑d2') });
+    expect(r.events).toContainEqual({ type: 'surrendered', loser: 'black', to: 'white', keepsOne: true });
+    expect(r.state.surrender).toEqual({ loser: 'black', to: 'white' });
+    expect(r.state.status.kind).toBe('playing');
+    // Nothing else happens until black picks.
+    expect(applyCommand(r.state, { type: 'endTurn' })).toMatchObject({ ok: false, reason: 'surrenderPending' });
+    expect(applyCommand(r.state, { type: 'exile', at: sq('백e1') })).toMatchObject({ ok: false, reason: 'notExiledPiece' });
+    const e = go(r.state, { type: 'exile', at: sq('흑b1') });
+    expect(e.state.board[sq('흑b1')]).toMatchObject({ color: 'black', type: 'knight', tags: [expect.objectContaining({ name: '누더기 후드', clash: 1 })] });
+    expect(e.state.board[sq('흑a1')]).toMatchObject({ color: 'white', type: 'rook' });
+    expect(e.state.surrender).toBeUndefined();
+    // Black still takes its turns with its exile.
+    expect(e.state.turn).toBe('black');
+  });
+
+  it('the hood makes a capture of the exile a clash', () => {
+    const s = hex({ '백e1': P('white', 'king'), '백b3': P('white', 'rook'), '흑b1': P('black', 'knight'), '흑e1': P('black', 'king'), '적e1': P('red', 'king') });
+    const b = [...s.board];
+    b[sq('흑b1')] = { ...b[sq('흑b1')]!, tags: [{ name: '누더기 후드', turnsLeft: null, appliedOnTurn: 1, clash: 1 }] };
+    // White's b-file runs into red's g-file... so take a square on white's own half instead.
+    b[sq('백b1')] = b[sq('흑b1')];
+    b[sq('흑b1')] = null;
+    expect(applyCommand({ ...s, board: b }, { type: 'move', from: sq('백b3'), to: sq('백b1') })).toMatchObject({ ok: false, reason: 'clashRollsNeeded' });
+  });
+
+  it('an exile that takes a king is crowned, and its victim surrenders to it', () => {
+    const hood = { name: '누더기 후드', turnsLeft: null, appliedOnTurn: 1, clash: 1 };
+    const s = hex({ '흑d2': P('black', 'rook'), '백e1': P('white', 'king'), '백a2': P('white', 'pawn'), '적e1': P('red', 'king') }, 'black');
+    const b = [...s.board];
+    b[sq('흑d2')] = { ...b[sq('흑d2')]!, tags: [hood] };
+    // Black's d-file runs into white's e-file: the exiled rook takes the white king.
+    const r = go({ ...s, board: b }, { type: 'move', from: sq('흑d2'), to: sq('백e1') });
+    expect(r.events).toContainEqual(expect.objectContaining({ type: 'crowned', color: 'black' }));
+    expect(r.state.board[sq('백e1')]).toMatchObject({ type: 'king', color: 'black', tags: [] });
+    expect(r.state.surrender).toEqual({ loser: 'white', to: 'black' });
+    expect(r.state.status.kind).toBe('playing');
+  });
+
+  it('a king taken with nothing else of its side left: that side is out', () => {
+    const s = hex({ '백e3': P('white', 'rook'), '백e1': P('white', 'king'), '흑d2': P('black', 'king'), '적e1': P('red', 'king') });
+    const r = go(s, { type: 'move', from: sq('백e3'), to: sq('흑d2') });
+    expect(r.events).toContainEqual({ type: 'surrendered', loser: 'black', to: 'white', keepsOne: false });
+    expect(r.state.surrender).toBeUndefined();
+    // Black has nothing left: red moves next.
+    expect(r.state.turn).toBe('red');
+  });
+
+  it('the last king left wins', () => {
+    const s = hex({ '백e3': P('white', 'rook'), '백e1': P('white', 'king'), '흑d2': P('black', 'king'), '흑a1': P('black', 'pawn') });
+    const r = go(s, { type: 'move', from: sq('백e3'), to: sq('흑d2') });
+    expect(r.state.status).toEqual({ kind: 'won', winner: 'white' });
+    expect(r.events).toContainEqual({ type: 'kingCaptured', winner: 'white', loser: 'black' });
+  });
+});

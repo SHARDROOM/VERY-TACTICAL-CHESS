@@ -145,7 +145,7 @@ describe('check and king capture', () => {
     }, 'black');
     const r = okMove(s, 'e5', 'e1');
     expect(r.state.status).toEqual({ kind: 'won', winner: 'black' });
-    expect(r.events).toContainEqual({ type: 'kingCaptured', winner: 'black' });
+    expect(r.events).toContainEqual({ type: 'kingCaptured', winner: 'black', loser: 'white' });
     expect(r.events.some((e) => e.type === 'turnPassed')).toBe(false);
     expect(move(r.state, 'e8', 'e7')).toEqual({ ok: false, reason: 'gameOver' });
   });

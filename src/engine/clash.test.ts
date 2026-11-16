@@ -129,7 +129,7 @@ describe('clashes in normal moves', () => {
     b[sq('e2')] = fighter(b[sq('e2')]!);
     const r = okMove({ ...s, board: b }, 'e1', 'e2', { clashRolls: [1, 6] });
     expect(r.state.status).toEqual({ kind: 'won', winner: 'black' });
-    expect(r.events).toContainEqual({ type: 'kingCaptured', winner: 'black' });
+    expect(r.events).toContainEqual({ type: 'kingCaptured', winner: 'black', loser: 'white' });
   });
 });
 

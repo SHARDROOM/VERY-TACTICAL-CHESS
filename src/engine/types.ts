@@ -20,6 +20,11 @@ export const BURN = '화상';
  * and falls when it ends (see levitation.ts).
  */
 export const LEVITATE = '공중부양';
+/**
+ * An exile's ragged hood (3인 육각 맵): worn by the one piece a surrendering player keeps. Gear of
+ * ×1: a capture of it is always a clash (see clash.ts, canResist), so it never dies in one blow.
+ */
+export const HOOD = '누더기 후드';
 
 export interface Tag {
   name: string;
@@ -269,6 +274,11 @@ export interface GameState {
   chaosLog?: ChaosRecord[];
   /** Walls and pits on the board (missing = none). */
   terrain?: TerrainCell[];
+  /**
+   * The hexagon: a player whose king fell picks the one piece it keeps (the `exile` command, from
+   * that player). Nothing else happens meanwhile. Missing = none.
+   */
+  surrender?: { loser: Color; to: Color };
   /** Pieces falling from the air, waiting for the `land` command (missing = none). Nothing else happens meanwhile. */
   falling?: FallingPiece[];
   /**
@@ -303,7 +313,9 @@ export type Command =
    * The falling pieces come down where the physics put them (simulated outside the engine with
    * `seed`, which the screens replay). A piece without a landing drops straight down.
    */
-  | { type: 'land'; seed: number; landings: Landing[] };
+  | { type: 'land'; seed: number; landings: Landing[] }
+  /** The surrendering player keeps the piece on `at` (see GameState.surrender). */
+  | { type: 'exile'; at: Square };
 
 export type MoveSpecial =
   | { kind: 'castle'; side: 'king' | 'queen' }
@@ -374,7 +386,14 @@ export type GameEvent =
   | { type: 'autoTurnEnd'; color: Color; reason: 'check' }
   /** A capture hit a shield: the shield is gone, the target stays, the attacker did not move. */
   | { type: 'shieldBroken'; pieceId: string; at: Square; attackerId: string | null }
-  | { type: 'kingCaptured'; winner: Color }
+  /** A king fell (on the classic board: the game is over; on the hexagon, `loser` surrenders unless it was the last). */
+  | { type: 'kingCaptured'; winner: Color; loser?: Color }
+  /** The hexagon: `loser`'s king fell to `to`; it now picks the one piece it keeps (or has none left). */
+  | { type: 'surrendered'; loser: Color; to: Color; keepsOne: boolean }
+  /** The kept piece goes into exile under a ragged hood; everything else of `loser` now serves `to`. */
+  | { type: 'exiled'; loser: Color; to: Color; piece: Piece; at: Square }
+  /** An exile took a king: it becomes its side's king again. */
+  | { type: 'crowned'; pieceId: string; at: Square; color: Color }
   /** The given color's king is attacked after the change. */
   | { type: 'check'; color: Color }
   /** The mover left their own king attacked (allowed, but warned). */
@@ -425,7 +444,12 @@ export type RejectReason =
   /** Mid-chain only the piece moving in a row may move. */
   | 'notChainedPiece'
   /** Mid-chain: no special actions (or chaos) until the turn is over. */
-  | 'chainInProgress';
+  | 'chainInProgress'
+  /** A player surrendered: only its `exile` choice may come next. */
+  | 'surrenderPending'
+  | 'noSurrender'
+  /** The exile must be one of the surrendering player's pieces. */
+  | 'notExiledPiece';
 
 export type CommandResult =
   | { ok: true; state: GameState; events: GameEvent[] }

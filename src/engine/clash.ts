@@ -41,9 +41,12 @@ export function clashMultiplier(piece: Piece): number {
   return Math.max(...stackOf(piece).map(own));
 }
 
-/** A capture of this piece becomes a clash: it (or its rider) has skill, or it has a shield. */
+/** It (or someone riding it) wears clash gear: a tag with a multiplier, even ×1 (an exile's hood). */
+export const hasClashGear = (piece: Piece): boolean => stackOf(piece).some((p) => (p.tags ?? []).some((t) => t.clash !== undefined));
+
+/** A capture of this piece becomes a clash: it (or its rider) wears clash gear, or it has a shield. */
 export function canResist(defender: Piece): boolean {
-  return clashSkill(defender) > 1 || hasTag(defender, SHIELD);
+  return hasClashGear(defender) || hasTag(defender, SHIELD);
 }
 
 /** How many times the two meet on screen: closer scores, longer fights; each tie adds one. */

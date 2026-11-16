@@ -16,12 +16,12 @@ import {
 } from './types';
 import type { Exit, Staging } from './staging';
 import { enPassantVictim, isInCheck, legalTargets } from './moves';
-import { backRank, setBoardMap, isAir, pawnForward, pawnStart, playersOf, promotesOn, step } from './squares';
+import { backRank, setBoardMap, isAir, isHex, pawnForward, pawnStart, playersOf, promotesOn, step } from './squares';
 import { revokeCastling } from './castling';
 import { DIE_SIDES } from './config';
 import { applyEffects, validateRuling, type EffectContext } from './effects';
-import { extinguish, isShielded, moveTimesOf, ridersOf, tickTags, unseat, withoutTag } from './tags';
-import { SHIELD } from './types';
+import { extinguish, hasTag, isShielded, mapStack, moveTimesOf, ridersOf, stackOf, tickTags, unseat, withTag, withoutTag } from './tags';
+import { HOOD, SHIELD, type Tag } from './types';
 import { dropFromBridges, tickTerrain } from './terrain';
 import { capturedAfter } from './captured';
 import { playFalls, startFalls } from './levitation';
@@ -40,6 +40,9 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
   // A piece in mid-fall comes down before anything else happens.
   if (state.falling?.length && cmd.type !== 'land') return { ok: false, reason: 'landingPending' };
   if (cmd.type === 'land') return land(state, cmd);
+  // A player whose king fell picks the piece it keeps before anything else happens.
+  if (cmd.type === 'exile') return exile(state, cmd.at);
+  if (state.surrender) return { ok: false, reason: 'surrenderPending' };
   // Running out of time cancels whatever was pending, so it may come at any moment.
   if (cmd.type === 'timeout') return timeOut(state);
   const actionCommand = cmd.type === 'attemptSpecial' || cmd.type === 'cancelSpecial';
@@ -164,6 +167,69 @@ function withCaptured(state: GameState, events: GameEvent[], exits?: Map<string,
     : state;
 }
 
+/**
+ * A king fell: `loser`'s, to `winner` (the piece on `killerAt` struck it). On the classic board the
+ * game is over. On the hexagon an exile that takes a king becomes a king again; the game ends
+ * when one king is left; otherwise the loser surrenders, and picks the one piece it keeps (if it
+ * has any left). `board` is changed in place; the events are added to `events`.
+ */
+function kingFell(board: (Piece | null)[], loser: Color, winner: Color, killerAt: Square | null, events: GameEvent[]): Partial<Pick<GameState, 'status' | 'surrender'>> {
+  if (!isHex()) {
+    events.push({ type: 'kingCaptured', winner, loser });
+    return { status: { kind: 'won', winner } };
+  }
+  const killer = killerAt === null ? null : board[killerAt];
+  if (killer && killerAt !== null && killer.color === winner && hasTag(killer, HOOD)) {
+    board[killerAt] = { ...withoutTag(killer, HOOD), type: 'king' };
+    events.push({ type: 'crowned', pieceId: killer.id, at: killerAt, color: winner });
+  }
+  const kings = [...new Set(board.flatMap((p) => (p ? stackOf(p) : [])).filter((p) => p.type === 'king').map((p) => p.color))];
+  if (kings.length <= 1) {
+    const last = kings[0] ?? winner;
+    events.push({ type: 'kingCaptured', winner: last, loser });
+    return { status: { kind: 'won', winner: last } };
+  }
+  const keepsOne = board.some((p) => p && stackOf(p).some((q) => q.color === loser));
+  events.push({ type: 'surrendered', loser, to: winner, keepsOne });
+  return keepsOne ? { surrender: { loser, to: winner } } : {};
+}
+
+/** An exile's hood (see HOOD): ×1 clash gear, worn for good. */
+export function hoodTag(turnNumber: number): Tag {
+  return {
+    name: HOOD,
+    turnsLeft: null,
+    appliedOnTurn: turnNumber,
+    clash: 1,
+    prop: {
+      preset: null,
+      attach: 'head',
+      scale: 1,
+      parts: [
+        { shape: 'cone', material: 'cloth', position: [0, -0.06, -0.01], size: [0.4, 0.44, 0.4], rotation: [-8, 0, 0], color: '#6e5d47' },
+        { shape: 'box', material: 'cloth', position: [0.09, -0.12, 0.13], size: [0.1, 0.09, 0.02], rotation: [0, 0, 18], color: '#8f7b5c' },
+        { shape: 'torus', material: 'rope', position: [0, -0.24, 0], size: [0.38, 0.05, 0.38], rotation: [0, 0, 0] },
+      ],
+    },
+  };
+}
+
+/** The surrendering player keeps the piece on `at` (in exile, under a hood); all its others now serve the winner. */
+function exile(state: GameState, at: Square): CommandResult {
+  const s = state.surrender;
+  if (!s) return { ok: false, reason: 'noSurrender' };
+  const kept = Number.isInteger(at) ? state.board[at] : null;
+  if (!kept || kept.color !== s.loser) return { ok: false, reason: 'notExiledPiece' };
+  const turned = (p: Piece) => (p.color === s.loser ? { ...p, color: s.to } : p);
+  const board = state.board.map((p, sq) => (p && sq !== at ? mapStack(p, turned) : p));
+  board[at] = withTag(kept, hoodTag(state.turnNumber));
+  const events: GameEvent[] = [{ type: 'exiled', loser: s.loser, to: s.to, piece: kept, at }];
+  for (const c of playersOf()) if (isInCheck(board, c, state.terrain)) events.push({ type: 'check', color: c });
+  const { surrender: _done, ...rest } = state;
+  void _done;
+  return { ok: true, state: { ...rest, board }, events };
+}
+
 /** Who moves after the player now to move: the next in turn order who still has pieces. */
 function nextPlayer(state: GameState, board: Board): Color {
   const all = playersOf();
@@ -264,8 +330,10 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
       const falls = unseat(piece, cmd.from, events, cmd.to);
       const after = withCaptured({ ...state, castling: revokeCastling(state.castling, [cmd.from]), ...withFalls(state, falls) }, events);
       if (piece.type === 'king') {
-        events.push({ type: 'kingCaptured', winner: victim.color });
-        return { ok: true, state: { ...after, board, status: { kind: 'won', winner: victim.color } }, events };
+        const fell = kingFell(board, piece.color, victim.color, victimSquare, events);
+        if (fell.status) return { ok: true, state: { ...after, board, ...fell }, events };
+        events.push(...checkEvents(board, piece.color, state.terrain));
+        return { ok: true, ...passTurn({ ...after, ...fell }, board, null, events) };
       }
       events.push(...checkEvents(board, piece.color, state.terrain));
       return { ok: true, ...passTurn(after, board, null, events) };
@@ -311,17 +379,16 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
     { type: 'moved', pieceId: piece.id, from: cmd.from, to: cmd.to, captured, ...(special && { special }), ...(capturedExit && { capturedExit }) },
   ];
   // Whoever rode the captured piece is thrown off it, away from the attacker (a king's fall ends the game anyway).
-  const falls = captured && captured.type !== 'king' ? unseat(captured, victimSquare, events, cmd.from) : [];
-  if (captured?.type === 'king') for (const r of ridersOf(captured)) events.push({ type: 'removed', piece: r, at: victimSquare });
+  // On the hexagon the game goes on after a king falls, so its riders tumble off like anyone's.
+  const falls = captured && (captured.type !== 'king' || isHex()) ? unseat(captured, victimSquare, events, cmd.from) : [];
+  if (captured?.type === 'king' && !isHex()) for (const r of ridersOf(captured)) events.push({ type: 'removed', piece: r, at: victimSquare });
   events.push(...fireOut);
 
+  let surrender: Pick<GameState, 'surrender'> = {};
   if (captured?.type === 'king') {
-    events.push({ type: 'kingCaptured', winner: piece.color });
-    return {
-      ok: true,
-      state: withCaptured({ ...state, board, status: { kind: 'won', winner: piece.color } }, events),
-      events,
-    };
+    const fell = kingFell(board, captured.color, piece.color, cmd.to, events);
+    if (fell.status) return { ok: true, state: withCaptured({ ...state, board, ...fell }, events), events };
+    surrender = fell;
   }
 
   // A pawn's double step from its first rank (not a pawn that slid two squares like a rook elsewhere).
@@ -330,12 +397,12 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   const enPassant = doubleStep ? skipped.sq : null;
 
   events.push(...checkEvents(board, piece.color, state.terrain));
-  const withRights = withCaptured({ ...state, castling: revokeCastling(state.castling, touched), ...withFalls(state, falls) }, events);
+  const withRights = withCaptured({ ...state, castling: revokeCastling(state.castling, touched), ...withFalls(state, falls), ...surrender }, events);
 
   // A piece that moves several times in a row (moveTimes) goes again, unless it gave check
   // (the opponent always gets to answer a check) or has nowhere left to go.
   const left = (state.chain ? state.chain.left : moveTimesOf(board[cmd.to]!)) - 1;
-  if (left > 0 && !events.some((e) => e.type === 'check')) {
+  if (left > 0 && !events.some((e) => e.type === 'check' || e.type === 'surrendered')) {
     const chain = { pieceId: piece.id, at: cmd.to, left };
     const next: GameState = { ...withRights, board, enPassant, chain };
     if (legalTargets(next, cmd.to).length) {
@@ -460,8 +527,18 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
   }, events, exits);
 
   // A king that charged into a clash and lost.
-  const kingFell = events.find((e) => e.type === 'kingCaptured');
-  if (kingFell) return { ok: true, state: { ...after, status: { kind: 'won', winner: kingFell.winner } }, events };
+  const fallen = events.find((e) => e.type === 'kingCaptured');
+  if (fallen && !isHex()) return { ok: true, state: { ...after, status: { kind: 'won', winner: fallen.winner } }, events };
+  if (fallen?.type === 'kingCaptured') {
+    // The hexagon: it surrenders to whoever cut it down (or the game ends, if it was the last but one).
+    const rest = events.filter((e) => e !== fallen);
+    const lost = events.find((e): e is Extract<GameEvent, { type: 'clash' }> => e.type === 'clash' && e.winner === 'defender' && e.attacker === color);
+    const killerAt = lost ? lost.at : null;
+    const b = [...board];
+    const fell = kingFell(b, fallen.loser ?? color, fallen.winner, killerAt, rest);
+    if (fell.status) return { ok: true, state: { ...after, board: b, ...fell }, events: rest };
+    return { ok: true, ...passTurn({ ...after, board: b, ...fell }, b, null, rest) };
+  }
 
   // One-turn-kill guard: if the opponent's king is attacked after a special action, the
   // turn ends at once (remaining AP carries over), so the opponent always gets to respond.
