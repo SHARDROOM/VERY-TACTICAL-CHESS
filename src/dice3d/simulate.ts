@@ -13,7 +13,7 @@ export interface DiceRun {
   /** 7 numbers per step: position x, y, z, then rotation quaternion x, y, z, w. */
   frames: Float32Array;
   steps: number;
-  /** Seconds per recorded step on screen (the playback is slowed, see PLAYBACK). */
+  /** Seconds per recorded step. */
   dt: number;
   final: Quaternion;
   /** Steps where the die hit the felt or a wall, with how hard (0..1): for the clack sounds. */
@@ -26,16 +26,7 @@ const MAX_STEPS = 60 * 8;
  * up, spinning fast. It slams into the far wall and comes back before it settles.
  */
 const THROW = { height: [1.0, 0.4], speed: [12, 4], up: [-1, 1.5], side: 3, spin: 32 } as const;
-/** How lively the die and the tray's walls and felt are. */
-const DIE_BOUNCE = 0.4;
-const WALL_BOUNCE = 0.42;
 const GRAVITY = 9.81 * 2.2;
-/**
- * The recorded throw plays back at this speed (사용자 요청: it rolled too briefly): the same path,
- * a little slower, so the die looks bigger and heavier and rolls for about three seconds (2.2–5.3). Slowing
- * the playback rather than the physics keeps it inside the tray's rim.
- */
-const PLAYBACK = 0.6;
 
 let physics: Promise<typeof import('@dimforge/rapier3d-compat').default> | null = null;
 
@@ -109,7 +100,7 @@ async function throwDice(
     ];
     for (const [x, y, z, hx, hy, hz] of boxes) {
       world.createCollider(
-        RAPIER.ColliderDesc.cuboid(hx, hy, hz).setTranslation(x, y, z).setFriction(0.6).setRestitution(WALL_BOUNCE),
+        RAPIER.ColliderDesc.cuboid(hx, hy, hz).setTranslation(x, y, z).setFriction(0.6).setRestitution(0.3),
         walls,
       );
     }
@@ -142,11 +133,11 @@ async function throwDice(
           .setRotation({ x: start.x, y: start.y, z: start.z, w: start.w })
           .setLinvel(THROW.speed[0] + random() * THROW.speed[1], THROW.up[0] + random() * THROW.up[1], r() * THROW.side)
           .setAngvel({ x: r() * THROW.spin, y: r() * THROW.spin, z: r() * THROW.spin })
-          .setLinearDamping(0.08)
-          .setAngularDamping(0.2)
+          .setLinearDamping(0.15)
+          .setAngularDamping(0.35)
           .setCcdEnabled(true),
       );
-      world.createCollider(cube().setFriction(0.5).setRestitution(DIE_BOUNCE).setDensity(1), body);
+      world.createCollider(cube().setFriction(0.5).setRestitution(0.35).setDensity(1), body);
       return body;
     });
 
@@ -180,7 +171,7 @@ async function throwDice(
       return {
         frames: recorded,
         steps,
-        dt: world.timestep / PLAYBACK,
+        dt: world.timestep,
         final: new Quaternion(q.x, q.y, q.z, q.w),
         impacts: findImpacts(recorded, world.timestep, GRAVITY, { threshold: 1.2, fullScale: 9 }),
       };
