@@ -19,7 +19,7 @@ import { isInCheck, legalTargets } from './moves';
 import { fileOf, isAir, opponent, rankOf, squareAt } from './squares';
 import { revokeCastling } from './castling';
 import { applyEffects, validateRuling, type EffectContext } from './effects';
-import { extinguish, isShielded, moveTimesOf, tickTags, withoutTag } from './tags';
+import { extinguish, isShielded, moveTimesOf, tickTags, unseat, withoutTag } from './tags';
 import { SHIELD } from './types';
 import { dropFromBridges, tickTerrain } from './terrain';
 import { capturedAfter } from './captured';
@@ -179,7 +179,8 @@ function passTurn(
   const dropped = dropFromBridges(tagged.board, land.fallen, land.terrain);
   // A levitation that ran out: the piece falls (played by the `land` command that follows).
   const fallEvents: GameEvent[] = [];
-  const falls = startFalls(dropped.board, fallEvents);
+  // ...and so does whoever rode a piece that burnt up or went down with its bridge.
+  const falls = [...tagged.falling, ...dropped.falling, ...startFalls(dropped.board, fallEvents)];
   const ticked = { board: dropped.board, events: [...tagged.events, ...dropped.events] };
   events = [...events, ...tagged.events, ...land.events, ...dropped.events, ...fallEvents];
   // A piece burnt up or a wall gone may open a line onto a king.
@@ -246,8 +247,9 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
       board[cmd.from] = null;
       const exit: Exit | undefined = clashSkill(victim) > 1 ? 'shatter' : undefined;
       const events: GameEvent[] = [...opening, { type: 'removed', piece, at: cmd.from, cause: 'clash', ...(exit && { exit }) }];
-      if (piece.rider) events.push({ type: 'removed', piece: piece.rider, at: cmd.from, cause: 'clash', ...(exit && { exit }) });
-      const after = withCaptured({ ...state, castling: revokeCastling(state.castling, [cmd.from]) }, events);
+      // Its rider is thrown off, away from the blow.
+      const falls = unseat(piece, cmd.from, events, cmd.to);
+      const after = withCaptured({ ...state, castling: revokeCastling(state.castling, [cmd.from]), ...withFalls(state, falls) }, events);
       if (piece.type === 'king') {
         events.push({ type: 'kingCaptured', winner: victim.color });
         return { ok: true, state: { ...after, board, status: { kind: 'won', winner: victim.color } }, events };
@@ -296,8 +298,9 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
     ...opening,
     { type: 'moved', pieceId: piece.id, from: cmd.from, to: cmd.to, captured, ...(special && { special }), ...(capturedExit && { capturedExit }) },
   ];
-  // Whoever rode the captured piece falls with it.
-  if (captured?.rider) events.push({ type: 'removed', piece: captured.rider, at: victimSquare, ...(capturedExit && { exit: capturedExit }) });
+  // Whoever rode the captured piece is thrown off it, away from the attacker (a king's fall ends the game anyway).
+  const falls = captured && captured.type !== 'king' ? unseat(captured, victimSquare, events, cmd.from) : [];
+  if (captured?.rider && captured.type === 'king') events.push({ type: 'removed', piece: captured.rider, at: victimSquare });
   events.push(...fireOut);
 
   if (captured?.type === 'king') {
@@ -316,7 +319,7 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   const enPassant = doubleStep ? squareAt(fileOf(cmd.from), rankOf(cmd.from) + dir) : null;
 
   events.push(...checkEvents(board, piece.color, state.terrain));
-  const withRights = withCaptured({ ...state, castling: revokeCastling(state.castling, touched) }, events);
+  const withRights = withCaptured({ ...state, castling: revokeCastling(state.castling, touched), ...withFalls(state, falls) }, events);
 
   // A piece that moves several times in a row (moveTimes) goes again, unless it gave check
   // (the opponent always gets to answer a check) or has nowhere left to go.

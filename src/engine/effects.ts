@@ -20,7 +20,7 @@ import {
 } from './types';
 import type { RuleConfig } from './config';
 import { SQUARES, airOf, isAir, rankOf, sameLayer, squareName } from './squares';
-import { MAX_MOVE_TIMES, extinguish, isShielded, isStunned, withTag, withoutTag } from './tags';
+import { MAX_MOVE_TIMES, extinguish, isShielded, isStunned, unseat, withTag, withoutTag } from './tags';
 import { SHIELD } from './types';
 import { MAX_TERRAIN, dropFromBridges } from './terrain';
 import { capturedAfter } from './captured';
@@ -84,13 +84,6 @@ const MAX_TAG_LENGTH = 20;
 const lastRank = (color: Color) => (color === 'white' ? 7 : 0);
 const pawnStuckAt = (sq: Square, color: Color) => rankOf(sq) === lastRank(color);
 
-/** Events for a piece leaving the board for good: it, and anything riding it. */
-function goneEvents(piece: Piece, at: Square): GameEvent[] {
-  const events: GameEvent[] = [];
-  if (piece.rider) events.push({ type: 'removed', piece: piece.rider, at });
-  return events;
-}
-
 /**
  * Applies effects in order. Fails (without partial changes) if any effect is
  * impossible on the board as it stands at that point, or would remove a king:
@@ -107,6 +100,8 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
   let rollAt = 0;
   let cut: number | undefined;
   const falling: FallingPiece[] = [];
+  /** A piece leaving the board for good throws off whoever rides it (`push`: where the blow came from). */
+  const throwOff = (carrier: Piece, at: Square, push?: Square) => falling.push(...unseat(carrier, at, events, push));
 
   const sources: number[] = [];
   for (const [i, e] of effects.entries()) {
@@ -145,7 +140,8 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           board[e.from] = null;
           touched.push(e.from, e.to);
           events.push({ type: 'moved', pieceId: piece.id, from: e.from, to: e.to, captured: null });
-          events.push({ type: 'removed', piece, at: e.to, cause: 'pit' }, ...goneEvents(piece, e.to));
+          events.push({ type: 'removed', piece, at: e.to, cause: 'pit' });
+          throwOff(piece, e.to);
           break;
         }
         const occupant = board[e.to];
@@ -184,7 +180,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
             board[e.from] = null;
             touched.push(e.from);
             events.push({ type: 'removed', piece, at: e.from, cause: 'clash', ...(exit && { exit }) });
-            if (piece.rider) events.push({ type: 'removed', piece: piece.rider, at: e.from, cause: 'clash', ...(exit && { exit }) });
+            throwOff(piece, e.from, e.to);
             if (piece.type === 'king') events.push({ type: 'kingCaptured', winner: occupant.color });
             cut = i;
             break;
@@ -200,7 +196,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         board[e.from] = null;
         touched.push(e.from, e.to);
         events.push({ type: 'moved', pieceId: piece.id, from: e.from, to: e.to, captured: occupant, ...(capturedExit && { capturedExit }) });
-        if (occupant) events.push(...goneEvents(occupant, e.to).map((g) => (capturedExit && g.type === 'removed' ? { ...g, exit: capturedExit } : g)));
+        if (occupant) throwOff(occupant, e.to, e.from);
         board[e.to] = extinguish(piece, e.to, events);
         break;
       }
@@ -217,7 +213,8 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         }
         board[e.at] = null;
         touched.push(e.at);
-        events.push({ type: 'removed', piece, at: e.at }, ...goneEvents(piece, e.at));
+        events.push({ type: 'removed', piece, at: e.at });
+        throwOff(piece, e.at);
         break;
       }
       case 'tag': {
@@ -406,7 +403,8 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           }
           board[e.at] = null;
           touched.push(e.at);
-          events.push({ type: 'removed', piece, at: e.at, cause: 'pit' }, ...goneEvents(piece, e.at));
+          events.push({ type: 'removed', piece, at: e.at, cause: 'pit' });
+          throwOff(piece, e.at);
         }
         const turnsLeft = e.turns === 0 ? null : e.turns;
         const look = e.prop ? cleanProp(e.prop) : null;
@@ -444,6 +442,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           const dropped = dropFromBridges(board, [e.at], terrain);
           for (let sq = 0; sq < 64; sq++) board[sq] = dropped.board[sq];
           events.push(...dropped.events);
+          falling.push(...dropped.falling);
           if (dropped.events.length) touched.push(e.at);
         }
         break;

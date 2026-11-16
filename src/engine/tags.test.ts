@@ -126,16 +126,21 @@ describe('ride (탑승)', () => {
     expect(s.board[sq('e5')]?.rider?.type).toBe('pawn');
   });
 
-  it('decision: when the carrier is captured, the rider is captured with it', () => {
+  it('when the carrier is captured, the rider is thrown off, away from the attacker, and lands where it comes to rest', () => {
     let s = boarded().state;
     s = okMove(s, 'b1', 'c3').state;
     s = okMove(s, 'd7', 'd5').state;
     s = okMove(s, 'h2', 'h3').state;
     const r = okMove(s, 'd5', 'd4');
     const r2 = okMove(okMove(r.state, 'h3', 'h4').state, 'd4', 'c3');
-    expect(r2.events).toContainEqual(expect.objectContaining({ type: 'removed', piece: expect.objectContaining({ type: 'pawn', color: 'white' }) }));
+    expect(r2.events).toContainEqual(expect.objectContaining({ type: 'fallStarted', at: sq('c3') }));
+    expect(r2.events.some((e) => e.type === 'removed')).toBe(false);
     expect(r2.state.board[sq('c3')]).toMatchObject({ type: 'pawn', color: 'black' });
-    expect(r2.state.board[sq('c3')]?.rider).toBeUndefined();
+    expect(r2.state.falling).toEqual([{ piece: expect.objectContaining({ type: 'pawn', color: 'white', tags: [] }), from: sq('c3'), rodeOn: 'knight', push: sq('d4') }]);
+    // Nothing else happens until it has landed: here the physics put it on b3.
+    expect(applyCommand(r2.state, { type: 'move', from: sq('a1'), to: sq('a2') })).toMatchObject({ ok: false, reason: 'landingPending' });
+    const landed = applyCommand(r2.state, { type: 'land', seed: 3, landings: [{ id: r2.state.falling![0].piece.id, file: 1, rank: 2 }] });
+    expect(landed.ok && landed.state.board[sq('b3')]).toMatchObject({ type: 'pawn', color: 'white' });
   });
 
   it('the rider can get off onto an empty square', () => {

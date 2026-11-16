@@ -1,4 +1,4 @@
-import { BURN, LEVITATE, RIDE, STUN, SHIELD, type Board, type Color, type GameEvent, type Piece, type PieceType, type Square, type Tag } from './types';
+import { BURN, LEVITATE, RIDE, STUN, SHIELD, type Board, type Color, type FallingPiece, type GameEvent, type Piece, type PieceType, type Square, type Tag } from './types';
 
 export const hasTag = (piece: Piece | null | undefined, name: string): boolean =>
   !!piece?.tags?.some((t) => t.name === name);
@@ -37,6 +37,18 @@ export function moveTimesOf(piece: Piece): number {
 }
 
 /**
+ * The carrier on `at` is taken or destroyed: whoever rides it is not taken with it but thrown
+ * off, and falls (played like a fall from the air, see levitation.ts): it lands where it comes
+ * to rest, or is lost in a pit or off the board. `push`: where the blow came from.
+ */
+export function unseat(carrier: Piece, at: Square, events: GameEvent[], push?: Square): FallingPiece[] {
+  if (!carrier.rider) return [];
+  const piece = withoutTag(carrier.rider, RIDE);
+  events.push({ type: 'fallStarted', pieceId: piece.id, at });
+  return [{ piece, from: at, rodeOn: carrier.type, ...(push !== undefined && { push }) }];
+}
+
+/**
  * A piece that moves off its square puts out its 화상, and so does whoever rides it.
  * `at` is where it ends up; the events say whose fire went out.
  */
@@ -61,14 +73,15 @@ export function extinguish(piece: Piece, at: Square, events: GameEvent[]): Piece
  * Called when `color`'s turn `turnNumber` ends. Riders count down with everyone else.
  *
  * 화상 is the one tag that does not simply run out: a piece still burning when its turns are
- * up burns to ash (whoever rides it falls with it), unless a shield takes the blow.
+ * up burns to ash (whoever rides it is thrown off), unless a shield takes the blow.
  */
 export function tickTags(
   board: Board,
   color: Color,
   turnNumber: number,
-): { board: (Piece | null)[]; events: GameEvent[] } {
+): { board: (Piece | null)[]; events: GameEvent[]; falling: FallingPiece[] } {
   const events: GameEvent[] = [];
+  const falling: FallingPiece[] = [];
   const countDown = (piece: Piece): { piece: Piece; burnt: boolean } => {
     if (piece.color !== color || !piece.tags?.length) return { piece, burnt: false };
     const kept: Tag[] = [];
@@ -104,8 +117,9 @@ export function tickTags(
     }
     if (!own.burnt) return piece;
     const left = burnUp(piece, sq);
-    if (!left && piece.rider) events.push({ type: 'removed', piece: piece.rider, at: sq });
+    // Whoever rides a piece that burns away is thrown off it.
+    if (!left) falling.push(...unseat(piece, sq, events));
     return left;
   });
-  return { board: next, events };
+  return { board: next, events, falling };
 }

@@ -4,7 +4,7 @@ import { loadPhysics } from '../dice3d/simulate';
 import { TRAY } from '../dice3d/simulate';
 import { TRAY_SCALE, trayCenterX } from '../dice3d/DiceTray';
 import { findImpacts } from '../audio/impacts';
-import { pieceParts } from './pieceGeometry';
+import { PIECE_HEIGHT, pieceParts } from './pieceGeometry';
 import { TABLE_TOP_Y } from './WoodTable';
 
 export interface BodyPose {
@@ -64,8 +64,45 @@ export function hullPoints(type: PieceType): Float32Array {
 
 const scaled = (pts: Float32Array, s: number) => pts.map((x) => x * s);
 
+/** Where a rider's feet are on its carrier: on the carrier's top (unscaled; the same as drawn). */
+export const riderBase = (carrier: PieceType) => PIECE_HEIGHT[carrier] - 0.06;
+
+type Rapier = Awaited<ReturnType<typeof loadPhysics>>;
+
+/**
+ * A piece's colliders on `body`: its hull, a weighted foot that keeps its centre of mass low,
+ * and whoever rides it glued on top (its hull at the carrier's top), so the pair rocks, topples
+ * and bumps as one, top-heavy as it is.
+ */
+export function addPieceColliders(
+  RAPIER: Rapier,
+  world: InstanceType<Rapier['World']>,
+  body: InstanceType<Rapier['RigidBody']>,
+  type: PieceType,
+  o: { rider?: PieceType; scale?: number; friction: number; restitution: number; footDensity: number; footFriction?: number },
+): void {
+  const k = o.scale ?? 1;
+  world.createCollider(RAPIER.ColliderDesc.convexHull(scaled(hullPoints(type), k))!.setDensity(1).setFriction(o.friction).setRestitution(o.restitution), body);
+  world.createCollider(
+    RAPIER.ColliderDesc.cylinder(0.04 * k, 0.28 * k).setTranslation(0, 0.05 * k, 0).setDensity(o.footDensity).setFriction(o.footFriction ?? o.friction).setRestitution(o.restitution),
+    body,
+  );
+  if (o.rider) {
+    world.createCollider(
+      RAPIER.ColliderDesc.convexHull(scaled(hullPoints(o.rider), k))!
+        .setTranslation(0, riderBase(type) * k, 0)
+        .setDensity(1)
+        .setFriction(o.friction)
+        .setRestitution(o.restitution),
+      body,
+    );
+  }
+}
+
 export interface SimOptions {
   type: PieceType;
+  /** Whoever rides it, glued on top. */
+  rider?: PieceType;
   scale: number;
   start: BodyPose;
   velocity: Vector3;
@@ -128,13 +165,7 @@ export async function simulatePiece(o: SimOptions): Promise<PieceRun> {
     );
     const restitution = o.bounce?.restitution ?? 0.22;
     const friction = o.bounce?.friction ?? 0.6;
-    const hull = RAPIER.ColliderDesc.convexHull(scaled(hullPoints(o.type), o.scale))!;
-    world.createCollider(hull.setDensity(1).setFriction(friction).setRestitution(restitution), body);
-    // A weighted base: a heavy disc in the foot keeps the centre of mass low.
-    world.createCollider(
-      RAPIER.ColliderDesc.cylinder(0.04 * o.scale, 0.28 * o.scale).setTranslation(0, 0.05 * o.scale, 0).setDensity(6).setFriction(friction).setRestitution(restitution),
-      body,
-    );
+    addPieceColliders(RAPIER, world, body, o.type, { rider: o.rider, scale: o.scale, friction, restitution, footDensity: 6 });
 
     const maxSteps = Math.round(60 * (o.maxSeconds ?? 4));
     const frames: number[] = [];

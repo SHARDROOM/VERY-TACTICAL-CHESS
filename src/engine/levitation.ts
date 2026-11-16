@@ -1,5 +1,5 @@
 import { LEVITATE, SHIELD, type Board, type FallingPiece, type GameEvent, type Landing, type Piece, type Square, type TerrainCell } from './types';
-import { AIR, SQUARES, fileOf, groundOf, rankOf, squareAt } from './squares';
+import { AIR, SQUARES, airOf, fileOf, groundOf, isAir, rankOf, squareAt } from './squares';
 import { hasTag, isShielded, withTag, withoutTag } from './tags';
 import { blockedSquares, terrainAt } from './terrain';
 
@@ -92,6 +92,22 @@ function nearestFree(board: Board, terrain: readonly TerrainCell[] | undefined, 
 }
 
 /**
+ * Where a piece comes down when there is no physics to say: straight down from the air; thrown
+ * off a carrier, a little way off its square, away from the blow (or toward the middle of the board).
+ */
+function withoutPhysics({ from, rodeOn, push }: FallingPiece): { file: number; rank: number } {
+  const file = fileOf(from);
+  const rank = rankOf(from);
+  if (!rodeOn) return { file, rank };
+  let df = push === undefined ? 3.5 - file : file - fileOf(push);
+  let dr = push === undefined ? 3.5 - rank : rank - rankOf(push);
+  const d = Math.hypot(df, dr) || 1;
+  df /= d;
+  dr /= d;
+  return { file: file + 0.75 * df, rank: rank + 0.75 * dr };
+}
+
+/**
  * Plays the falls: each piece in turn (later ones see where earlier ones landed) comes down
  * where its landing says, or straight down without one. A king is never killed by a fall, and a
  * shield breaks instead: such a piece is put on the nearest free square ("pushed"). A piece that
@@ -108,10 +124,11 @@ export function playFalls(
   const board: (Piece | null)[] = [...start];
   const falls: Extract<GameEvent, { type: 'fell' }>['falls'] = [];
   const after: GameEvent[] = [];
-  for (const { piece, from } of falling) {
+  for (const fall of falling) {
+    const { piece, from } = fall;
     const l = landings.find((x) => x.id === piece.id);
     const ok = l && Number.isFinite(l.file) && Number.isFinite(l.rank);
-    const spot = ok ? { file: l.file, rank: l.rank } : { file: fileOf(from), rank: rankOf(from) };
+    const spot = ok ? { file: l.file, rank: l.rank } : withoutPhysics(fall);
     const place = restingPlace(board, terrain, spot.file, spot.rank);
     if (place.result === 'landed') {
       board[place.to] = piece;
@@ -122,7 +139,7 @@ export function playFalls(
       const near = place.to ?? groundOf(from);
       const to = nearestFree(board, terrain, near);
       if (to === null) {
-        board[from] = withTag(piece, { name: LEVITATE, turnsLeft: 1, appliedOnTurn: turnNumber });
+        board[isAir(from) ? from : airOf(from)] = withTag(piece, { name: LEVITATE, turnsLeft: 1, appliedOnTurn: turnNumber });
         continue;
       }
       // A king just lands beside; anyone else is saved by its shield, which breaks.

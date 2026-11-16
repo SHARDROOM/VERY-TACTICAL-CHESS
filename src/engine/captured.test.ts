@@ -18,15 +18,16 @@ describe('captured pieces', () => {
     expect(s.captured.map((p) => `${p.color} ${p.type}`)).toEqual(['black pawn', 'black pawn']);
   });
 
-  it('special-action removals and effect captures are recorded; a carrier and its rider both go', () => {
+  it('special-action removals and effect captures are recorded; a rider is thrown off its carrier, not taken with it', () => {
     let s: GameState = { ...createInitialState(), ap: { white: 5, black: 5 } };
     s = act(s, [{ type: 'board', rider: sq('a2'), carrier: sq('b1') }]);
     s = act(s, [{ type: 'tag', at: sq('b1'), tag: '불타는 중', turns: 0 }]);
     s = act(s, [{ type: 'remove', at: sq('b1') }]);
-    expect(s.captured).toEqual([
-      { id: expect.stringContaining('knight'), color: 'white', type: 'knight' },
-      { id: expect.stringContaining('pawn'), color: 'white', type: 'pawn' },
-    ]);
+    expect(s.captured).toEqual([{ id: expect.stringContaining('knight'), color: 'white', type: 'knight' }]);
+    expect(s.falling).toEqual([{ piece: expect.objectContaining({ type: 'pawn', tags: [] }), from: sq('b1'), rodeOn: 'knight' }]);
+    // Without physics it comes down a little way toward the middle: on the free b1.
+    s = ok(applyCommand(s, { type: 'land', seed: 1, landings: [] })).state;
+    expect(s.board[sq('b1')]).toMatchObject({ type: 'pawn', color: 'white' });
     s = act(s, [{ type: 'move', from: sq('d1'), to: sq('d7') }]);
     expect(s.captured.at(-1)).toMatchObject({ color: 'black', type: 'pawn' });
   });
@@ -53,5 +54,19 @@ describe('captured pieces', () => {
     expect(ep[0].at).toBe(sq('d5'));
     // Any other way off the board leaves nothing behind.
     expect(capturedAfter([], [{ type: 'removed', piece: pawn, at: sq('d5'), exit: 'vanish' }])[0].at).toBeUndefined();
+  });
+});
+
+describe('riders thrown off', () => {
+  it('a carrier that burns up throws its rider off (it is not burnt with it)', async () => {
+    const { tickTags } = await import('./tags');
+    const s = createStateFrom({ e1: { color: 'white', type: 'king' }, e8: { color: 'black', type: 'king' }, d4: { color: 'white', type: 'knight' } });
+    const board = [...s.board];
+    board[sq('d4')] = { ...board[sq('d4')]!, tags: [{ name: '화상', turnsLeft: 1, appliedOnTurn: 0 }], rider: { id: 'r', color: 'white', type: 'pawn', tags: [{ name: '탑승', turnsLeft: null, appliedOnTurn: 0 }] } };
+    const r = tickTags(board, 'white', 1);
+    expect(r.board[sq('d4')]).toBeNull();
+    expect(r.events).toContainEqual(expect.objectContaining({ type: 'removed', cause: 'burn' }));
+    expect(r.events).toContainEqual({ type: 'fallStarted', pieceId: 'r', at: sq('d4') });
+    expect(r.falling).toEqual([{ piece: { id: 'r', color: 'white', type: 'pawn', tags: [] }, from: sq('d4'), rodeOn: 'knight' }]);
   });
 });

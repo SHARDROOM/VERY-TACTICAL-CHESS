@@ -1,7 +1,8 @@
 import { Quaternion, Vector3 } from 'three';
 import { isAir, type Board, type FallingPiece, type Landing, type PieceType, type Square, type TerrainCell } from '../engine';
 import { loadPhysics } from '../dice3d/simulate';
-import { ballistic, hullPoints } from './piecePhysics';
+import { addPieceColliders, ballistic, hullPoints } from './piecePhysics';
+import { PIECE_HEIGHT } from './pieceGeometry';
 import { AIR_Y, squareToWorld, worldToBoard } from './coords';
 import { TABLE_TOP_Y } from './WoodTable';
 
@@ -15,6 +16,8 @@ import { TABLE_TOP_Y } from './WoodTable';
 export interface Mover {
   id: string;
   type: PieceType;
+  /** Whoever rides it, glued on top. */
+  rider?: PieceType;
   from: Square;
   to: Square;
   /** Shoved along the board (sliders, kings, pawns) or flung through the air (knights, flights). */
@@ -84,11 +87,9 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
       world.createCollider(RAPIER.ColliderDesc.cuboid(0.46, 0.34, 0.46).setTranslation(x, 0.34, z).setFriction(0.6).setRestitution(0.2), fixed);
     }
 
-    const hull = (type: PieceType, b: InstanceType<typeof RAPIER.RigidBody>, restitution: number) => {
-      world.createCollider(RAPIER.ColliderDesc.convexHull(hullPoints(type))!.setDensity(1).setFriction(0.5).setRestitution(restitution), b);
-      // A weighted base: they rock and often stand back up, but a good shove topples them.
-      world.createCollider(RAPIER.ColliderDesc.cylinder(0.04, 0.28).setTranslation(0, 0.05, 0).setDensity(5).setFriction(0.6).setRestitution(restitution), b);
-    };
+    // A weighted base: they rock and often stand back up, but a good shove topples them.
+    const hull = (type: PieceType, b: InstanceType<typeof RAPIER.RigidBody>, restitution: number, rider?: PieceType) =>
+      addPieceColliders(RAPIER, world, b, type, { rider, friction: 0.5, footFriction: 0.6, restitution, footDensity: 5 });
 
     const moving = new Set(o.movers.map((m) => m.id));
     const bodies: { id: string; body: InstanceType<typeof RAPIER.RigidBody> }[] = [];
@@ -97,7 +98,7 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
       if (!p || isAir(sq) || moving.has(p.id) || o.exclude?.has(p.id)) return;
       const [x, , z] = squareToWorld(sq);
       const b = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(x, 0, z).setLinearDamping(0.3).setAngularDamping(0.8).setCcdEnabled(true));
-      hull(p.type, b, 0.25);
+      hull(p.type, b, 0.25, p.rider?.type);
       bodies.push({ id: p.id, body: b });
     });
 
@@ -124,8 +125,7 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
           .setAngularDamping(0.4)
           .setCcdEnabled(true),
       );
-      world.createCollider(RAPIER.ColliderDesc.convexHull(hullPoints(m.type))!.setDensity(1).setFriction(SLIDE_FRICTION).setRestitution(0.15), b);
-      world.createCollider(RAPIER.ColliderDesc.cylinder(0.04, 0.28).setTranslation(0, 0.05, 0).setDensity(5).setFriction(SLIDE_FRICTION).setRestitution(0.15), b);
+      addPieceColliders(RAPIER, world, b, m.type, { rider: m.rider, friction: SLIDE_FRICTION, restitution: 0.15, footDensity: 5 });
       // Only along its line: no sideways drift unless something knocks it.
       if (!tip) b.setEnabledRotations(false, true, false, true);
       bodies.push({ id: m.id, body: b });
@@ -151,7 +151,7 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
           .setAngularDamping(0.5)
           .setCcdEnabled(true),
       );
-      hull(m.type, b, 0.35);
+      hull(m.type, b, 0.35, m.rider);
       bodies.push({ id: m.id, body: b });
     }
 
@@ -195,6 +195,18 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
   }
 }
 
+/**
+ * Where a falling piece starts (world): where it floated on the air layer, or, thrown off a
+ * carrier, on top of where the carrier stood (above whoever stands there now, if taller).
+ */
+export function fallStart(f: FallingPiece, board: Board): [number, number, number] {
+  const [x, y, z] = squareToWorld(f.from);
+  if (!f.rodeOn) return [x, isAir(f.from) ? y : AIR_Y, z];
+  const below = board[f.from];
+  const top = Math.max(PIECE_HEIGHT[f.rodeOn], below ? PIECE_HEIGHT[below.type] : 0) - 0.06;
+  return [x, y + top, z];
+}
+
 export interface FallOptions {
   board: Board;
   terrain?: readonly TerrainCell[];
@@ -231,37 +243,50 @@ export async function simulateFalls(o: FallOptions): Promise<{ run: BoardRun; la
       const [x, , z] = squareToWorld(c.at);
       world.createCollider(RAPIER.ColliderDesc.cuboid(0.46, 0.34, 0.46).setTranslation(x, 0.34, z).setFriction(0.6).setRestitution(0.2), fixed);
     }
-    const hull = (type: PieceType, b: InstanceType<typeof RAPIER.RigidBody>, restitution: number) => {
-      world.createCollider(RAPIER.ColliderDesc.convexHull(hullPoints(type))!.setDensity(1).setFriction(0.5).setRestitution(restitution), b);
-      world.createCollider(RAPIER.ColliderDesc.cylinder(0.04, 0.28).setTranslation(0, 0.05, 0).setDensity(5).setFriction(0.6).setRestitution(restitution), b);
-    };
+    const hull = (type: PieceType, b: InstanceType<typeof RAPIER.RigidBody>, restitution: number, rider?: PieceType) =>
+      addPieceColliders(RAPIER, world, b, type, { rider, friction: 0.5, footFriction: 0.6, restitution, footDensity: 5 });
 
     const bodies: { id: string; body: InstanceType<typeof RAPIER.RigidBody> }[] = [];
     o.board.forEach((p, sq) => {
       if (!p || isAir(sq)) return;
       const [x, , z] = squareToWorld(sq);
       const b = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(x, 0, z).setLinearDamping(0.3).setAngularDamping(0.8).setCcdEnabled(true));
-      hull(p.type, b, 0.25);
+      hull(p.type, b, 0.25, p.rider?.type);
       bodies.push({ id: p.id, body: b });
     });
 
     const fallers: { id: string; type: PieceType; body: InstanceType<typeof RAPIER.RigidBody> }[] = [];
-    for (const { piece, from } of o.falling) {
-      const [x, , z] = squareToWorld(from);
+    for (const f of o.falling) {
+      const { piece } = f;
+      const [x, y, z] = fallStart(f, o.board);
       // Unsteady to the last: a little tilt, drift and spin as it lets go.
       const tilt = (random() - 0.5) * 0.5;
       const turn = random() * Math.PI * 2;
+      let vel = { x: (random() - 0.5) * 1.6, y: 0, z: (random() - 0.5) * 1.6 };
+      let spin = { x: (random() - 0.5) * 4, y: (random() - 0.5) * 3, z: (random() - 0.5) * 4 };
+      if (f.rodeOn) {
+        // Thrown off its carrier: knocked away from the blow (any way, without one), up a little
+        // and tumbling over the edge of whatever now stands below it.
+        const [px, , pz] = f.push !== undefined ? squareToWorld(f.push) : [x - Math.cos(turn), 0, z - Math.sin(turn)];
+        const d = Math.hypot(x - px, z - pz) || 1;
+        const ux = (x - px) / d;
+        const uz = (z - pz) / d;
+        const speed = 1.8 + random() * 0.9;
+        vel = { x: ux * speed, y: 1.4 + random() * 0.8, z: uz * speed };
+        const roll = 5 + random() * 3;
+        spin = { x: uz * roll, y: (random() - 0.5) * 2, z: -ux * roll };
+      }
       const b = world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic()
-          .setTranslation(x, AIR_Y, z)
+          .setTranslation(x, y, z)
           .setRotation({ x: Math.sin(tilt / 2) * Math.cos(turn), y: 0, z: Math.sin(tilt / 2) * Math.sin(turn), w: Math.cos(tilt / 2) })
-          .setLinvel((random() - 0.5) * 1.6, 0, (random() - 0.5) * 1.6)
-          .setAngvel({ x: (random() - 0.5) * 4, y: (random() - 0.5) * 3, z: (random() - 0.5) * 4 })
+          .setLinvel(vel.x, vel.y, vel.z)
+          .setAngvel(spin)
           .setLinearDamping(0.1)
           .setAngularDamping(0.5)
           .setCcdEnabled(true),
       );
-      hull(piece.type, b, 0.3);
+      hull(piece.type, b, 0.3, piece.rider?.type);
       bodies.push({ id: piece.id, body: b });
       fallers.push({ id: piece.id, type: piece.type, body: b });
     }

@@ -1,4 +1,5 @@
-import { COVER_NAME, type Board, type Color, type GameEvent, type Piece, type Square, type TerrainCell } from './types';
+import { COVER_NAME, type Board, type Color, type FallingPiece, type GameEvent, type Piece, type Square, type TerrainCell } from './types';
+import { unseat } from './tags';
 import { fileOf, rankOf, squareAt } from './squares';
 
 /**
@@ -74,9 +75,14 @@ export function tickTerrain(
  * Whoever stands where a bridge was falls into the pit; a king (never taken but by a normal move)
  * is pushed to the nearest free square instead. Returns the new board and what happened.
  */
-export function dropFromBridges(board: Board, squares: readonly Square[], terrain: readonly TerrainCell[]): { board: (Piece | null)[]; events: GameEvent[] } {
+export function dropFromBridges(
+  board: Board,
+  squares: readonly Square[],
+  terrain: readonly TerrainCell[],
+): { board: (Piece | null)[]; events: GameEvent[]; falling: FallingPiece[] } {
   const next: (Piece | null)[] = [...board];
   const events: GameEvent[] = [];
+  const falling: FallingPiece[] = [];
   const blocked = blockedSquares(terrain);
   for (const sq of squares) {
     const piece = next[sq];
@@ -93,9 +99,10 @@ export function dropFromBridges(board: Board, squares: readonly Square[], terrai
     }
     next[sq] = null;
     events.push({ type: 'removed', piece, at: sq, cause: 'pit' });
-    if (piece.rider) events.push({ type: 'removed', piece: piece.rider, at: sq, cause: 'pit' });
+    // Its rider is thrown off as it goes down (and may well follow it in).
+    falling.push(...unseat(piece, sq, events));
   }
-  return { board: next, events };
+  return { board: next, events, falling };
 }
 
 /** The closest empty square a piece may stand on, nearest rings first, in board order. */

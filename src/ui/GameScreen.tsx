@@ -97,7 +97,7 @@ function moversOf(ev: Extract<GameEvent, { type: 'moved' }>, board: GameState['b
   const df = Math.abs(fileOf(ev.to) - fileOf(ev.from));
   const dr = Math.abs(rankOf(ev.to) - rankOf(ev.from));
   const jump = (df === 1 && dr === 2) || (df === 2 && dr === 1);
-  const movers: Mover[] = [{ id: piece.id, type: piece.type, from: ev.from, to: ev.to, mode: jump ? 'throw' : 'slide' }];
+  const movers: Mover[] = [{ id: piece.id, type: piece.type, ...(piece.rider && { rider: piece.rider.type }), from: ev.from, to: ev.to, mode: jump ? 'throw' : 'slide' }];
   if (ev.special?.kind === 'castle') {
     const rank = rankOf(ev.from);
     const [rf, rt] = ev.special.side === 'king' ? [7, 5] : [0, 3];
@@ -496,7 +496,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         try {
           const run = await simulateRomp({
             board: before.board,
-            movers: [{ id: piece.id, type: piece.type, from: e.from, to: e.to, mode: 'throw' }],
+            movers: [{ id: piece.id, type: piece.type, ...(piece.rider && { rider: piece.rider.type }), from: e.from, to: e.to, mode: 'throw' }],
             exclude: new Set(victim ? [victim.id] : []),
             terrain: before.terrain,
             seed: moveSeed(before.turnNumber, e.from, e.to) + i,

@@ -70,7 +70,8 @@ function knightFacing(color: Color, x: number): number {
   return color === 'white' ? Math.PI / 2 - inward * turn : -Math.PI / 2 + inward * turn;
 }
 
-const RIDER_SCALE = 0.62;
+/** A rider sits on its carrier at its own size (its hull glued on top in the physics, piecePhysics). */
+const RIDER_SCALE = 1;
 
 const short = (name: string) => (name.length > 6 ? `${name.slice(0, 5)}…` : name);
 
@@ -90,14 +91,15 @@ export function tagChips(piece: Piece): Chip[] {
 }
 
 /** Tag visuals for one piece whose top is at `top`. */
-function TagDecorations({ piece, top }: { piece: Piece; top: number }) {
+/** `chipsAbove`: where its tag chips go instead of over its own head (over a rider's, which would hide them). */
+function TagDecorations({ piece, top, chipsAbove }: { piece: Piece; top: number; chipsAbove?: number }) {
   const chips = tagChips(piece);
   const stunned = hasTag(piece, STUN);
   return (
     <>
       {hasTag(piece, SHIELD) && <ShieldBubble height={top} />}
       {stunned && <StunStars y={top + 0.12} />}
-      {chips.length > 0 && <FoldingBadges chips={chips} y={top + (stunned ? 0.36 : 0.2)} />}
+      {chips.length > 0 && <FoldingBadges chips={chips} y={(chipsAbove ?? top) + (stunned ? 0.36 : 0.2)} />}
       {(piece.tags ?? []).map((t) => t.prop && <PropOnPiece key={t.name} prop={t.prop} color={piece.color} height={top} />)}
     </>
   );
@@ -379,6 +381,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       motion.current,
       {
         type: piece.type,
+        ...(piece.rider && { rider: piece.rider.type }),
         scale: targetScale,
         start: { position: start, quaternion: tilt },
         velocity: new Vector3(0, -1, 0),
@@ -549,6 +552,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         scripted,
         {
           type: piece.type,
+          ...(piece.rider && { rider: piece.rider.type }),
           scale: targetScale,
           start: { position: start, quaternion: shownQ.current.clone() },
           velocity,
@@ -860,12 +864,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     {remains === 'burn' && <SmokeWisp follow={group} height={height} />}
     {captured && exit === 'shatter' && shardsAt && (
       <group position={shardsAt}>
-        <ShardScatter
-          color={piece.color}
-          id={piece.id}
-          center={shardsAt}
-          burst={exiting?.kind === 'shatter' ? { start: exiting.start, from: [exiting.from[0] - shardsAt[0], exiting.from[1] - shardsAt[1], exiting.from[2] - shardsAt[2]] } : null}
-        />
+        <ShardScatter type={piece.type} color={piece.color} id={piece.id} center={shardsAt} burst={exiting?.kind === 'shatter' ? { start: exiting.start } : null} />
       </group>
     )}
     <group
@@ -885,7 +884,14 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       }}
     >
       {body}
-      {!captured && <TagDecorations piece={piece} top={height} />}
+      {!captured && (
+        <TagDecorations
+          piece={piece}
+          top={height}
+          // Over the rider (and its own chips, if it has any).
+          chipsAbove={rider ? riderBase + PIECE_HEIGHT[rider.type] * RIDER_SCALE + (tagChips({ ...rider, tags: rider.tags?.filter((t) => t.name !== RIDE) }).length ? 0.34 : 0) : undefined}
+        />
+      )}
       {rider && (
         <group ref={riderRef} position={[0, riderBase, 0]} scale={RIDER_SCALE}>
           <PieceModel type={rider.type} color={rider.color} facing={facing(rider)} />

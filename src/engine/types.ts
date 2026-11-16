@@ -216,11 +216,18 @@ export interface PendingAction {
   retry?: { roll: number; narration: string; rerolls: number };
 }
 
-/** A piece whose levitation ended: it is off the board until the fall is played (the `land` command). */
+/**
+ * A piece off the board until its fall is played (the `land` command): its levitation ended, or
+ * it was thrown off a carrier that was taken from under it.
+ */
 export interface FallingPiece {
   piece: Piece;
-  /** The air square it falls from. */
+  /** Where it falls from: the air square it floated on, or the square its carrier stood on. */
   from: Square;
+  /** It rode a piece of this kind, taken from under it: it tumbles off from on top of it. */
+  rodeOn?: PieceType;
+  /** Where the blow that took its carrier came from: it is knocked away from there. */
+  push?: Square;
 }
 
 /**

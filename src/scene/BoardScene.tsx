@@ -4,6 +4,7 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { CameraControls, Environment, Lightformer } from '@react-three/drei';
 import { fileOf, isAir, rankOf, type Board, type CapturedPiece, type Color, type FallingPiece, type Square, type TerrainCell } from '../engine';
 import { squareToWorld } from './coords';
+import { fallStart } from './boardPhysics';
 import { PieceMesh, PiecePhysicsContext, type PiecePhysics } from './PieceMesh';
 import type { Obstacle } from './piecePhysics';
 import { TABLE_TOP_Y, WoodTable } from './WoodTable';
@@ -404,9 +405,9 @@ export function BoardScene({
             />,
           ] : [],
         ),
-        // Falling from the air: where they floated, until the fall plays (then they are on the board or beside it).
-        ...falling.map(({ piece, from }) => (
-          <PieceMesh key={piece.id} piece={piece} position={squareToWorld(from)} selected={false} direction={directions?.get(piece.id)} />
+        // Falling: where they floated (or on top of the carrier taken from under them), until the fall plays.
+        ...falling.map((f) => (
+          <PieceMesh key={f.piece.id} piece={f.piece} position={fallStart(f, board)} selected={false} direction={directions?.get(f.piece.id)} />
         )),
         ...graveyard.map(({ piece, position }) => (
           <PieceMesh

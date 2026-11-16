@@ -145,7 +145,7 @@ describe('exits are stored with the captured pieces', () => {
     return ok(applyCommand(s, { type: 'attemptSpecial', roll: 15 })).state;
   };
 
-  it('each piece gets the exit of the effect that took it; a rider goes the way of its carrier', () => {
+  it('each piece gets the exit of the effect that took it; a rider is thrown off instead', () => {
     const after = attempt(
       [
         { type: 'remove', at: sq('d7') },
@@ -160,12 +160,12 @@ describe('exits are stored with the captured pieces', () => {
     );
     expect(after.captured).toEqual([
       { id: expect.any(String), color: 'black', type: 'pawn', exit: 'ash' },
-      // Shattered: the shards lie where it stood (e7), its rider's with them.
+      // Shattered: the shards lie where it stood (e7).
       { id: expect.any(String), color: 'black', type: 'pawn', exit: 'shatter', at: sq('e7') },
-      { id: 'b-rider', color: 'black', type: 'pawn', exit: 'shatter', at: sq('e7') },
       // Knocked off is the plain way: nothing recorded.
       { id: expect.any(String), color: 'black', type: 'pawn' },
     ]);
+    expect(after.falling?.map((f) => f.piece.id)).toEqual(['b-rider']);
   });
 
   it('nothing is recorded without staging, or for a normal capture', () => {
