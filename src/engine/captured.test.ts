@@ -40,7 +40,7 @@ describe('captured pieces', () => {
     );
     s = act(s, [{ type: 'tag', at: sq('e8'), tag: '보호막', turns: 0 }]);
     s = passTurn(s);
-    s = okMove(s, 'e4', 'e8', { clashRolls: [6, 1] }).state;
+    s = okMove(s, 'e4', 'e8', { clashRolls: [6, 6, 1, 1] }).state;
     expect(s.captured).toEqual([]);
     s = okMove(passTurn(s), 'e4', 'e8').state;
     expect(s.captured).toEqual([expect.objectContaining({ type: 'king', color: 'black' })]);

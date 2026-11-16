@@ -18,7 +18,7 @@ import type { Exit, Staging } from './staging';
 import { enPassantVictim, isInCheck, legalTargets } from './moves';
 import { backRank, setBoardMap, isAir, isHex, pawnForward, pawnStart, playersOf, promotesOn, step } from './squares';
 import { revokeCastling } from './castling';
-import { DIE_SIDES } from './config';
+import { DIE_SIDES, ROLL_MAX, ROLL_MIN } from './config';
 import { applyEffects, validateRuling, type EffectContext } from './effects';
 import { extinguish, hasTag, isShielded, mapStack, moveTimesOf, ridersOf, stackOf, tickTags, unseat, withTag, withoutTag } from './tags';
 import { HOOD, SHIELD, type Tag } from './types';
@@ -65,7 +65,7 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
     case 'proposeSpecial':
       return propose(state, cmd);
     case 'attemptSpecial':
-      return attempt(state, cmd.roll, cmd.clashRolls);
+      return attempt(state, cmd.roll, cmd.clashRolls, cmd.dice);
     case 'cancelSpecial': {
       const { color, action, retry } = state.pending!;
       return { ok: true, state: { ...state, pending: null }, events: [{ type: 'specialCancelled', color, action, ...(retry && { afterFailure: true }) }] };
@@ -422,6 +422,7 @@ export function clashEventFor(attacker: Piece, defender: Piece, from: Square, at
     attackerId: attacker.id,
     defenderId: defender.id,
     attacker: attacker.color,
+    defender: defender.color,
     from,
     at,
     attack,
@@ -448,18 +449,20 @@ function propose(state: GameState, cmd: Extract<Command, { type: 'proposeSpecial
   };
 }
 
-function attempt(state: GameState, roll: number, clashRolls: readonly number[] = []): CommandResult {
+function attempt(state: GameState, roll: number, clashRolls: readonly number[] = [], dice?: [number, number]): CommandResult {
   const { color, action, ruling, retry } = state.pending!;
   if (!ruling.feasible) return { ok: false, reason: 'notFeasible' };
   // A second try after a failure costs the reroll price, not the action's.
   const cost = retry ? state.rules.rerollCost : ruling.cost;
   const reroll = retry ? retry.rerolls + 1 : 0;
   if (state.ap[color] < cost) return { ok: false, reason: 'notEnoughAp' };
-  if (!Number.isInteger(roll) || roll < 1 || roll > DIE_SIDES) return { ok: false, reason: 'invalidRoll' };
+  if (!Number.isInteger(roll) || roll < ROLL_MIN || roll > ROLL_MAX) return { ok: false, reason: 'invalidRoll' };
+  const face = (n: unknown) => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= DIE_SIDES;
+  if (dice && (!Array.isArray(dice) || dice.length !== 2 || !dice.every(face) || dice[0] + dice[1] !== roll)) return { ok: false, reason: 'invalidRoll' };
 
-  // A natural 1 always fails, and backfires, whatever the DC; otherwise the DC decides (a 6 is
-  // nothing special: there is no critical success).
-  const outcome: Outcome = roll === 1 ? 'critFailure' : roll >= ruling.dc ? 'success' : 'failure';
+  // Two dice added up. Snake eyes (1 and 1) always fails, and backfires, whatever the DC;
+  // otherwise the DC decides (there is no critical success).
+  const outcome: Outcome = roll === ROLL_MIN ? 'critFailure' : roll >= ruling.dc ? 'success' : 'failure';
   const success = outcome === 'success';
   let toApply = outcome === 'success' ? ruling.effects : outcome === 'critFailure' ? ruling.critFailureEffects ?? [] : [];
 
@@ -494,7 +497,7 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
 
   const staging = ruling.staging?.[outcome];
   const events: GameEvent[] = [
-    { type: 'specialResolved', color, action, roll, dc: ruling.dc, cost, success, outcome, narration, ...(reroll && { reroll }), effects: toApply, ...(staging && { staging }) },
+    { type: 'specialResolved', color, action, roll, ...(dice && { dice }), dc: ruling.dc, cost, success, outcome, narration, ...(reroll && { reroll }), effects: toApply, ...(staging && { staging }) },
     ...effectEvents,
   ];
   const precedent: Precedent = {

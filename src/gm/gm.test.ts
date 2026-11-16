@@ -90,11 +90,11 @@ describe('dice', () => {
     expect(seen.size).toBe(6);
   });
 
-  it('computes success chance: the roll must reach the DC, and a natural 1 is always a loss', () => {
-    expect(successChance(4)).toBe(0.5);
-    expect(successChance(2)).toBeCloseTo(5 / 6);
-    expect(successChance(6)).toBeCloseTo(1 / 6);
-    expect(successChance(1)).toBeCloseTo(5 / 6);
+  it('computes success chance over two dice: their total must reach the DC, and snake eyes always lose', () => {
+    expect(successChance(7)).toBeCloseTo(21 / 36);
+    expect(successChance(3)).toBeCloseTo(35 / 36);
+    expect(successChance(12)).toBeCloseTo(1 / 36);
+    expect(successChance(1)).toBeCloseTo(35 / 36);
   });
 });
 
@@ -335,7 +335,7 @@ describe('fake GM: levitation', () => {
     if (!parsed.ok) return;
     const proposed = applyCommand({ ...s, ap: { white: 3, black: 0, red: 0 } }, { type: 'proposeSpecial', action: 'd1 퀸이 떠오른다', ruling: parsed.ruling });
     if (!proposed.ok) throw new Error(proposed.reason);
-    const after = applyCommand(proposed.state, { type: 'attemptSpecial', roll: 5 });
+    const after = applyCommand(proposed.state, { type: 'attemptSpecial', roll: 12 });
     if (!after.ok) throw new Error(after.reason);
     expect(after.state.board[parseSquare('d1^')!]?.type).toBe('queen');
     const down = fakeRuling('e1 킹이 d1 퀸을 떨어뜨린다', 'white', after.state.board);

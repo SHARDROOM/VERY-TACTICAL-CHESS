@@ -21,17 +21,17 @@ export function trayCenterX(side: 1 | -1): number {
 }
 
 export interface ActiveRoll {
-  /** Null while the physics is still being computed. */
-  run: DiceRun | null;
-  /** Rotation of the numbered skin that puts the engine's number on top (see d6.ts). */
-  skin: Quaternion;
+  /** The dice thrown together (a pair); null while the physics is still being computed. */
+  runs: DiceRun[] | null;
+  /** Rotation of each die's pipped skin that puts the engine's number on top (see d6.ts). */
+  skins: Quaternion[];
   /** A special action's roll lights up by its outcome; a clash's dice have none. */
   outcome: Outcome | null;
   /** Jump straight to the resting pose. */
   skipped: boolean;
-  /** A clash (합): the defender's die, thrown once the first (the attacker's) has landed. */
-  second?: { run: DiceRun | null; skin: Quaternion };
-  /** A clash: each die in its side's colour (attacker, defender). */
+  /** A clash (합): the defender's pair, thrown once the first (the attacker's) has landed. */
+  second?: { runs: DiceRun[] | null; skins: Quaternion[] };
+  /** A clash: each pair in its side's colour (attacker, defender). */
   tints?: [Color, Color];
 }
 
@@ -115,12 +115,15 @@ function Pips({ ink }: { ink: string }) {
   );
 }
 
-/** Resting pose before any roll: flat on the felt with 6 on top. */
-function initialPose(): { position: Vector3; quaternion: Quaternion } {
+/** Resting poses before any roll: a pair flat on the felt with 6 on top, side by side. */
+function initialPoses(): { position: Vector3; quaternion: Quaternion }[] {
   const up = new Vector3(0, 1, 0);
   const q = new Quaternion().setFromUnitVectors(D6_FACES[faceWithNumber(6)].normal, up);
-  return { position: new Vector3(0, DIE_HALF, 0), quaternion: q };
+  return [-0.7, 0.7].map((z) => ({ position: new Vector3(0, DIE_HALF, z), quaternion: q.clone() }));
 }
+
+/** The dice drawn for a roll: up to this many in each throw. */
+const PER_THROW = 2;
 
 function Tray() {
   const { halfX, halfZ } = TRAY;
@@ -164,20 +167,20 @@ const SECOND_DIE_PAUSE = 0.45;
  * last stopped; during a roll it plays back the recorded physics flight.
  */
 export function DiceTray({ side, roll, onLanded, onFirstLanded }: Props) {
-  const die = useRef<Group>(null);
-  const skinGroup = useRef<Group>(null);
-  const die2 = useRef<Group>(null);
-  const skinGroup2 = useRef<Group>(null);
+  const firstDice = useRef<(Group | null)[]>([]);
+  const firstSkins = useRef<(Group | null)[]>([]);
+  const secondDice = useRef<(Group | null)[]>([]);
+  const secondSkins = useRef<(Group | null)[]>([]);
   const geometry = useDieGeometry();
-  const rest = useRef(initialPose());
-  const restSkin = useRef(new Quaternion());
+  const rest = useRef(initialPoses());
+  const restSkins = useRef([new Quaternion(), new Quaternion()]);
   const startedAt = useRef<number | null>(null);
   const soundedTo = useRef(-1);
-  const landedFor = useRef<DiceRun | null>(null);
-  /** A clash: when the first die landed (clock seconds), and how far the second's sounds got. */
+  const landedFor = useRef<DiceRun[] | null>(null);
+  /** A clash: when the first pair landed (clock seconds), and how far the second's sounds got. */
   const firstLandedAt = useRef<number | null>(null);
   const soundedTo2 = useRef(-1);
-  const landed2For = useRef<DiceRun | null>(null);
+  const landed2For = useRef<DiceRun[] | null>(null);
   const [lit, setLit] = useState<Outcome | null>(null);
 
   // A new roll: start the clock again and drop the previous glow.
@@ -189,72 +192,79 @@ export function DiceTray({ side, roll, onLanded, onFirstLanded }: Props) {
     soundedTo2.current = -1;
     landed2For.current = null;
     if (!roll) setLit(null);
-  }, [roll?.run, roll === null]);
+  }, [roll?.runs, roll === null]);
 
   // Where the dice lie, for things thrown about the table to hit (as of the last frame).
   useFrame(() => {
     const half = DIE_HALF * TRAY_SCALE;
-    for (const [key, g] of [['d1', die.current], ['d2', die2.current]] as const) {
-      if (g && g.visible) setDie(key, { p: g.getWorldPosition(new Vector3()), q: g.getWorldQuaternion(new Quaternion()), half });
-      else setDie(key, null);
-    }
+    [...firstDice.current, ...secondDice.current].forEach((g, i) => {
+      if (g && g.visible) setDie(`d${i}`, { p: g.getWorldPosition(new Vector3()), q: g.getWorldQuaternion(new Quaternion()), half });
+      else setDie(`d${i}`, null);
+    });
   });
 
+  /** Puts `dice` where `runs` have them at `step` (each die its own run), playing their knocks up to there. */
+  const place = (dice: (Group | null)[], skins: (Group | null)[], runs: DiceRun[], skinRot: Quaternion[], step: number, sounded: { current: number }, quiet: boolean) => {
+    runs.forEach((run, i) => {
+      const g = dice[i];
+      const sk = skins[i];
+      if (!g || !sk) return;
+      const s = Math.min(run.steps - 1, step);
+      if (!quiet) for (const hit of run.impacts) if (hit.step > sounded.current && hit.step <= s) playSfx('diceHit', { strength: hit.strength });
+      const o = s * 7;
+      g.visible = true;
+      g.position.set(run.frames[o], run.frames[o + 1], run.frames[o + 2]);
+      g.quaternion.set(run.frames[o + 3], run.frames[o + 4], run.frames[o + 5], run.frames[o + 6]);
+      sk.quaternion.copy(skinRot[i] ?? new Quaternion());
+    });
+    sounded.current = step;
+  };
+
   useFrame(({ clock }) => {
-    const g = die.current;
-    const sk = skinGroup.current;
-    if (!g || !sk) return;
-    const run = roll?.run;
-    if (!roll || !run) {
-      g.position.copy(rest.current.position);
-      g.quaternion.copy(rest.current.quaternion);
-      sk.quaternion.copy(restSkin.current);
+    const runs = roll?.runs;
+    if (!roll || !runs) {
+      // At rest: the last pair where it stopped; nothing of a second throw.
+      rest.current.forEach((pose, i) => {
+        const g = firstDice.current[i];
+        const sk = firstSkins.current[i];
+        if (!g || !sk) return;
+        g.visible = true;
+        g.position.copy(pose.position);
+        g.quaternion.copy(pose.quaternion);
+        sk.quaternion.copy(restSkins.current[i] ?? new Quaternion());
+      });
+      secondDice.current.forEach((g) => g && (g.visible = false));
       return;
     }
     if (startedAt.current === null) startedAt.current = clock.elapsedTime;
-    const last = run.steps - 1;
-    const step = roll.skipped ? last : Math.min(last, Math.floor((clock.elapsedTime - startedAt.current) / run.dt));
-    if (!roll.skipped) {
-      for (const hit of run.impacts) if (hit.step > soundedTo.current && hit.step <= step) playSfx('diceHit', { strength: hit.strength });
-    }
-    soundedTo.current = step;
-    const o = step * 7;
-    g.position.set(run.frames[o], run.frames[o + 1], run.frames[o + 2]);
-    g.quaternion.set(run.frames[o + 3], run.frames[o + 4], run.frames[o + 5], run.frames[o + 6]);
-    sk.quaternion.copy(roll.skin);
+    // Dice thrown together are recorded together: the same number of steps.
+    const last = Math.max(...runs.map((r) => r.steps)) - 1;
+    const step = roll.skipped ? last : Math.min(last, Math.floor((clock.elapsedTime - startedAt.current) / runs[0].dt));
+    place(firstDice.current, firstSkins.current, runs, roll.skins, step, soundedTo, roll.skipped);
     const second = roll.second;
-    if (step === last && landedFor.current !== run) {
-      landedFor.current = run;
-      rest.current = { position: g.position.clone(), quaternion: g.quaternion.clone() };
-      restSkin.current = roll.skin.clone();
+    if (step === last && landedFor.current !== runs) {
+      landedFor.current = runs;
+      rest.current = runs.map((_, i) => ({ position: firstDice.current[i]!.position.clone(), quaternion: firstDice.current[i]!.quaternion.clone() }));
+      restSkins.current = roll.skins.map((q) => q.clone());
       setLit(roll.outcome);
       if (roll.outcome === 'critFailure') playSfx('critFailure');
       if (second) {
-        // A clash: the attacker's die is down; the defender's goes next.
+        // A clash: the attacker's pair is down; the defender's goes next.
         firstLandedAt.current = clock.elapsedTime;
         onFirstLanded?.();
       } else onLanded();
     }
-    // A clash's second die: thrown after a moment, once the first rests.
-    const run2 = second?.run;
-    const g2 = die2.current;
-    if (g2) g2.visible = false;
-    if (second && run2 && g2 && skinGroup2.current && firstLandedAt.current !== null) {
-      const last2 = run2.steps - 1;
+    // A clash's second pair: thrown after a moment, once the first rests.
+    const runs2 = second?.runs;
+    secondDice.current.forEach((g) => g && (g.visible = false));
+    if (second && runs2 && firstLandedAt.current !== null) {
       const t2 = clock.elapsedTime - firstLandedAt.current - (roll.skipped ? 0 : SECOND_DIE_PAUSE);
       if (t2 >= 0 || roll.skipped) {
-        const step2 = roll.skipped ? last2 : Math.min(last2, Math.floor(t2 / run2.dt));
-        if (!roll.skipped) {
-          for (const hit of run2.impacts) if (hit.step > soundedTo2.current && hit.step <= step2) playSfx('diceHit', { strength: hit.strength });
-        }
-        soundedTo2.current = step2;
-        const o2 = step2 * 7;
-        g2.visible = true;
-        g2.position.set(run2.frames[o2], run2.frames[o2 + 1], run2.frames[o2 + 2]);
-        g2.quaternion.set(run2.frames[o2 + 3], run2.frames[o2 + 4], run2.frames[o2 + 5], run2.frames[o2 + 6]);
-        skinGroup2.current.quaternion.copy(second.skin);
-        if (step2 === last2 && landed2For.current !== run2) {
-          landed2For.current = run2;
+        const last2 = Math.max(...runs2.map((r) => r.steps)) - 1;
+        const step2 = roll.skipped ? last2 : Math.min(last2, Math.floor(t2 / runs2[0].dt));
+        place(secondDice.current, secondSkins.current, runs2, second.skins, step2, soundedTo2, roll.skipped);
+        if (step2 === last2 && landed2For.current !== runs2) {
+          landed2For.current = runs2;
           onLanded();
         }
       }
@@ -265,34 +275,37 @@ export function DiceTray({ side, roll, onLanded, onFirstLanded }: Props) {
   // A clash's dice wear the sides' colours (while they roll and until the next roll).
   const tint = roll?.tints ? TINT[roll.tints[0]] : null;
   const tint2 = roll?.tints ? TINT[roll.tints[1]] : null;
+  const ink = tint ? tint.ink : lit === 'critFailure' ? '#ffe0dc' : '#1d1b22';
   return (
     <group position={[trayCenterX(side), TABLE_TOP_Y, 0]} scale={TRAY_SCALE}>
       <Tray />
-      {roll?.second?.run && tint2 && (
-        <group ref={die2}>
-          <group ref={skinGroup2}>
+      {Array.from({ length: PER_THROW }, (_, i) => (
+        <group key={`b${i}`} ref={(g) => void (secondDice.current[i] = g)} visible={false}>
+          <group ref={(g) => void (secondSkins.current[i] = g)}>
             <mesh geometry={geometry} castShadow>
-              <meshStandardMaterial color={tint2.body} roughness={0.35} metalness={0.05} />
+              <meshStandardMaterial color={tint2 ? tint2.body : '#d9d2c2'} roughness={0.35} metalness={0.05} />
             </mesh>
-            <Pips ink={tint2.ink} />
+            <Pips ink={tint2 ? tint2.ink : '#1d1b22'} />
           </group>
         </group>
-      )}
-      <group ref={die}>
-        <group ref={skinGroup}>
-          <mesh geometry={geometry} castShadow>
-            <meshStandardMaterial
-              color={tint ? tint.body : look ? look.body : '#d9d2c2'}
-              emissive={look ? look.emissive : '#000000'}
-              emissiveIntensity={look ? look.glow : 0}
-              roughness={0.35}
-              metalness={0.05}
-            />
-          </mesh>
-          <Pips ink={tint ? tint.ink : lit === 'critFailure' ? '#ffe0dc' : '#1d1b22'} />
+      ))}
+      {Array.from({ length: PER_THROW }, (_, i) => (
+        <group key={`a${i}`} ref={(g) => void (firstDice.current[i] = g)}>
+          <group ref={(g) => void (firstSkins.current[i] = g)}>
+            <mesh geometry={geometry} castShadow>
+              <meshStandardMaterial
+                color={tint ? tint.body : look ? look.body : '#d9d2c2'}
+                emissive={look ? look.emissive : '#000000'}
+                emissiveIntensity={look ? look.glow : 0}
+                roughness={0.35}
+                metalness={0.05}
+              />
+            </mesh>
+            <Pips ink={ink} />
+          </group>
+          {i === 0 && look && look.glow > 0 && <pointLight color={look.emissive} intensity={5} distance={4} position={[0, 1.2, 0]} />}
         </group>
-        {look && look.glow > 0 && <pointLight color={look.emissive} intensity={5} distance={4} position={[0, 1.2, 0]} />}
-      </group>
+      ))}
     </group>
   );
 }

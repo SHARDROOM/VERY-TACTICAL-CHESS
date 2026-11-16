@@ -59,19 +59,29 @@ export async function simulateRolls(count: number, random: () => number = Math.r
 }
 
 /**
- * Throws `count` dice one after another (a clash: the attacker's, then the defender's): each is
- * thrown in its own lane once the ones before it rest, and lands among them (they stay put).
+ * Throws groups of dice one after another (a clash: the attacker's pair, then the defender's):
+ * each group is thrown together, in its own lanes, once the dice before it rest, and lands among
+ * them (they stay put). Returns the runs group by group.
  */
-export async function simulateRollsInTurn(count: number, random: () => number = Math.random): Promise<DiceRun[]> {
-  const runs: DiceRun[] = [];
-  for (let i = 0; i < count; i++) {
-    const resting = runs.map((r) => {
+export async function simulateGroupsInTurn(sizes: readonly number[], random: () => number = Math.random): Promise<DiceRun[][]> {
+  const total = sizes.reduce((a, b) => a + b, 0);
+  const groups: DiceRun[][] = [];
+  let first = 0;
+  for (const size of sizes) {
+    const resting = groups.flat().map((r) => {
       const o = (r.steps - 1) * 7;
       return { position: [r.frames[o], r.frames[o + 1], r.frames[o + 2]] as [number, number, number], rotation: r.final };
     });
-    runs.push((await throwDice(1, random, { lane: ((i + 0.5) / count - 0.5) * (TRAY.halfZ * 1.4), resting }))[0]);
+    const lanes = Array.from({ length: size }, (_, j) => ((first + j + 0.5) / total - 0.5) * (TRAY.halfZ * 1.4));
+    groups.push(await throwDice(size, random, { lanes, resting }));
+    first += size;
   }
-  return runs;
+  return groups;
+}
+
+/** One die after another (each its own group); see simulateGroupsInTurn. */
+export async function simulateRollsInTurn(count: number, random: () => number = Math.random): Promise<DiceRun[]> {
+  return (await simulateGroupsInTurn(Array.from({ length: count }, () => 1), random)).flat();
 }
 
 /** How squarely a die in orientation `q` lies on a face: 1 flat, less when tilted (its most upward axis' height). */
@@ -84,7 +94,7 @@ function uprightness(q: { x: number; y: number; z: number; w: number }): number 
 async function throwDice(
   count: number,
   random: () => number,
-  opts: { lane?: number; resting?: { position: [number, number, number]; rotation: Quaternion }[] } = {},
+  opts: { lane?: number; lanes?: number[]; resting?: { position: [number, number, number]; rotation: Quaternion }[] } = {},
 ): Promise<DiceRun[]> {
   const RAPIER = await loadPhysics();
   const world = new RAPIER.World({ x: 0, y: -GRAVITY, z: 0 });
@@ -123,7 +133,9 @@ async function throwDice(
       const height = THROW.height[0] + random() * THROW.height[1];
       // One die: anywhere across; several: each in its own lane.
       const lane =
-        opts.lane !== undefined
+        opts.lanes?.[i] !== undefined
+          ? opts.lanes[i] + r() * 0.15
+          : opts.lane !== undefined
           ? opts.lane + r() * 0.2
           : count === 1
             ? r() * (TRAY.halfZ - 0.9)

@@ -221,7 +221,7 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         add(e.afterFailure ? `${josa(COLOR_NAME[e.color], '은/는')} 다시 굴리지 않았습니다.` : `${josa(COLOR_NAME[e.color], '이/가')} 행동을 취소했습니다.`);
         break;
       case 'specialResolved':
-        add(`🎲 ${e.reroll ? `다시 굴림${e.reroll > 1 ? ` ${e.reroll}` : ''}: ` : ''}d6 = ${e.roll} (DC ${e.dc}) → ${OUTCOME_LABEL[e.outcome]} · AP -${e.cost}`, 'roll');
+        add(`🎲 ${e.reroll ? `다시 굴림${e.reroll > 1 ? ` ${e.reroll}` : ''}: ` : ''}주사위 ${e.dice ? `${e.dice[0]}+${e.dice[1]}=` : ''}${e.roll} (DC ${e.dc}) → ${OUTCOME_LABEL[e.outcome]} · AP -${e.cost}`, 'roll');
         if (e.narration) add(e.narration, 'gm');
         break;
     }

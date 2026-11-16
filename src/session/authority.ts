@@ -155,7 +155,11 @@ export class Authority {
         this.apply({ type: 'cancelSpecial' }, actor);
         return;
       case 'attempt':
-        this.apply({ type: 'attemptSpecial', roll: this.roll() }, actor);
+        {
+          // Two dice, added up (the faces go along for the screens).
+          const dice: [number, number] = [this.roll(), this.roll()];
+          this.apply({ type: 'attemptSpecial', roll: dice[0] + dice[1], dice }, actor);
+        }
         return;
       case 'declare':
         return this.declare(req.action, actor);

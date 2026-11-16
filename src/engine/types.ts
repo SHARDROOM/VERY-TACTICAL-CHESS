@@ -303,7 +303,7 @@ export type Command =
   | { type: 'endTurn' }
   | { type: 'proposeSpecial'; action: string; ruling: Ruling }
   /** `roll` is a d6 result produced outside the engine, keeping the engine deterministic. */
-  | { type: 'attemptSpecial'; roll: number; clashRolls?: number[] }
+  | { type: 'attemptSpecial'; roll: number; dice?: [number, number]; clashRolls?: number[] }
   | { type: 'cancelSpecial' }
   /** The side to move ran out of time: it loses AP and the turn passes. */
   | { type: 'timeout' }
@@ -331,11 +331,13 @@ export type GameEvent =
       attackerId: string;
       defenderId: string;
       attacker: Color;
+      /** The defender's side (on the 3-player board it is not simply the other one). */
+      defender?: Color;
       from: Square;
       at: Square;
       attack: number;
       defense: number;
-      rounds: { attack: number; defense: number }[];
+      rounds: { attack: number; defense: number; attackDice: [number, number]; defenseDice: [number, number] }[];
       winner: 'attacker' | 'defender';
       /** The defender had a shield: losing breaks it instead. */
       shield: boolean;
@@ -406,7 +408,9 @@ export type GameEvent =
       type: 'specialResolved';
       color: Color;
       action: string;
+      /** The two dice added up (2..12); `dice` are the faces, when the roll came with them. */
       roll: number;
+      dice?: [number, number];
       dc: number;
       cost: number;
       success: boolean;

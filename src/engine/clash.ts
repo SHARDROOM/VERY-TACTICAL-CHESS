@@ -4,7 +4,7 @@ import { DIE_SIDES } from './config';
 
 /*
  * 합 (clash): when a piece tries to capture one that can stand its ground (it has a clash
- * multiplier, e.g. 검술 ×1.5, or a shield), both roll a d6 and multiply by their multiplier:
+ * multiplier, e.g. 검술 ×1.5, or a shield), both roll two d6 (2..12) and multiply by their multiplier:
  * the base of their kind times their best tag's, rounded half up (사용자 요청). The higher wins,
  * a tie rolls again.
  * docs/SPEC.md, "합과 조형물".
@@ -18,8 +18,8 @@ export const BASE_CLASH: Record<PieceType, number> = { pawn: 0.8, knight: 1, bis
 
 export const CLASH_MIN = 1.2;
 export const CLASH_MAX = 2.0;
-/** Rolls the authority sends with each move or attempt: enough for nine ties and a decision. */
-export const CLASH_ROLLS = 20;
+/** Dice the authority sends with each move or attempt: two a side a round, enough for nine ties and a decision. */
+export const CLASH_ROLLS = 40;
 
 /** The best multiplier among one piece's own tags (1 if none). */
 const tagMultiplier = (p: Piece): number => Math.max(1, ...(p.tags ?? []).map((t) => t.clash ?? 1));
@@ -51,7 +51,7 @@ export function canResist(defender: Piece): boolean {
 
 /** How many times the two meet on screen: closer scores, longer fights; each tie adds one. */
 export function exchangesFor(diff: number, ties: number): number {
-  const base = diff >= 4 ? 1 : diff >= 3 ? 2 : diff >= 2 ? 3 : 4;
+  const base = diff >= 7 ? 1 : diff >= 4 ? 2 : diff >= 2 ? 3 : 4;
   return Math.min(6, base + ties);
 }
 
@@ -63,22 +63,33 @@ export function clashScore(roll: number, mult: number): number {
   return Math.round(Math.round(roll * mult * 100) / 100);
 }
 
+export interface ClashRound {
+  /** Each side's two dice added up, and the dice themselves. */
+  attack: number;
+  defense: number;
+  attackDice: [number, number];
+  defenseDice: [number, number];
+}
+
 export interface ClashResult {
-  rounds: { attack: number; defense: number }[];
+  rounds: ClashRound[];
   winner: 'attacker' | 'defender';
   exchanges: number;
 }
 
 /**
- * Plays out a clash from `rolls` (attacker, defender, attacker, defender, ...). If the rolls run
- * out on ties the defender holds (it never happens with CLASH_ROLLS but must end somewhere).
+ * Plays out a clash from `rolls`, single dice taken four a round: the attacker's two, then the
+ * defender's two. If the rolls run out on ties the defender holds (it never happens with
+ * CLASH_ROLLS but must end somewhere).
  */
 export function resolveClash(attack: number, defense: number, rolls: readonly number[]): ClashResult {
-  const rounds: ClashResult['rounds'] = [];
-  for (let i = 0; i + 1 < rolls.length; i += 2) {
-    const a = rolls[i];
-    const d = rolls[i + 1];
-    rounds.push({ attack: a, defense: d });
+  const rounds: ClashRound[] = [];
+  for (let i = 0; i + 3 < rolls.length; i += 4) {
+    const attackDice: [number, number] = [rolls[i], rolls[i + 1]];
+    const defenseDice: [number, number] = [rolls[i + 2], rolls[i + 3]];
+    const a = attackDice[0] + attackDice[1];
+    const d = defenseDice[0] + defenseDice[1];
+    rounds.push({ attack: a, defense: d, attackDice, defenseDice });
     const sa = clashScore(a, attack);
     const sd = clashScore(d, defense);
     if (sa === sd) continue;
@@ -87,16 +98,24 @@ export function resolveClash(attack: number, defense: number, rolls: readonly nu
   return { rounds, winner: 'defender', exchanges: exchangesFor(0, rounds.length) };
 }
 
+/** How often two dice add up to each total (index = total). */
+const TWO_DICE: number[] = (() => {
+  const ways = Array<number>(DIE_SIDES * 2 + 1).fill(0);
+  for (let a = 1; a <= DIE_SIDES; a++) for (let b = 1; b <= DIE_SIDES; b++) ways[a + b]++;
+  return ways;
+})();
+
 /** The attacker's exact chance of winning (ties roll again, so they do not count). */
 export function clashWinChance(attack: number, defense: number): number {
   let win = 0;
   let lose = 0;
-  for (let a = 1; a <= DIE_SIDES; a++) {
-    for (let d = 1; d <= DIE_SIDES; d++) {
+  for (let a = 2; a <= DIE_SIDES * 2; a++) {
+    for (let d = 2; d <= DIE_SIDES * 2; d++) {
+      const w = TWO_DICE[a] * TWO_DICE[d];
       const sa = clashScore(a, attack);
       const sd = clashScore(d, defense);
-      if (sa > sd) win++;
-      else if (sa < sd) lose++;
+      if (sa > sd) win += w;
+      else if (sa < sd) lose += w;
     }
   }
   return win / (win + lose);

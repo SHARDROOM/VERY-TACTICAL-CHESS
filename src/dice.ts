@@ -10,9 +10,12 @@ export function rollDie(): number {
   }
 }
 
-/** Probability that an attempt succeeds: the roll must reach the DC, and a natural 1 never does. */
+/**
+ * Probability that an attempt succeeds: two dice must add up to the DC, and snake eyes (1 and 1)
+ * never do.
+ */
 export function successChance(dc: number): number {
   let wins = 0;
-  for (let roll = 1; roll <= DIE_SIDES; roll++) if (roll !== 1 && roll >= dc) wins++;
-  return wins / DIE_SIDES;
+  for (let a = 1; a <= DIE_SIDES; a++) for (let b = 1; b <= DIE_SIDES; b++) if (a + b !== 2 && a + b >= dc) wins++;
+  return wins / (DIE_SIDES * DIE_SIDES);
 }

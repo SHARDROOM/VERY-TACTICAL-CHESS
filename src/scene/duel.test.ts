@@ -14,7 +14,7 @@ const clash = (over: Partial<Extract<GameEvent, { type: 'clash' }>> = {}): Extra
   at: sq('d7'),
   attack: 1,
   defense: 1.5,
-  rounds: [{ attack: 4, defense: 12 }],
+  rounds: [{ attack: 4, defense: 12, attackDice: [1, 3], defenseDice: [6, 6] }],
   winner: 'defender',
   shield: false,
   exchanges: 3,

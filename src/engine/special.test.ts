@@ -117,14 +117,14 @@ describe('proposing a special action', () => {
   });
 
   it('rejects out-of-range DC and cost', () => {
-    for (const bad of [{ dc: 1 }, { dc: 7 }, { dc: 3.5 }, { cost: 0 }, { cost: 4 }]) {
+    for (const bad of [{ dc: 2 }, { dc: 13 }, { dc: 3.5 }, { cost: 0 }, { cost: 4 }]) {
       expect(propose(rich(), ruling(bad))).toMatchObject({ ok: false, reason: 'invalidRuling' });
     }
   });
 
-  it('rules saved in the days of the d20 load with the d6 range', () => {
-    expect(withDefaultRules({ dcMin: 5, dcMax: 25, apMax: 7 })).toMatchObject({ dcMin: 2, dcMax: 6, apMax: 7 });
-    expect(withDefaultRules({ dcMin: 3, dcMax: 5 })).toMatchObject({ dcMin: 3, dcMax: 5 });
+  it('rules saved in the days of the d20 or a single d6 load with the two-dice range', () => {
+    expect(withDefaultRules({ dcMin: 5, dcMax: 25, apMax: 7 })).toMatchObject({ dcMin: 3, dcMax: 12, apMax: 7 });
+    expect(withDefaultRules({ dcMin: 2, dcMax: 6 })).toMatchObject({ dcMin: 3, dcMax: 12 });
   });
 
   it('rejects effects outside the vocabulary', () => {
@@ -191,9 +191,11 @@ describe('attempting and cancelling', () => {
     expect(attempt(s, 6)).toMatchObject({ ok: false, reason: 'notEnoughAp' });
   });
 
-  it('rejects rolls outside 1..6', () => {
+  it('rejects totals outside 2..12, and faces that do not add up', () => {
     const s = ok(propose(rich())).state;
-    for (const roll of [0, 7, 3.5]) expect(attempt(s, roll)).toMatchObject({ ok: false, reason: 'invalidRoll' });
+    expect(applyCommand(s, { type: 'attemptSpecial', roll: 7, dice: [3, 3] })).toMatchObject({ ok: false, reason: 'invalidRoll' });
+    expect(applyCommand(s, { type: 'attemptSpecial', roll: 7, dice: [3, 4] })).toMatchObject({ ok: true });
+    for (const roll of [1, 13, 3.5]) expect(attempt(s, roll)).toMatchObject({ ok: false, reason: 'invalidRoll' });
   });
 
   it('success (roll >= DC) applies effects and spends AP; the turn continues', () => {
@@ -282,8 +284,8 @@ describe('rolling again after a failure', () => {
 
   it('failing again keeps it open, counting the tries, until the AP runs out', () => {
     const s = failed(3);
-    const second = ok(attempt(s.state, 2));
-    expect(second.state.pending?.retry).toEqual({ roll: 2, narration: '실패 서술', rerolls: 1 });
+    const second = ok(attempt(s.state, 3));
+    expect(second.state.pending?.retry).toEqual({ roll: 3, narration: '실패 서술', rerolls: 1 });
     expect(second.state.ap.white).toBe(1);
     const third = ok(attempt(second.state, 6));
     expect(third.events[0]).toMatchObject({ reroll: 2 });
@@ -306,8 +308,8 @@ describe('rolling again after a failure', () => {
     expect(endTurn(s)).toMatchObject({ ok: false, reason: 'actionPending' });
   });
 
-  it('no second try after a natural 1, without the AP for it, or when the room turned rerolls off', () => {
-    expect(ok(attempt(ok(propose(rich(3))).state, 1)).state.pending).toBeNull();
+  it('no second try after snake eyes, without the AP for it, or when the room turned rerolls off', () => {
+    expect(ok(attempt(ok(propose(rich(3))).state, 2)).state.pending).toBeNull();
     expect(failed(1).state.pending).toBeNull();
     const off = { ...rich(3), rules: { ...DEFAULT_RULES, rerollCost: 0 } };
     expect(ok(attempt(ok(propose(off)).state, 3)).state.pending).toBeNull();

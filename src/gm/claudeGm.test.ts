@@ -84,7 +84,7 @@ describe('ClaudeGameMaster errors (shown to the player; AP is never spent)', () 
 describe('prompt', () => {
   it('system prompt carries the configured ranges and the king rule', () => {
     const p = buildSystemPrompt(createInitialState().rules);
-    expect(p).toContain('2~6');
+    expect(p).toContain('3~12');
     expect(p).toContain('1~3');
     expect(p).toContain('킹은 어떤 효과로도 제거하거나 잡거나 변환하거나 편을 바꿀 수 없고');
   });

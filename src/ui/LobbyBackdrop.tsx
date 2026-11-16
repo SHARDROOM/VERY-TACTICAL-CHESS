@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Quaternion } from 'three';
 import { createInitialState, type Color, type Outcome , setBoardMap, type BoardMap } from '../engine';
 import { BoardScene } from '../scene/BoardScene';
 import type { TourInset, TourPhase } from '../scene/TourCamera';
 import type { ActiveRoll } from '../dice3d/DiceTray';
-import { simulateRoll } from '../dice3d/simulate';
+import { simulateRolls } from '../dice3d/simulate';
 import { skinRotationFor } from '../dice3d/d6';
 
 const NO_SQUARES: never[] = [];
@@ -33,11 +32,12 @@ export function LobbyBackdrop({ inset, map = 'classic' }: { inset: TourInset; ma
   };
 
   const throwDie = () => {
-    const number = 1 + Math.floor(Math.random() * 6);
-    const outcome: Outcome = number === 1 ? 'critFailure' : 'success';
-    setRoll({ run: null, skin: new Quaternion(), outcome, skipped: false });
-    simulateRoll()
-      .then((run) => setRoll((r) => (r ? { ...r, run, skin: skinRotationFor(number, run.final) } : r)))
+    // A pair, as in the game.
+    const faces = [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
+    const outcome: Outcome = faces[0] + faces[1] === 2 ? 'critFailure' : 'success';
+    setRoll({ runs: null, skins: [], outcome, skipped: false });
+    simulateRolls(2)
+      .then((runs) => setRoll((r) => (r ? { ...r, runs, skins: runs.map((run, i) => skinRotationFor(faces[i], run.final)) } : r)))
       .catch(() => setRoll(null));
   };
 

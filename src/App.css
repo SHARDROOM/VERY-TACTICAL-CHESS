@@ -197,8 +197,8 @@ select option { background: var(--walnut); }
 .seal-number { font-family: var(--font-voice); font-weight: 800; font-size: 2.1rem; line-height: 1; }
 /* The twenty faces of the die: which of them succeed. */
 .odds { margin: 18px 0 4px; }
-.odds-faces { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
-.odds-face { height: 30px; border-radius: 4px; background: rgba(43, 33, 25, 0.12); color: rgba(43, 33, 25, 0.55); font-size: 0.9375rem; display: grid; place-items: center; font-variant-numeric: tabular-nums; }
+.odds-faces { display: grid; grid-template-columns: repeat(11, 1fr); gap: 3px; align-items: end; }
+.odds-face { height: 30px; border-radius: 4px 4px 2px 2px; background: rgba(43, 33, 25, 0.12); color: rgba(43, 33, 25, 0.55); font-size: 0.9375rem; display: grid; place-items: center; font-variant-numeric: tabular-nums; }
 .odds-face.win { background: #4e8a68; color: #eaf5ee; }
 .odds-face.fumble { background: var(--wax); color: #f7e3d3; font-weight: 800; }
 .odds-caption { margin-top: 6px; font-size: 0.875rem; color: #4a3b2d; }
@@ -227,9 +227,10 @@ select option { background: var(--walnut); }
   .ruling-body { padding-right: 76px; }
   .seal { width: 72px; height: 72px; }
   .seal-number { font-size: 1.75rem; }
-  .odds-face { height: 26px; }
+  .odds-face { font-size: 0.75rem; }
 }
 
+.dice-faces { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 4px; }
 .dice-hud {
   top: 70px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; background: var(--panel);
   border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px 8px 16px; z-index: 2; box-shadow: var(--shadow);
@@ -244,6 +245,7 @@ select option { background: var(--walnut); }
 /* A clash: two sides, the winner's score lit, in the sides' own stone colours. */
 /* A clash: each side's final score big, its die and multiplier small beneath; the winner lit. */
 .clash-result { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dice-hud > button { white-space: nowrap; }
 .clash-title { font-family: var(--font-voice); font-weight: 800; font-size: 1.25rem; color: var(--accent-bright); }
 .clash-side { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 96px; padding: 6px 12px 7px; border-radius: 8px; border: 1px solid var(--line); animation: dice-pop 0.35s ease-out; }
 .clash-side.won { border-color: var(--accent-bright); box-shadow: 0 0 14px rgba(226, 180, 90, 0.4); }
@@ -256,7 +258,7 @@ select option { background: var(--walnut); }
 .clash-side.won .clash-total { color: var(--accent-bright); text-shadow: 0 0 16px rgba(226, 180, 90, 0.55); }
 .clash-side.waiting .clash-total { color: var(--muted); animation: clash-wait 0.9s ease-in-out infinite; }
 @keyframes clash-wait { 50% { opacity: 0.35; } }
-.clash-formula { font-size: 0.8125rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.clash-formula { display: flex; flex-direction: column; align-items: center; font-size: 0.75rem; line-height: 1.3; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .clash-win { position: absolute; top: -9px; right: -8px; padding: 1px 7px; border-radius: 10px; font-size: 0.75rem; font-weight: 800; color: var(--ink); background: var(--accent-bright); }
 .clash-vs { color: var(--muted); font-size: 0.875rem; }
 .clash-ties { font-size: 0.75rem; color: var(--muted); }

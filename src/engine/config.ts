@@ -1,5 +1,10 @@
 /** Every die in the game is a six-sided one (사용자 요청): special actions and clashes alike. */
 export const DIE_SIDES = 6;
+/** Every roll is two of them, added up (사용자 요청: 2..12, so the odds have more steps). */
+export const DICE_PER_ROLL = 2;
+/** The lowest and highest a roll can come to. */
+export const ROLL_MIN = DICE_PER_ROLL;
+export const ROLL_MAX = DICE_PER_ROLL * DIE_SIDES;
 
 /** Balance numbers. Tune these from playtests; everything else reads them from the game state. */
 export interface RuleConfig {
@@ -36,8 +41,8 @@ export const DEFAULT_RULES: RuleConfig = {
   apMax: 5,
   costMin: 1,
   costMax: 3,
-  dcMin: 2,
-  dcMax: 6,
+  dcMin: 3,
+  dcMax: 12,
   actionMaxLength: 200,
   maxEffects: 8,
   turnSeconds: 0,
@@ -52,8 +57,8 @@ export const DEFAULT_RULES: RuleConfig = {
 export function withDefaultRules(rules: Partial<RuleConfig> | undefined): RuleConfig {
   const out = { ...DEFAULT_RULES, ...(rules ?? {}) };
   if (out.map !== 'hex3') out.map = 'classic';
-  // From the days of the d20: its DCs mean nothing on a d6.
-  if (out.dcMax > DIE_SIDES || out.dcMin > DIE_SIDES) {
+  // From the days of the d20 or a single d6: their DCs mean nothing on two dice.
+  if (out.dcMax !== DEFAULT_RULES.dcMax || out.dcMin > out.dcMax) {
     out.dcMin = DEFAULT_RULES.dcMin;
     out.dcMax = DEFAULT_RULES.dcMax;
   }

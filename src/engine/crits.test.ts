@@ -25,27 +25,27 @@ describe('critical results', () => {
     expect(r.state.board[sq('c4')]).toMatchObject({ type: 'knight' });
   });
 
-  it('at the hardest DC only a 6 succeeds', () => {
-    expect(run(ruling({ dc: 6 }), 6).events[0]).toMatchObject({ outcome: 'success', success: true });
-    expect(run(ruling({ dc: 6 }), 5).events[0]).toMatchObject({ outcome: 'failure', success: false });
+  it('at the hardest DC only double six succeeds', () => {
+    expect(run(ruling({ dc: 12 }), 12).events[0]).toMatchObject({ outcome: 'success', success: true });
+    expect(run(ruling({ dc: 12 }), 11).events[0]).toMatchObject({ outcome: 'failure', success: false });
   });
 
-  it('1 is a critical failure: the backfire applies', () => {
-    const r = run(ruling({ dc: 2 }), 1);
+  it('snake eyes (a total of 2) is a critical failure: the backfire applies', () => {
+    const r = run(ruling({ dc: 3 }), 2);
     expect(r.events[0]).toMatchObject({ outcome: 'critFailure', success: false, narration: '대실패' });
     expect(r.state.board[sq('b1')]?.tags).toEqual([{ name: '기절', turnsLeft: 1, appliedOnTurn: 1 }]);
   });
 
-  it('a normal failure (2..DC-1) only costs AP', () => {
+  it('a normal failure (3..DC-1) only costs AP', () => {
     const before = rich();
     const r = run(ruling(), 3, before);
     expect(r.events).toEqual([expect.objectContaining({ outcome: 'failure', narration: '실패' })]);
     expect(r.state.board).toEqual(before.board);
   });
 
-  it('a 1 with no backfire listed does nothing beyond the AP cost', () => {
+  it('snake eyes with no backfire listed do nothing beyond the AP cost', () => {
     const before = rich();
-    const r = run(ruling({ critFailureEffects: [] }), 1, before);
+    const r = run(ruling({ critFailureEffects: [] }), 2, before);
     expect(r.state.board).toEqual(before.board);
   });
 

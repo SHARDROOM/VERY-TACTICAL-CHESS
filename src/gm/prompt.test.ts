@@ -82,7 +82,7 @@ describe('who does it and how far (주체와 거리)', () => {
 describe('clashes, props, bridges and ladders in the GM prompts', () => {
   it('the ruling prompt explains clashes with their prices, props, bridges and ladders; chaos lists them too', () => {
     const ruling = buildSystemPrompt(rules);
-    for (const word of ['## 합 (clash)', '## 조형물 (prop)', 'DC 5·AP 3', 'DC +1', '소수점은 반올림', '"cover"', '"clearCover"', 'rightHand', 'barricade', 'torus', '1.5배']) expect(ruling).toContain(word);
+    for (const word of ['## 합 (clash)', '## 조형물 (prop)', 'DC 9~10·AP 3', 'DC +1', '소수점은 반올림', '"cover"', '"clearCover"', 'rightHand', 'barricade', 'torus', '1.5배']) expect(ruling).toContain(word);
     const chaos = buildChaosSystemPrompt(rules);
     for (const word of ['"cover"', '"clearCover"', 'clash', 'prop']) expect(chaos).toContain(word);
   });

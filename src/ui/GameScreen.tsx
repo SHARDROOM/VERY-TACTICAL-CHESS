@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Quaternion } from 'three';
 import {
   AIR,
   setBoardMap,
@@ -19,7 +18,6 @@ import {
   clashMultiplier,
   clashScore,
   clashWinChance,
-  DIE_SIDES,
   type Color,
   type Fx,
   type GameEvent,
@@ -39,7 +37,7 @@ import { PieceInfo } from './PieceInfo';
 import { SettingsMenu, useFullscreen } from './SettingsMenu';
 import { playSfx } from '../audio/sfx';
 import { successChance } from '../dice';
-import { loadPhysics, simulateRoll, simulateRollsInTurn } from '../dice3d/simulate';
+import { loadPhysics, simulateGroupsInTurn, simulateRolls } from '../dice3d/simulate';
 import { skinRotationFor } from '../dice3d/d6';
 import type { ActiveRoll } from '../dice3d/DiceTray';
 import { CHAT_MAX_LENGTH, timeLeft, type Session, type SessionView, type TurnTimer } from '../session/types';
@@ -184,6 +182,12 @@ function pieceName(game: GameState, id: string): string {
   return type ? PIECE_NAME[type] : '기물';
 }
 
+/** Two faces that add up to `roll` (for a roll that came without its faces, e.g. from an older host). */
+const splitRoll = (roll: number): [number, number] => {
+  const a = Math.min(6, Math.max(1, roll - 1));
+  return [a, Math.max(1, roll - a)];
+};
+
 /** A clash's score as shown small: the die times the multiplier, exact (to two decimals at most). */
 const exact = (roll: number, mult: number) => Math.round(roll * mult * 100) / 100;
 
@@ -199,6 +203,8 @@ function ClashResult({ clash, name, defenderRolling = false }: { clash: ClashEve
   const side = (who: 'attacker' | 'defender') => {
     const color = who === 'attacker' ? clash.attacker : opponent(clash.attacker);
     const roll = who === 'attacker' ? last.attack : last.defense;
+    const faces = who === 'attacker' ? last.attackDice : last.defenseDice;
+    const pair = faces ? `${faces[0]}+${faces[1]}` : String(roll);
     const mult = who === 'attacker' ? clash.attack : clash.defense;
     const id = who === 'attacker' ? clash.attackerId : clash.defenderId;
     const waiting = who === 'defender' && defenderRolling;
@@ -215,7 +221,9 @@ function ClashResult({ clash, name, defenderRolling = false }: { clash: ClashEve
           <>
             <span className="clash-total">{clashScore(roll, mult)}</span>
             <span className="clash-formula">
-              {mult === 1 ? `주사위 ${roll}` : `주사위 ${roll} × ${mult}${exact(roll, mult) === clashScore(roll, mult) ? '' : ` = ${exact(roll, mult)} 반올림`}`}
+              {/* Two short lines: the dice and the multiplier, then the exact product when it was rounded. */}
+              <span>{mult === 1 ? `🎲 ${pair}` : `🎲 (${pair}) × ${mult}`}</span>
+              {mult !== 1 && exact(roll, mult) !== clashScore(roll, mult) && <span>= {exact(roll, mult)} → 반올림</span>}
             </span>
           </>
         )}
@@ -317,7 +325,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
    * until the die lands). `landed` flips when the die stops; `done` reveals the result.
    */
   /** The roll on screen. A clash's dice go one after another: `firstLanded` once the attacker's is down. */
-  const [dice, setDice] = useState<{ roll: number; outcome: Outcome | null; done: () => void; landed: boolean; firstLanded?: boolean; clash?: ClashEvent } | null>(null);
+  const [dice, setDice] = useState<{ roll: number; faces: [number, number]; outcome: Outcome | null; done: () => void; landed: boolean; firstLanded?: boolean; clash?: ClashEvent } | null>(null);
   const [diceRoll, setDiceRoll] = useState<ActiveRoll | null>(null);
   const [frozen, setFrozen] = useState<GameState | null>(null);
   const queueRef = useRef<Batch[]>([]);
@@ -533,27 +541,36 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       return out;
     };
 
-    /** Rolls the die on the table: simulate, look at the tray, then reveal via `done`. */
-    const startRoll = (roll: number, outcome: Outcome, done: () => void) => {
-      setDice({ roll, outcome, done, landed: false });
-      setDiceRoll({ run: null, skin: new Quaternion(), outcome, skipped: false });
+    /** Rolls the pair on the table: simulate, look at the tray, then reveal via `done`. */
+    const startRoll = (roll: number, faces: [number, number], outcome: Outcome, done: () => void) => {
+      setDice({ roll, faces, outcome, done, landed: false });
+      setDiceRoll({ runs: null, skins: [], outcome, skipped: false });
       lookAtDice();
-      simulateRoll()
-        .then((run) => setDiceRoll((r) => (r ? { ...r, run, skin: skinRotationFor(roll, run.final) } : r)))
+      simulateRolls(2)
+        .then((runs) => setDiceRoll((r) => (r ? { ...r, runs, skins: runs.map((run, i) => skinRotationFor(faces[i], run.final)) } : r)))
         // Without physics, just show the number.
         .catch(() => setDice((d) => (d ? { ...d, landed: true } : d)));
     };
 
-    /** A clash (합): both dice at once, each in its side's colour, showing the deciding round. */
+    /** A clash (합): the attacker's pair, then the defender's, each in its side's colour, showing the deciding round. */
     const startClashRoll = (clash: ClashEvent, done: () => void) => {
-      const last = clash.rounds[clash.rounds.length - 1] ?? { attack: 1, defense: 1 };
-      const defender = clash.attacker === 'white' ? 'black' : 'white';
-      setDice({ roll: last.attack, outcome: null, done, landed: false, clash });
-      setDiceRoll({ run: null, skin: new Quaternion(), outcome: null, skipped: false, second: { run: null, skin: new Quaternion() }, tints: [clash.attacker, defender] });
+      const last = clash.rounds[clash.rounds.length - 1] ?? { attack: 2, defense: 2, attackDice: [1, 1] as [number, number], defenseDice: [1, 1] as [number, number] };
+      const defender = clash.defender ?? (clash.attacker === 'white' ? 'black' : 'white');
+      setDice({ roll: last.attack, faces: last.attackDice, outcome: null, done, landed: false, clash });
+      setDiceRoll({ runs: null, skins: [], outcome: null, skipped: false, second: { runs: null, skins: [] }, tints: [clash.attacker, defender] });
       lookAtDice();
-      simulateRollsInTurn(2)
+      simulateGroupsInTurn([2, 2])
         .then(([a, d]) =>
-          setDiceRoll((r) => (r ? { ...r, run: a, skin: skinRotationFor(last.attack, a.final), second: { run: d, skin: skinRotationFor(last.defense, d.final) } } : r)),
+          setDiceRoll((r) =>
+            r
+              ? {
+                  ...r,
+                  runs: a,
+                  skins: a.map((run, i) => skinRotationFor(last.attackDice[i], run.final)),
+                  second: { runs: d, skins: d.map((run, i) => skinRotationFor(last.defenseDice[i], run.final)) },
+                }
+              : r,
+          ),
         )
         .catch(() => setDice((x) => (x ? { ...x, landed: true } : x)));
     };
@@ -576,7 +593,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         if (resolved && !head.rolled) {
           head.rolled = true;
           setFrozen(head.before);
-          startRoll(resolved.roll, resolved.outcome, () => {
+          startRoll(resolved.roll, resolved.dice ?? splitRoll(resolved.roll), resolved.outcome, () => {
             setDice(null);
             pump();
           });
@@ -703,7 +720,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   };
 
   const skipRoll = () => {
-    if (!diceRoll?.run) return finishRoll(); // still computing: nothing to watch yet
+    if (!diceRoll?.runs) return finishRoll(); // still computing: nothing to watch yet
     skipRequested.current = true;
     setDiceRoll((r) => (r ? { ...r, skipped: true } : r));
   };
@@ -1222,7 +1239,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
                   </div>
                 </dl>
                 <ul className="crit-notes">
-                  <li>1이 나오면 대실패: {pending.ruling.critFailureEffects?.length ? '역효과가 있습니다.' : '아무 일도 일어나지 않습니다.'}</li>
+                  <li>1·1(합 2)이 나오면 대실패: {pending.ruling.critFailureEffects?.length ? '역효과가 있습니다.' : '아무 일도 일어나지 않습니다.'}</li>
                 </ul>
                 {!canAfford && <p className="infeasible">AP가 부족해서 {retry ? '다시 굴릴' : '시도할'} 수 없습니다.</p>}
               </>
@@ -1353,6 +1370,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             <ClashResult clash={dice.clash} name={(id) => pieceName(game, id)} defenderRolling={!dice.landed} />
           ) : dice.landed && dice.outcome ? (
             <div className={`dice-result ${dice.outcome}`}>
+              <span className="dice-faces">{dice.faces[0]} + {dice.faces[1]} =</span>
               <span className="dice-number">{dice.roll}</span>
               <span className="dice-label">{OUTCOME_LABEL[dice.outcome]}</span>
             </div>
@@ -1371,7 +1389,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             <span className="victory-stone" aria-hidden />
             <h1>{COLOR_NAME[winner]} 승리</h1>
             {online && nameOf(winner) && <div className="victory-name">{nameOf(winner)}</div>}
-            <p className="victory-how">{COLOR_NAME[opponent(winner)]} 킹이 잡혔습니다.</p>
+            <p className="victory-how">{isHex() ? '마지막까지 킹을 지켰습니다.' : `${COLOR_NAME[opponent(winner)]} 킹이 잡혔습니다.`}</p>
             <p className="victory-recap">{recap(game)}</p>
             <div className="victory-actions">
               {view.isAuthority ? (
@@ -1416,20 +1434,22 @@ function TimerBadge({ timer, mine }: { timer: TurnTimer; mine: boolean }) {
   );
 }
 
-/** The six faces of the die, marking which of them succeed against this DC. */
+/** Every total two dice can make (2..12), how often, and which of them succeed against this DC. */
 function DieOdds({ dc }: { dc: number }) {
-  const faces = Array.from({ length: DIE_SIDES }, (_, i) => i + 1);
-  const kind = (n: number) => (n === 1 ? 'fumble' : n >= dc ? 'win' : '');
+  const totals = Array.from({ length: 11 }, (_, i) => i + 2);
+  const ways = (n: number) => 6 - Math.abs(n - 7);
+  const kind = (n: number) => (n === 2 ? 'fumble' : n >= dc ? 'win' : '');
   return (
     <div className="odds">
       <div className="odds-faces" aria-hidden>
-        {faces.map((n) => (
-          <span key={n} className={`odds-face ${kind(n)}`}>
+        {totals.map((n) => (
+          // Taller where a total comes up more often (7 most of all).
+          <span key={n} className={`odds-face ${kind(n)}`} style={{ height: `${14 + ways(n) * 5}px` }}>
             {n}
           </span>
         ))}
       </div>
-      <div className="odds-caption">{dc >= DIE_SIDES ? `주사위 ${DIE_SIDES}이 나와야만 성공` : `주사위 ${dc} 이상이면 성공`}</div>
+      <div className="odds-caption">{dc >= 12 ? '주사위 2개가 6·6이 나와야만 성공' : `주사위 2개의 합이 ${dc} 이상이면 성공`}</div>
     </div>
   );
 }

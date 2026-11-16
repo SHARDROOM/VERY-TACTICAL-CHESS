@@ -155,7 +155,7 @@ describe('hotseat session', () => {
   });
 
   it('a capture of a shielded piece becomes a clash: dice are rolled only then, and everyone sees them', async () => {
-    const rolls = [6, 1, 6]; // the shield roll; then the clash: 1 against 6
+    const rolls = [6, 6, 1, 1, 3, 3]; // the shield roll (a pair); then the clash: 1+1 against 3+3
     let n = 0;
     const s = hotseat(new TestGm(), () => rolls[n++] ?? 4);
     const rec = record(s);
@@ -165,10 +165,10 @@ describe('hotseat session', () => {
     await settle();
     s.request({ type: 'attempt' });
     s.request({ type: 'endTurn' });
-    expect(n).toBe(1);
+    expect(n).toBe(2);
     s.request({ type: 'move', from: sq('d5'), to: sq('e4') });
     const clash = rec.events.flatMap((e) => (e.kind === 'events' ? e.events : [])).find((e) => e.type === 'clash');
-    expect(clash).toMatchObject({ type: 'clash', winner: 'defender', shield: true, rounds: [{ attack: 1, defense: 6 }] });
+    expect(clash).toMatchObject({ type: 'clash', winner: 'defender', shield: true, rounds: [{ attack: 2, defense: 6 }] });
     // The attacking pawn lost: it is gone, the shielded pawn stays.
     expect(s.view().state.board[sq('d5')]).toBeNull();
     expect(s.view().state.board[sq('e4')]).toMatchObject({ color: 'white', type: 'pawn' });
@@ -321,7 +321,7 @@ describe('online: host and guest', () => {
     expect(o.guest.view().state.pending).toMatchObject({ color: 'black', action: 'b8 나이트를 c6로 날린다' });
     o.guest.request({ type: 'attempt' });
     await settle();
-    expect(rolls).toEqual([6]);
+    expect(rolls).toEqual([6, 6]);
     expect(o.guest.view().state.board[sq('c6')]).toMatchObject({ type: 'knight', color: 'black' });
   });
 

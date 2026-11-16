@@ -111,7 +111,7 @@ describe('automatic turn end when a special action leaves the opponent in check'
   });
 
   it('if the king was already attacked when the turn began, any attempt ends the turn (success or failure)', () => {
-    for (const roll of [6, 1]) {
+    for (const roll of [6, 2]) {
       const r = attempt(propose(kingHanging(), [{ type: 'move', from: sq('g1'), to: sq('f3') }]), roll);
       expect(r.events).toContainEqual({ type: 'autoTurnEnd', color: 'white', reason: 'check' });
       expect(r.state.turn).toBe('black');
