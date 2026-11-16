@@ -111,3 +111,18 @@ describe('holding things up', () => {
     expect(far.distanceTo(camera.position)).toBeGreaterThan(near.distanceTo(camera.position) + 1);
   });
 });
+
+describe('a second finger', () => {
+  it('while something is held, sliding up pushes it away and down brings it near; otherwise it does nothing', async () => {
+    const { onDepth, depthMoved, holdingSomething, DEPTH_PER_PIXEL } = await import('./tableDrag');
+    expect(depthMoved(-50)).toBe(false);
+    const pushed: number[] = [];
+    const stop = onDepth((a) => pushed.push(a));
+    expect(holdingSomething()).toBe(true);
+    depthMoved(-50);
+    depthMoved(20);
+    expect(pushed).toEqual([50 * DEPTH_PER_PIXEL, -20 * DEPTH_PER_PIXEL]);
+    stop();
+    expect(holdingSomething()).toBe(false);
+  });
+});

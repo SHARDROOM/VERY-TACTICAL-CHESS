@@ -5,7 +5,7 @@ import { CameraControls, Environment, Lightformer } from '@react-three/drei';
 import { fileOf, isAir, rankOf, type Board, type CapturedPiece, type Color, type FallingPiece, type Square, type TerrainCell } from '../engine';
 import { squareToWorld } from './coords';
 import { fallStart } from './boardPhysics';
-import { TableContext, type TableHands } from './tableDrag';
+import { TableContext, depthMoved, holdingSomething, type TableHands } from './tableDrag';
 import { diceObstacles } from './toys';
 import { clearChunks, restingChunks } from './debris';
 import { PieceMesh, PiecePhysicsContext, type PiecePhysics } from './PieceMesh';
@@ -228,6 +228,44 @@ const LIGHT = '#d4bf98';
 const DARK = '#7d5a3b';
 
 /**
+ * Touch screens: while one finger holds something, a second finger sliding up or down the screen
+ * pushes it farther away or brings it nearer (tableDrag.ts, onDepth).
+ */
+function TwoFingerDepth() {
+  const { gl } = useThree();
+  useEffect(() => {
+    const el = gl.domElement;
+    const down = new Map<number, number>();
+    let first: number | null = null;
+    const onDown = (e: PointerEvent) => {
+      if (first === null) first = e.pointerId;
+      else down.set(e.pointerId, e.clientY);
+    };
+    const onMove = (e: PointerEvent) => {
+      const last = down.get(e.pointerId);
+      if (last === undefined) return;
+      down.set(e.pointerId, e.clientY);
+      depthMoved(e.clientY - last);
+    };
+    const onUp = (e: PointerEvent) => {
+      down.delete(e.pointerId);
+      if (e.pointerId === first) first = null;
+    };
+    el.addEventListener('pointerdown', onDown);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+    return () => {
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
+    };
+  }, [gl]);
+  return null;
+}
+
+/**
  * Development only: lets a test script find things on screen (window.__vtcProbe): the camera,
  * the chunks lying about and the taken pieces beside the board, as screen points.
  */
@@ -360,6 +398,8 @@ export function BoardScene({
   const auras = useMemo(() => aurasOn(board), [board]);
   const click = (sq: Square) => (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
+    // A second finger steering something held is not a tap on the board.
+    if (holdingSomething()) return;
     onSquareClick(sq);
   };
   // Picking things up off the table: the camera holds still meanwhile (see CameraRig).
@@ -407,6 +447,7 @@ export function BoardScene({
       ) : (
         <CameraRig camera={camera} diceSide={diceSide} locked={!!doodle?.tool || holding} holdNow={holdNow} />
       )}
+      <TwoFingerDepth />
       {import.meta.env.DEV && <DevProbe resting={resting.current} />}
 
       <ShakeGroup shake={shake}>

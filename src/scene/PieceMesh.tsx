@@ -13,7 +13,7 @@ import { finishMaterial, type Finish } from './pieceFinish';
 import { AshPile, GATHER_SECONDS, Relic, SHATTER_SECONDS, ShardGather, ShardScatter, SmokeWisp } from './Remains';
 import { chunksOf } from './debris';
 import { seedOf, seeded } from './boardPhysics';
-import { Grip, tableObstacles, useTable } from './tableDrag';
+import { Grip, holdingSomething, onDepth, tableObstacles, useTable } from './tableDrag';
 import { LiveDrag } from './liveDrag';
 import { onToy, poseOf, readPose, tellToy } from './toys';
 import { PropOnPiece } from './PropMesh';
@@ -265,6 +265,8 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const held = useRef<{ x: number; y: number; moved: boolean; grip: Grip; grab: Vector3; target: Vector3; released: boolean } | null>(null);
   /** In the hand (or just let go of): the live simulation it follows. */
   const live = useRef<LiveDrag | null>(null);
+  /** Stops listening to a second finger (set while it is held). */
+  const stopDepth = useRef<(() => void) | null>(null);
   /** An exit being played (the remains show once it is over). */
   /** A staged exit playing: how, from when (performance.now() ms), and where it stood (world). */
   const [exiting, setExiting] = useState<{ kind: Exit; start: number; from: [number, number, number] } | null>(null);
@@ -343,11 +345,12 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
 
   // A taken piece beside the board can be picked up, carried about and let go of (or thrown).
   const pickUp = (e: ThreeEvent<PointerEvent>) => {
-    if (!captured || !table || !physics || phys.current || motion.current || exitingRef.current || carriedThere.current || live.current) return;
+    if (!captured || !table || !physics || phys.current || motion.current || exitingRef.current || carriedThere.current || live.current || holdingSomething()) return;
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     table.hold(true);
     held.current = { x: e.clientX, y: e.clientY, moved: false, grip: new Grip(e.camera, e.point), grab: e.point.clone(), target: e.point.clone(), released: false };
+    stopDepth.current = onDepth((amount) => pushHeld(amount));
   };
   /** Once it really moves: in the hand, simulated as it happens (liveDrag.ts), hanging by where it was picked up. */
   const takeInHand = (h: NonNullable<typeof held.current>) => {
@@ -375,12 +378,17 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   };
   /** The wheel, while holding it: farther away or nearer. */
   const nearer = (e: ThreeEvent<WheelEvent>) => {
+    if (!held.current) return;
+    e.stopPropagation();
+    pushHeld(e.deltaY * 0.004);
+  };
+  /** Held: farther away (+) or nearer (-), by `amount` (the wheel, or a second finger). */
+  const pushHeld = (amount: number) => {
     const h = held.current;
     if (!h) return;
-    e.stopPropagation();
     if (!h.moved) takeInHand(h);
     h.moved = true;
-    if (h.grip.push(e.deltaY * 0.004, TMP_V, table?.board())) {
+    if (h.grip.push(amount, TMP_V, table?.board())) {
       h.target.copy(TMP_V);
       live.current?.aim(h.target);
     }
@@ -388,6 +396,8 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const letGo = (e: ThreeEvent<PointerEvent>) => {
     const h = held.current;
     held.current = null;
+    stopDepth.current?.();
+    stopDepth.current = null;
     table?.hold(false);
     (e.target as Element).releasePointerCapture?.(e.pointerId);
     if (!h?.moved) return;

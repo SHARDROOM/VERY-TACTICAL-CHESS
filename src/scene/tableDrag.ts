@@ -119,6 +119,33 @@ export class Grip {
   }
 }
 
+// ---- a second finger: farther or nearer ---------------------------------------------
+
+let depth: ((amount: number) => void) | null = null;
+/** How far (world units) a second finger moving one pixel up the screen pushes the held thing away. */
+export const DEPTH_PER_PIXEL = 0.012;
+
+/**
+ * While something is held: a second finger sliding up the screen pushes it farther away, sliding
+ * down brings it nearer (the touch screen's mouse wheel). Returns the way to stop listening.
+ */
+export function onDepth(handler: (amount: number) => void): () => void {
+  depth = handler;
+  return () => {
+    if (depth === handler) depth = null;
+  };
+}
+
+/** Something is in a hand on this screen (one thing at a time: a second finger only steers it). */
+export const holdingSomething = () => depth !== null;
+
+/** A second finger moved `dy` pixels down the screen (TwoFingerDepth in BoardScene). */
+export function depthMoved(dy: number): boolean {
+  if (!depth) return false;
+  depth(-dy * DEPTH_PER_PIXEL);
+  return true;
+}
+
 /** The finger's last few points, for how hard it throws when it lets go. */
 export class Fling {
   private samples: { p: Vector3; t: number }[] = [];

@@ -7,7 +7,7 @@ import { fragmentsOf, simulateChunkThrow, simulateShatter } from './shatter';
 import { CHUNK, addChunk, chunkKey, chunkPose, chunkWaiting, chunksOf, getChunk, playChunk, removeChunks, type Chunk } from './debris';
 import { onToy, poseOf, readPose, tellToy } from './toys';
 import type { Pose } from '../session/toy';
-import { Grip, tableObstacles, useTable } from './tableDrag';
+import { Grip, holdingSomething, onDepth, tableObstacles, useTable } from './tableDrag';
 import { LiveDrag } from './liveDrag';
 
 /*
@@ -124,6 +124,8 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
   const drag = useRef<{ key: string; x: number; y: number; moved: boolean; grip: Grip; grab: Vector3; target: Vector3; released: boolean } | null>(null);
   /** A chunk in this screen's hand (or just let go of): the live simulation it follows. */
   const live = useRef<{ key: string; hand: LiveDrag } | null>(null);
+  /** Stops listening to a second finger (set while one is held). */
+  const stopDepth = useRef<(() => void) | null>(null);
   useEffect(() => () => live.current?.hand.free(), []);
   /** Where another screen is carrying a chunk (it is eased there). */
   const carried = useRef(new Map<string, { p: Vector3; q: Quaternion }>());
@@ -209,11 +211,12 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
   const down = (i: number) => (e: ThreeEvent<PointerEvent>) => {
     const c = getChunk(chunkKey(id, i));
     // Still flying (its burst, a shove), in someone's hand, or one of ours is: it cannot be caught.
-    if (!c || c.held || live.current || (c.track && performance.now() < c.track.start + c.track.steps * c.track.dt * 1000)) return;
+    if (!c || c.held || live.current || holdingSomething() || (c.track && performance.now() < c.track.start + c.track.steps * c.track.dt * 1000)) return;
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     table?.hold(true);
     drag.current = { key: c.key, x: e.clientX, y: e.clientY, moved: false, grip: new Grip(e.camera, e.point), grab: e.point.clone(), target: e.point.clone(), released: false };
+    stopDepth.current = onDepth((amount) => pushHeld(amount));
   };
   /** Once it really moves: in the hand, simulated as it happens, hanging by where it was picked up. */
   const takeInHand = (d: NonNullable<typeof drag.current>, c: Chunk) => {
@@ -244,13 +247,18 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
   };
   /** The wheel, while holding one: farther away or nearer. */
   const wheel = (e: ThreeEvent<WheelEvent>) => {
+    if (!drag.current) return;
+    e.stopPropagation();
+    pushHeld(e.deltaY * 0.004);
+  };
+  /** The one held: farther away (+) or nearer (-), by `amount` (the wheel, or a second finger). */
+  const pushHeld = (amount: number) => {
     const d = drag.current;
     const c = d && getChunk(d.key);
     if (!d || !c) return;
-    e.stopPropagation();
     if (!d.moved) takeInHand(d, c);
     d.moved = true;
-    if (d.grip.push(e.deltaY * 0.004, TMP_P, table?.board())) {
+    if (d.grip.push(amount, TMP_P, table?.board())) {
       d.target.copy(TMP_P);
       live.current?.hand.aim(d.target);
     }
@@ -258,6 +266,8 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
   const up = (e: ThreeEvent<PointerEvent>) => {
     const d = drag.current;
     drag.current = null;
+    stopDepth.current?.();
+    stopDepth.current = null;
     table?.hold(false);
     (e.target as Element).releasePointerCapture?.(e.pointerId);
     if (!d?.moved) return;
