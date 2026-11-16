@@ -3,7 +3,7 @@ import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js'
 import type { PieceType } from '../engine';
 import { loadPhysics } from '../dice3d/simulate';
 import { pieceParts } from './pieceGeometry';
-import { addPieceColliders } from './piecePhysics';
+import { addObstacles, type Obstacles } from './piecePhysics';
 import { seeded } from './boardPhysics';
 import { TABLE_TOP_Y } from './WoodTable';
 
@@ -98,11 +98,7 @@ function seedOf(id: string): number {
   return h >>> 0;
 }
 
-/** What else is on the table, solid but not moving: pieces on the board, and chunks already lying about. */
-export interface Obstacles {
-  pieces: { type: PieceType; rider?: PieceType; at: [number, number, number] }[];
-  chunks: { hull: Float32Array; p: Vector3; q: Quaternion }[];
-}
+export type { Obstacles } from './piecePhysics';
 
 type Rapier = Awaited<ReturnType<typeof loadPhysics>>;
 
@@ -112,15 +108,7 @@ function solids(RAPIER: Rapier, world: InstanceType<Rapier['World']>, o?: Obstac
   world.createCollider(RAPIER.ColliderDesc.cuboid(14, 0.3, 9).setTranslation(0, TABLE_TOP_Y - 0.3, 0).setFriction(0.8).setRestitution(0.15), fixed);
   const boardH = -TABLE_TOP_Y / 2;
   world.createCollider(RAPIER.ColliderDesc.cuboid(4.6, boardH, 4.6).setTranslation(0, TABLE_TOP_Y + boardH, 0).setFriction(0.7).setRestitution(0.2), fixed);
-  for (const p of o?.pieces ?? []) {
-    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(...p.at));
-    addPieceColliders(RAPIER, world, b, p.type, { rider: p.rider, friction: 0.5, restitution: 0.25, footDensity: 1 });
-  }
-  for (const c of o?.chunks ?? []) {
-    const hull = RAPIER.ColliderDesc.convexHull(c.hull);
-    if (!hull) continue;
-    world.createCollider(hull.setTranslation(c.p.x, c.p.y, c.p.z).setRotation({ x: c.q.x, y: c.q.y, z: c.q.z, w: c.q.w }).setFriction(0.6).setRestitution(0.2), fixed);
-  }
+  if (o) addObstacles(RAPIER, world, fixed, o);
 }
 
 /**
@@ -195,11 +183,12 @@ async function shatter(type: PieceType, seed: number, at: [number, number, numbe
 }
 
 /**
- * A chunk thrown from the player's finger: from `p`, `q` at `velocity`, spinning, onto the table
- * and the board, off the obstacles, until it lies still.
+ * A chunk thrown from the player's finger: from `p`, `q` at `velocity`, spinning as `seed` says
+ * (the same on every screen), onto the table and the board, off the obstacles, until it lies still.
  */
-export async function simulateChunkThrow(hull: Float32Array, p: Vector3, q: Quaternion, velocity: Vector3, obstacles?: Obstacles): Promise<ShatterRun> {
+export async function simulateChunkThrow(hull: Float32Array, p: Vector3, q: Quaternion, velocity: Vector3, seed: number, obstacles?: Obstacles): Promise<ShatterRun> {
   const RAPIER = await loadPhysics();
+  const random = seeded(seed);
   const world = new RAPIER.World({ x: 0, y: -G, z: 0 });
   world.timestep = DT;
   try {
@@ -210,7 +199,7 @@ export async function simulateChunkThrow(hull: Float32Array, p: Vector3, q: Quat
         .setTranslation(p.x, p.y, p.z)
         .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
         .setLinvel(velocity.x, velocity.y, velocity.z)
-        .setAngvel({ x: velocity.z * 1.5 + (Math.random() - 0.5) * speed, y: (Math.random() - 0.5) * 3, z: -velocity.x * 1.5 })
+        .setAngvel({ x: velocity.z * 1.5 + (random() - 0.5) * speed, y: (random() - 0.5) * 3, z: -velocity.x * 1.5 })
         .setLinearDamping(0.12)
         .setAngularDamping(0.45)
         .setCcdEnabled(true),

@@ -7,6 +7,7 @@ import { Emitter } from './emitter';
 import { PROTOCOL_VERSION, parseGuestMessage, type HostMessage, type RoomSnapshot } from './protocol';
 import { startHeartbeat } from './heartbeat';
 import { DoodleStore, type DoodleChange, type DoodleOp } from './doodle';
+import type { ToyOp } from './toy';
 import {
   MAX_MEMBERS,
   cleanChat,
@@ -130,6 +131,10 @@ export class HostSession implements Session {
           return this.roomChanged();
         case 'doodle':
           return this.applyDoodle(msg.op, member.key, false);
+        case 'toy':
+          // On to everyone else, and shown here.
+          this.broadcast({ t: 'toy', op: msg.op }, member);
+          return this.emitter.emit({ kind: 'toy', op: msg.op });
         case 'req':
           if (member.role === 'spectator') return this.sendTo(member, { t: 'notice', text: '관전자는 수를 둘 수 없습니다.', tone: 'warn' });
           void this.authority.handle(msg.req, member.role);
@@ -223,6 +228,10 @@ export class HostSession implements Session {
 
   doodle(op: DoodleOp): void {
     this.applyDoodle(op, HOST_KEY, true);
+  }
+
+  toy(op: ToyOp): void {
+    this.broadcast({ t: 'toy', op });
   }
 
   setGm(gm: GameMaster): void {

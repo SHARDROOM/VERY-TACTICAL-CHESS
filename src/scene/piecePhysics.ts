@@ -22,6 +22,8 @@ export interface PieceRun {
 }
 
 export interface Obstacle {
+  /** Whose (a taken piece's id), when it matters. */
+  id?: string;
   type: PieceType;
   scale: number;
   pose: BodyPose;
@@ -99,6 +101,31 @@ export function addPieceColliders(
   }
 }
 
+/**
+ * Things on the table a thrown piece or chunk can hit, solid but not moving: pieces on the board
+ * (with their riders), chunks of shattered pieces, taken pieces beside the board, the dice.
+ */
+export interface Obstacles {
+  pieces: { type: PieceType; rider?: PieceType; at: [number, number, number] }[];
+  chunks: { hull: Float32Array; p: Vector3; q: Quaternion }[];
+  taken?: Obstacle[];
+  dice?: { hull: Float32Array; p: Vector3; q: Quaternion }[];
+}
+
+/** The obstacles as fixed colliders (on `fixed`, or bodies of their own for the pieces). */
+export function addObstacles(RAPIER: Rapier, world: InstanceType<Rapier['World']>, fixed: InstanceType<Rapier['RigidBody']>, o: Obstacles): void {
+  for (const p of o.pieces) {
+    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(...p.at));
+    addPieceColliders(RAPIER, world, b, p.type, { rider: p.rider, friction: 0.5, restitution: 0.25, footDensity: 1 });
+  }
+  const at = (hull: ReturnType<typeof RAPIER.ColliderDesc.convexHull>, p: Vector3, q: Quaternion, friction: number, restitution: number) => {
+    if (hull) world.createCollider(hull.setTranslation(p.x, p.y, p.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }).setFriction(friction).setRestitution(restitution), fixed);
+  };
+  for (const c of o.chunks) at(RAPIER.ColliderDesc.convexHull(c.hull), c.p, c.q, 0.6, 0.2);
+  for (const t of o.taken ?? []) at(RAPIER.ColliderDesc.convexHull(scaled(hullPoints(t.type), t.scale)), t.pose.position, t.pose.quaternion, 0.5, 0.25);
+  for (const d of o.dice ?? []) at(RAPIER.ColliderDesc.convexHull(d.hull), d.p, d.q, 0.5, 0.35);
+}
+
 export interface SimOptions {
   type: PieceType;
   /** Whoever rides it, glued on top. */
@@ -109,6 +136,8 @@ export interface SimOptions {
   spin: Vector3;
   /** Pieces already lying beside the board, solid but not moving. */
   obstacles?: Obstacle[];
+  /** Anything else it can hit (the board's pieces, chunks, the dice). */
+  extra?: Obstacles;
   diceSide: 1 | -1;
   maxSeconds?: number;
   /** How lively the piece is on landing (defaults suit a piece knocked across the table). */
@@ -145,6 +174,7 @@ export async function simulatePiece(o: SimOptions): Promise<PieceRun> {
     ]) {
       solid(RAPIER.ColliderDesc.cuboid(w, wallH / 2, d).setTranslation(x, TABLE_TOP_Y + wallH / 2, z));
     }
+    if (o.extra) addObstacles(RAPIER, world, fixed, o.extra);
     for (const ob of o.obstacles ?? []) {
       const hull = RAPIER.ColliderDesc.convexHull(scaled(hullPoints(ob.type), ob.scale));
       if (!hull) continue;

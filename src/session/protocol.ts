@@ -1,6 +1,7 @@
 import { PROMOTION_TYPES, SQUARES, type GameEvent, type GameState } from '../engine';
 import { cleanChat, cleanName, type ChatMessage, type Member, type NoticeTone, type Phase, type Request, type TimerSnapshot } from './types';
 import { parseDoodleChange, parseDoodleOp, type Doodle, type DoodleChange, type DoodleOp } from './doodle';
+import { parseToyOp, type ToyOp } from './toy';
 
 
 /** 3: the air layer (128-square boards, falling pieces). */
@@ -16,7 +17,9 @@ export type GuestMessage =
   | { t: 'ping' }
   | { t: 'chat'; text: string }
   | { t: 'name'; name: string }
-  | { t: 'doodle'; op: DoodleOp };
+  | { t: 'doodle'; op: DoodleOp }
+  /** Something picked up off the table (passed on to everyone else as it happens). */
+  | { t: 'toy'; op: ToyOp };
 
 export interface RoomSnapshot {
   phase: Phase;
@@ -46,7 +49,9 @@ export type HostMessage =
   | { t: 'full' }
   | { t: 'ping' }
   | { t: 'chat'; message: ChatMessage }
-  | { t: 'doodle'; change: DoodleChange };
+  | { t: 'doodle'; change: DoodleChange }
+  /** Someone else is playing with what lies about the table. */
+  | { t: 'toy'; op: ToyOp };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isSquare = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < SQUARES;
@@ -72,6 +77,10 @@ export function parseGuestMessage(raw: unknown): GuestMessage | null {
   if (raw.t === 'doodle') {
     const op = parseDoodleOp(raw.op);
     return op ? { t: 'doodle', op } : null;
+  }
+  if (raw.t === 'toy') {
+    const op = parseToyOp(raw.op);
+    return op ? { t: 'toy', op } : null;
   }
   if (raw.t !== 'req' || !isObj(raw.req)) return null;
   const r = raw.req;
@@ -143,6 +152,10 @@ export function parseHostMessage(raw: unknown): HostMessage | null {
     case 'doodle': {
       const change = parseDoodleChange(raw.change);
       return change ? { t: 'doodle', change } : null;
+    }
+    case 'toy': {
+      const op = parseToyOp(raw.op);
+      return op ? { t: 'toy', op } : null;
     }
     default:
       return null;

@@ -6,6 +6,7 @@ import { fileOf, isAir, rankOf, type Board, type CapturedPiece, type Color, type
 import { squareToWorld } from './coords';
 import { fallStart } from './boardPhysics';
 import { TableContext, type TableHands } from './tableDrag';
+import { diceObstacles } from './toys';
 import { clearChunks, restingChunks } from './debris';
 import { PieceMesh, PiecePhysicsContext, type PiecePhysics } from './PieceMesh';
 import type { Obstacle } from './piecePhysics';
@@ -102,9 +103,10 @@ export function graveyardLayout(captured: CapturedPiece[], side: 1 | -1): { piec
     const col = i % 7;
     const row = Math.floor(i / 7);
     const towardWhite = piece.color === 'black' ? 1 : -1;
+    // Spaced for pieces at their own size.
     return {
       piece,
-      position: [side * (5.75 + col * 0.58), TABLE_TOP_Y, towardWhite * (2.45 + row * 0.72)] as [number, number, number],
+      position: [side * (5.8 + col * 0.86), TABLE_TOP_Y, towardWhite * (2.5 + row * 0.95)] as [number, number, number],
     };
   });
 }
@@ -241,6 +243,7 @@ function DevProbe({ resting }: { resting: Map<string, Obstacle> }) {
       camera: camera.position.toArray().map((n) => Math.round(n * 100) / 100),
       chunks: restingChunks().map((c) => ({ key: c.key, at: c.p.toArray().map((n) => Math.round(n * 100) / 100), screen: screen(c.p) })),
       taken: [...resting.entries()].map(([id, o]) => ({ id, at: o.pose.position.toArray().map((n) => Math.round(n * 100) / 100), screen: screen(o.pose.position.clone().setY(o.pose.position.y + 0.25)) })),
+      dice: diceObstacles().map((d) => ({ at: d.p.toArray().map((n) => Math.round(n * 100) / 100), screen: screen(d.p) })),
     });
   }, [camera, size, resting]);
   return null;
@@ -371,6 +374,7 @@ export function BoardScene({
         setHolding(on);
       },
       board: () => boardNow.current,
+      taken: () => [...resting.current.entries()].map(([id, o]) => ({ ...o, id })),
     }),
     [],
   );

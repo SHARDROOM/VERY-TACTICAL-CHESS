@@ -636,3 +636,34 @@ describe('doodles', () => {
     expect(parseGuestMessage({ t: 'doodle', op: { op: 'add', doodle: { ...line, color: 'url(evil)' } } })).toBeNull();
   });
 });
+
+describe('playing with the table (toys)', () => {
+  const pose: [number, number, number, number, number, number, number] = [6, -0.2, 2.5, 0, 0, 0, 1];
+
+  it('what one screen picks up and throws, every other screen is told (never itself)', async () => {
+    const o = online();
+    const watcher = join(o.host);
+    await o.begin();
+    const seen = { host: [] as string[], guest: [] as string[], watcher: [] as string[] };
+    o.host.subscribe((e) => e.kind === 'toy' && seen.host.push(`${e.op.op}:${e.op.id}`));
+    o.guest.subscribe((e) => e.kind === 'toy' && seen.guest.push(`${e.op.op}:${e.op.id}`));
+    watcher.guest.subscribe((e) => e.kind === 'toy' && seen.watcher.push(`${e.op.op}:${e.op.id}`));
+    o.guest.toy({ op: 'hold', id: 'black-pawn-4-6', pose });
+    o.host.toy({ op: 'drop', id: 'chunk:white-rook-0-0#3', pose, velocity: [1, 1.2, 0], seed: 7, final: pose });
+    await settle();
+    expect(seen).toEqual({
+      host: ['hold:black-pawn-4-6'],
+      guest: ['drop:chunk:white-rook-0-0#3'],
+      // (In whatever order they arrive: the guest's goes through the host first.)
+      watcher: expect.arrayContaining(['hold:black-pawn-4-6', 'drop:chunk:white-rook-0-0#3']),
+    });
+    expect(seen.watcher).toHaveLength(2);
+  });
+
+  it('junk is refused', () => {
+    expect(parseGuestMessage({ t: 'toy', op: { op: 'hold', id: 'x', pose: [0, 0, 0, 0, 0, 0] } })).toBeNull();
+    expect(parseGuestMessage({ t: 'toy', op: { op: 'hold', id: 'x', pose: [1e9, 0, 0, 0, 0, 0, 1] } })).toBeNull();
+    expect(parseGuestMessage({ t: 'toy', op: { op: 'drop', id: 'x', pose, velocity: [0, 0], seed: 1, final: pose } })).toBeNull();
+    expect(parseGuestMessage({ t: 'toy', op: { op: 'hold', id: 'x', pose } })).toEqual({ t: 'toy', op: { op: 'hold', id: 'x', pose } });
+  });
+});

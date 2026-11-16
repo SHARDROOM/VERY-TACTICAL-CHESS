@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Quaternion, Ray, Vector3 } from 'three';
 import { createStateFrom, parseSquare } from '../engine';
 import { CHUNK, addChunk, chunkPose, clearChunks, getChunk, playChunk, restingChunks } from './debris';
-import { LIFT, carryPoint } from './tableDrag';
+import { LIFT, TABLE_LIFT, carryPoint } from './tableDrag';
 import { TABLE_TOP_Y } from './WoodTable';
 import { simulateRomp } from './boardPhysics';
 import { fragmentsOf } from './shatter';
@@ -34,7 +34,12 @@ describe('chunks lying about', () => {
     expect(carryPoint(new Ray(new Vector3(1, 10, 1), down), p)).toBe(true);
     expect(p.y).toBeCloseTo(LIFT);
     expect(carryPoint(new Ray(new Vector3(7, 10, 1), down), p)).toBe(true);
-    expect(p.y).toBeCloseTo(TABLE_TOP_Y + LIFT);
+    expect(p.y).toBeCloseTo(TABLE_TOP_Y + TABLE_LIFT);
+    // Over a square with a king on it: above the king.
+    const board = createStateFrom({ e1: { color: 'white', type: 'king' }, e8: { color: 'black', type: 'king' } }).board;
+    const [kx, , kz] = squareToWorld(parseSquare('e1')!);
+    expect(carryPoint(new Ray(new Vector3(kx, 10, kz), down), p, board)).toBe(true);
+    expect(p.y).toBeGreaterThan(1.1);
   });
 
   it('a piece sliding through a chunk pushes it out of the way', async () => {
@@ -52,5 +57,29 @@ describe('chunks lying about', () => {
     expect(t).toBeDefined();
     const last = t!.length - 7;
     expect(Math.hypot(t![last] - x, t![last + 2] - z)).toBeGreaterThan(0.3);
+  });
+});
+
+describe('things thrown about the table hit the dice', () => {
+  it('a taken piece thrown along the table stops against a die in its way', async () => {
+    const { simulatePiece } = await import('./piecePhysics');
+    const { d20Vertices } = await import('../dice3d/d20');
+    const hull = Float32Array.from(d20Vertices(0.42).flatMap((v) => [v.x, v.y, v.z]));
+    const throwAt = (dice: { hull: Float32Array; p: Vector3; q: Quaternion }[]) =>
+      simulatePiece({
+        type: 'pawn',
+        scale: 1,
+        start: { position: new Vector3(12.5, TABLE_TOP_Y + 0.05, 5), quaternion: new Quaternion() },
+        velocity: new Vector3(-6, 0, 0),
+        spin: new Vector3(0, 0, 0),
+        extra: { pieces: [], chunks: [], dice },
+        diceSide: -1,
+        maxSeconds: 3,
+      });
+    const free = await throwAt([]);
+    // Left alone it slides about a square and a bit; with a die there it stops short of it.
+    const blocked = await throwAt([{ hull, p: new Vector3(11.5, TABLE_TOP_Y + 0.42, 5), q: new Quaternion() }]);
+    expect(free.final.position.x).toBeLessThan(11.6);
+    expect(blocked.final.position.x).toBeGreaterThan(11.9);
   });
 });

@@ -4,7 +4,9 @@ import { IcosahedronGeometry, LatheGeometry, MeshBasicMaterial, Quaternion, Vect
 import type { Color, PieceType } from '../engine';
 import { featureParts } from './pieceGeometry';
 import { fragmentsOf, simulateChunkThrow, simulateShatter } from './shatter';
-import { addChunk, chunkKey, chunkPose, chunkWaiting, chunksOf, getChunk, playChunk, removeChunks } from './debris';
+import { CHUNK, addChunk, chunkKey, chunkPose, chunkWaiting, chunksOf, getChunk, playChunk, removeChunks, type Chunk } from './debris';
+import { newSeed, onToy, poseOf, readPose, tellToy } from './toys';
+import type { Pose } from '../session/toy';
 import { Fling, carryPoint, tableObstacles, useTable } from './tableDrag';
 
 /*
@@ -95,8 +97,7 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
     // Already lying about (shown before): they stay where they are.
     if (chunksOf(id).length) return setReady(true);
     let alive = true;
-    const board = table?.board();
-    simulateShatter(type, id, [cx, cy, cz], board ? tableObstacles(board, { square }) : undefined)
+    simulateShatter(type, id, [cx, cy, cz], table ? tableObstacles(table, { square }) : undefined)
       .then((run) => {
         if (!alive) return;
         if (!chunksOf(id).length) {
@@ -120,6 +121,51 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
   const refs = useRef<(Mesh | null)[]>([]);
   const look = LOOK[color];
   const drag = useRef<{ key: string; x: number; y: number; moved: boolean; fling: Fling } | null>(null);
+  /** Where another screen is carrying a chunk (it is eased there). */
+  const carried = useRef(new Map<string, { p: Vector3; q: Quaternion }>());
+
+  /** Lets a chunk go from where it is held: it falls, or flies as thrown, and comes to rest. */
+  const drop = (c: Chunk, velocity: Vector3, seed: number, final?: Pose) => {
+    const from = { p: c.p.clone(), q: c.q.clone() };
+    return simulateChunkThrow(c.hull, from.p, from.q, velocity, seed, table ? tableObstacles(table, { chunkKey: c.key }) : undefined)
+      .then((run) => {
+        c.held = false;
+        playChunk(c, run.tracks[0], run.steps, run.dt, performance.now());
+        // Thrown on another screen: it ends where that screen says, whatever small difference ours made.
+        if (final) readPose(final, c.p, c.q);
+        return { from, run };
+      })
+      .catch(() => {
+        c.held = false;
+        return null;
+      });
+  };
+
+  // Other screens playing with these chunks.
+  useEffect(() => {
+    if (!ready) return;
+    const offs = fragments.map((_, i) => {
+      const key = chunkKey(id, i);
+      return onToy(CHUNK + key, (op) => {
+        const c = getChunk(key);
+        if (!c) return;
+        if (op.op === 'hold') {
+          c.held = true;
+          c.track = undefined;
+          const at = carried.current.get(key) ?? { p: c.p.clone(), q: c.q.clone() };
+          readPose(op.pose, at.p, at.q);
+          carried.current.set(key, at);
+          return;
+        }
+        carried.current.delete(key);
+        c.held = true;
+        readPose(op.pose, c.p, c.q);
+        void drop(c, new Vector3(...op.velocity), op.seed, op.final);
+      });
+    });
+    return () => offs.forEach((off) => off());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, id, fragments]);
 
   useFrame(() => {
     if (!ready) return;
@@ -130,6 +176,11 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
       if (!m) return;
       m.visible = !!c && !chunkWaiting(c, now);
       if (!c || !m.visible) return;
+      const away = carried.current.get(c.key);
+      if (away && c.held) {
+        c.p.lerp(away.p, 0.3);
+        c.q.slerp(away.q, 0.3);
+      }
       if (c.held) {
         m.position.copy(c.p);
         m.quaternion.copy(c.q);
@@ -140,8 +191,8 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
   if (!ready) return null;
   const down = (i: number) => (e: ThreeEvent<PointerEvent>) => {
     const c = getChunk(chunkKey(id, i));
-    // Still flying (its burst, a shove): it cannot be caught.
-    if (!c || (c.track && performance.now() < c.track.start + c.track.steps * c.track.dt * 1000)) return;
+    // Still flying (its burst, a shove), or in someone else's hand: it cannot be caught.
+    if (!c || c.held || (c.track && performance.now() < c.track.start + c.track.steps * c.track.dt * 1000)) return;
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     table?.hold(true);
@@ -154,9 +205,10 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
     if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
     d.moved = true;
     c.held = true;
-    if (carryPoint(e.ray, TMP_P)) {
+    if (carryPoint(e.ray, TMP_P, table?.board())) {
       c.p.copy(TMP_P);
       d.fling.add(TMP_P);
+      tellToy({ op: 'hold', id: CHUNK + c.key, pose: poseOf(c.p, c.q) });
     }
   };
   const up = (e: ThreeEvent<PointerEvent>) => {
@@ -166,16 +218,21 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
     (e.target as Element).releasePointerCapture?.(e.pointerId);
     const c = d && getChunk(d.key);
     if (!d || !c || !d.moved) return;
-    // Let go: it falls (or flies, if it was swung) onto whatever is below.
-    const board = table?.board();
-    simulateChunkThrow(c.hull, c.p.clone(), c.q.clone(), d.fling.velocity(), board ? tableObstacles(board, { chunkKey: c.key }) : undefined)
-      .then((run) => {
-        c.held = false;
-        playChunk(c, run.tracks[0], run.steps, run.dt, performance.now());
-      })
-      .catch(() => {
-        c.held = false;
+    const velocity = d.fling.velocity();
+    const seed = newSeed();
+    void drop(c, velocity, seed).then((done) => {
+      if (!done) return;
+      const k = (done.run.steps - 1) * 7;
+      const f = done.run.tracks[0];
+      tellToy({
+        op: 'drop',
+        id: CHUNK + c.key,
+        pose: poseOf(done.from.p, done.from.q),
+        velocity: [velocity.x, velocity.y, velocity.z],
+        seed,
+        final: poseOf(new Vector3(f[k], f[k + 1], f[k + 2]), new Quaternion(f[k + 3], f[k + 4], f[k + 5], f[k + 6])),
       });
+    });
   };
   return (
     <group>

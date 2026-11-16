@@ -4,6 +4,7 @@ import type { GameMaster } from '../gm/types';
 import { Authority, type AuthorityEvent, type FallSimulator } from './authority';
 import { Emitter } from './emitter';
 import { DoodleStore, type DoodleOp } from './doodle';
+import type { ToyOp } from './toy';
 import { cleanChat, cleanRules, pushChat, type ChatMessage, type Member, type Phase, type Request, type Role, type Session, type SessionView, type TurnTimer } from './types';
 
 const LOCAL_KEY = 'local';
@@ -78,6 +79,11 @@ export class LocalSession implements Session {
   }
 
   setName(): void {}
+
+  /** One screen: nobody else to tell. */
+  toy(op: ToyOp): void {
+    void op;
+  }
 
   doodle(op: DoodleOp): void {
     if (!this.authority.state.rules.doodle && op.op === 'add') return;

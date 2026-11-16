@@ -43,6 +43,13 @@ const SLIDE_DECEL = ((SLIDE_FRICTION + 0.55) / 2) * G;
 /** Slides this long (in squares) or longer come in too fast and topple. */
 export const TOPPLE_FROM = 3;
 
+/** A number from a string (a piece's id), to seed with. */
+export function seedOf(id: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
 /** A small seeded random, so a move looks the same on every screen. */
 export function seeded(seed: number): () => number {
   let a = seed >>> 0 || 1;

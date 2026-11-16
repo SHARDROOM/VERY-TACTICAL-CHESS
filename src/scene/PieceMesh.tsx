@@ -5,14 +5,16 @@ import { BURN, CORE_TAGS, RIDE, SHIELD, STUN, hasTag, type Color, type Entrance,
 import { PIECE_HEIGHT, pieceParts } from './pieceGeometry';
 import { FoldingBadges, ShieldBubble, StunStars, type Chip } from './TagEffects';
 import { playSfx } from '../audio/sfx';
-import { ballistic, simulatePiece, tumble, type Obstacle, type PieceRun } from './piecePhysics';
+import { ballistic, simulatePiece, tumble, type BodyPose, type Obstacle, type PieceRun } from './piecePhysics';
 import { TABLE_TOP_Y } from './WoodTable';
 import { actPose, easeInOut, entrancePose, stylePose, swapPose, swerve, type PieceDirection, type Pose } from './pieceMotion';
 import { AIR_Y, squareToWorld } from './coords';
 import { finishMaterial, type Finish } from './pieceFinish';
 import { AshPile, GATHER_SECONDS, Relic, SHATTER_SECONDS, ShardGather, ShardScatter, SmokeWisp } from './Remains';
 import { chunksOf } from './debris';
-import { Fling, carryPoint, useTable } from './tableDrag';
+import { seedOf, seeded } from './boardPhysics';
+import { Fling, carryPoint, tableObstacles, useTable } from './tableDrag';
+import { newSeed, onToy, poseOf, readPose, tellToy } from './toys';
 import { PropOnPiece } from './PropMesh';
 
 /** What the pieces share for physics: which side the dice are on, and where taken pieces lie. */
@@ -125,7 +127,8 @@ interface Props {
   onHover?: (hovering: boolean) => void;
 }
 
-const CAPTURED_SCALE = 0.62;
+/** Taken pieces keep their size beside the board. */
+const CAPTURED_SCALE = 1;
 /** Pieces landing on the board (dropped in or flung) thud down and stay near where they land. */
 const LANDING = { restitution: 0.02, friction: 1.2, angularDamping: 3 };
 
@@ -140,6 +143,8 @@ interface PhysicsMotion {
   toScale: number;
   /** After the flight: stand up on this spot. */
   settleTo: Vector3 | null;
+  /** Thrown on another screen: where it comes to rest there (it ends there, whatever ours made). */
+  endAt?: BodyPose;
   settle: { from: Vector3; fromQ: Quaternion; at: number; duration: number; hop: number } | null;
   sounded: number;
   /** Used if physics cannot run. */
@@ -295,8 +300,16 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const lastTarget = useRef(`${position[0]},${position[1]},${position[2]},${targetScale}`);
 
   /** Starts a physics flight; until it is computed the piece waits where it is. */
-  const launch = (purpose: PhysicsMotion['purpose'], fallback: Motion, opts: Parameters<typeof simulatePiece>[0], settleTo: Vector3 | null, delay = 0) => {
+  const launch = (
+    purpose: PhysicsMotion['purpose'],
+    fallback: Motion,
+    opts: Parameters<typeof simulatePiece>[0],
+    settleTo: Vector3 | null,
+    delay = 0,
+    more: { endAt?: BodyPose; onRun?: (run: PieceRun) => void } = {},
+  ) => {
     const m: PhysicsMotion = {
+      ...(more.endAt && { endAt: more.endAt }),
       purpose,
       run: null,
       startedAt: null,
@@ -314,7 +327,8 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       .then((run) => {
         if (phys.current !== m) return;
         m.run = run;
-        if ((purpose === 'toss' || purpose === 'fidget') && physics) physics.resting.set(piece.id, { type: piece.type, scale: opts.scale, pose: run.final });
+        if ((purpose === 'toss' || purpose === 'fidget') && physics) physics.resting.set(piece.id, { type: piece.type, scale: opts.scale, pose: more.endAt ?? run.final });
+        more.onRun?.(run);
       })
       .catch(() => {
         if (phys.current !== m) return;
@@ -326,7 +340,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
 
   // A taken piece beside the board can be picked up, carried about and let go of (or thrown).
   const pickUp = (e: ThreeEvent<PointerEvent>) => {
-    if (!captured || !table || !physics || phys.current || motion.current || exitingRef.current) return;
+    if (!captured || !table || !physics || phys.current || motion.current || exitingRef.current || carriedThere.current) return;
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     table.hold(true);
@@ -337,9 +351,10 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     if (!h) return;
     if (!h.moved && Math.hypot(e.clientX - h.x, e.clientY - h.y) < 6) return;
     h.moved = true;
-    if (carryPoint(e.ray, TMP_V)) {
+    if (carryPoint(e.ray, TMP_V, table?.board())) {
       shownAt.current.copy(TMP_V);
       h.fling.add(TMP_V);
+      tellToy({ op: 'hold', id: piece.id, pose: poseOf(shownAt.current, shownQ.current) });
     }
   };
   const letGo = (e: ThreeEvent<PointerEvent>) => {
@@ -349,7 +364,22 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     (e.target as Element).releasePointerCapture?.(e.pointerId);
     if (!h?.moved || !physics) return;
     const velocity = h.fling.velocity();
+    const seed = newSeed();
     const at = shownAt.current.clone();
+    const q = shownQ.current.clone();
+    throwTaken(at, q, velocity, seed, undefined, (run) =>
+      tellToy({ op: 'drop', id: piece.id, pose: poseOf(at, q), velocity: [velocity.x, velocity.y, velocity.z], seed, final: poseOf(run.final.position, run.final.quaternion) }),
+    );
+  };
+
+  /**
+   * A taken piece let go of at `at` (turned `q`) at `velocity`, spun as `seed` says: it falls or
+   * flies off the table, the board's pieces, the chunks, the other taken pieces and the dice.
+   */
+  const throwTaken = (at: Vector3, q: Quaternion, velocity: Vector3, seed: number, endAt?: BodyPose, onRun?: (run: PieceRun) => void) => {
+    if (!physics) return;
+    shownAt.current.copy(at);
+    shownQ.current.copy(q);
     const still: Motion = { from: at, to: at, fromScale: shownScale.current, toScale: shownScale.current, delay: 0, duration: 0.2, arc: 0, startedAt: null, kind: 'captured' };
     launch(
       'fidget',
@@ -357,16 +387,42 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       {
         type: piece.type,
         scale: shownScale.current,
-        start: { position: at, quaternion: shownQ.current.clone() },
+        start: { position: at.clone(), quaternion: q.clone() },
         velocity,
-        spin: tumble(velocity.lengthSq() > 0.01 ? velocity : new Vector3(0.2, 0, 0), 0.5 + velocity.length() * 0.6),
-        obstacles: [...physics.resting.entries()].filter(([id]) => id !== piece.id).map(([, o]) => o),
+        spin: tumble(velocity.lengthSq() > 0.01 ? velocity : new Vector3(0.2, 0, 0), 0.5 + velocity.length() * 0.6, seeded(seed)),
+        extra: table ? tableObstacles(table, { takenId: piece.id }) : undefined,
         diceSide: physics.diceSide,
         maxSeconds: 4,
       },
       null,
+      0,
+      { endAt, onRun },
     );
   };
+
+  // Another screen playing with this taken piece: carried there (eased after), or let go of.
+  const carriedThere = useRef<BodyPose | null>(null);
+  useEffect(() => {
+    if (!captured) return;
+    return onToy(piece.id, (op) => {
+      if (op.op === 'hold') {
+        phys.current = null;
+        motion.current = null;
+        const to = carriedThere.current ?? { position: new Vector3(), quaternion: new Quaternion() };
+        readPose(op.pose, to.position, to.quaternion);
+        carriedThere.current = to;
+        return;
+      }
+      carriedThere.current = null;
+      const at = new Vector3();
+      const q = new Quaternion();
+      readPose(op.pose, at, q);
+      const end = { position: new Vector3(), quaternion: new Quaternion() };
+      readPose(op.final, end.position, end.quaternion);
+      throwTaken(at, q, new Vector3(...op.velocity), op.seed, end);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captured, piece.id]);
 
   /** Burns down, shatters, vanishes or sinks on the spot `from`, then turns up beside the board at `to`. */
   const beginExit = (exit: Exit, from: Vector3, to: Vector3, delay: number) => {
@@ -593,7 +649,9 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       }
       // Knocked off its square when the attacker lands, tumbling across the table to the side.
       const start = from.clone().setY(Math.max(from.y, 0) + 0.02);
-      const velocity = ballistic(start, { x: to.x + (Math.random() - 0.5) * 0.6, z: to.z + (Math.random() - 0.5) * 0.6 }, TABLE_TOP_Y, 4.2 + Math.random() * 1.6);
+      // Seeded by the piece, so it lands in the same place on every screen.
+      const random = seeded(seedOf(piece.id));
+      const velocity = ballistic(start, { x: to.x + (random() - 0.5) * 0.6, z: to.z + (random() - 0.5) * 0.6 }, TABLE_TOP_Y, 4.2 + random() * 1.6);
       launch(
         'toss',
         scripted,
@@ -602,7 +660,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
           scale: CAPTURED_SCALE,
           start: { position: start, quaternion: shownQ.current.clone() },
           velocity,
-          spin: tumble(velocity, 7),
+          spin: tumble(velocity, 7, random),
           obstacles: [...physics.resting.entries()].filter(([id]) => id !== piece.id).map(([, o]) => o),
           diceSide: physics.diceSide,
           maxSeconds: 4,
@@ -786,6 +844,12 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         m.next?.();
       }
     }
+    // Carried on another screen: eased after the finger there.
+    const there = carriedThere.current;
+    if (there && !phys.current && !motion.current) {
+      shownAt.current.lerp(there.position, 0.3);
+      shownQ.current.slerp(there.quaternion, 0.3);
+    }
     g.position.copy(shownAt.current);
     g.quaternion.copy(shownQ.current);
     // Floating (공중부양): never quite steady, it bobs, sways and slowly turns (more the higher it is).
@@ -948,6 +1012,10 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     const grow = Math.min(1, t / 0.25);
     shownScale.current = pm.fromScale + (pm.toScale - pm.fromScale) * grow;
     if (step >= last) {
+      if (pm.endAt) {
+        shownAt.current.copy(pm.endAt.position);
+        shownQ.current.copy(pm.endAt.quaternion);
+      }
       if (pm.settleTo) {
         const off = Math.hypot(shownAt.current.x - pm.settleTo.x, shownAt.current.z - pm.settleTo.z);
         pm.settle = { from: shownAt.current.clone(), fromQ: shownQ.current.clone(), at: now, duration: 0.3 + 0.15 * off, hop: off > 0.25 ? 0.2 + 0.25 * off : 0.05 };

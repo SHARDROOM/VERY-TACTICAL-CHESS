@@ -1,0 +1,84 @@
+import { Quaternion, Vector3 } from 'three';
+import type { Pose, ToyOp } from '../session/toy';
+import { d20Vertices } from '../dice3d/d20';
+
+/*
+ * The table's toys between the scene and the session (docs/SPEC.md, "만지작거리기"): what this
+ * screen does to a taken piece or a chunk goes out to the other screens, and what they do comes
+ * in to the thing it was done to. Also where the dice lie, so thrown things can hit them.
+ */
+
+type Handler = (op: ToyOp) => void;
+const handlers = new Map<string, Handler>();
+let send: ((op: ToyOp) => void) | null = null;
+const lastHold = new Map<string, number>();
+/** Carrying is told a dozen times a second at most (the other screens smooth it out). */
+const HOLD_EVERY_MS = 80;
+
+/** Where this screen's toys go (the session); null: nowhere. */
+export function setToySender(fn: ((op: ToyOp) => void) | null): void {
+  send = fn;
+}
+
+/** Tells the other screens what this one did. */
+export function tellToy(op: ToyOp): void {
+  const now = performance.now();
+  if (op.op === 'hold') {
+    if (now - (lastHold.get(op.id) ?? 0) < HOLD_EVERY_MS) return;
+    lastHold.set(op.id, now);
+  } else lastHold.delete(op.id);
+  send?.(op);
+}
+
+/** Listens for what other screens do to `id` (a taken piece's id, or CHUNK and a chunk's key). */
+export function onToy(id: string, handler: Handler): () => void {
+  handlers.set(id, handler);
+  return () => {
+    if (handlers.get(id) === handler) handlers.delete(id);
+  };
+}
+
+/** Something another screen did. */
+export function receiveToy(op: ToyOp): void {
+  handlers.get(op.id)?.(op);
+}
+
+const round = (n: number) => Math.round(n * 1e4) / 1e4;
+export const poseOf = (p: Vector3, q: Quaternion): Pose => [round(p.x), round(p.y), round(p.z), round(q.x), round(q.y), round(q.z), round(q.w)];
+export function readPose(pose: Pose, p: Vector3, q: Quaternion): void {
+  p.set(pose[0], pose[1], pose[2]);
+  q.set(pose[3], pose[4], pose[5], pose[6]).normalize();
+}
+
+/** A fresh seed for a throw (sent along, so every screen spins it alike). */
+export const newSeed = () => Math.floor(Math.random() * 2 ** 31);
+
+// ---- the dice ----------------------------------------------------------------------
+
+const dice = new Map<string, { p: Vector3; q: Quaternion; radius: number }>();
+const hulls = new Map<number, Float32Array>();
+
+/** Where a die lies now (world), or that it is put away (null). */
+export function setDie(key: string, at: { p: Vector3; q: Quaternion; radius: number } | null): void {
+  if (!at) dice.delete(key);
+  else {
+    const d = dice.get(key);
+    if (d) {
+      d.p.copy(at.p);
+      d.q.copy(at.q);
+      d.radius = at.radius;
+    } else dice.set(key, { p: at.p.clone(), q: at.q.clone(), radius: at.radius });
+  }
+}
+
+/** The dice as obstacles. */
+export function diceObstacles(): { hull: Float32Array; p: Vector3; q: Quaternion }[] {
+  return [...dice.values()].map((d) => {
+    let hull = hulls.get(d.radius);
+    if (!hull) {
+      hull = Float32Array.from(d20Vertices(d.radius).flatMap((v) => [v.x, v.y, v.z]));
+      hulls.set(d.radius, hull);
+    }
+    return { hull, p: d.p.clone(), q: d.q.clone() };
+  });
+}

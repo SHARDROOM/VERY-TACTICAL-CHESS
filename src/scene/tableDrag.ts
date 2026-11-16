@@ -1,10 +1,12 @@
 import { createContext, useContext } from 'react';
 import { Plane, Vector3, type Ray } from 'three';
-import { isAir, type Board } from '../engine';
-import { squareToWorld } from './coords';
+import { isAir, squareAt, type Board } from '../engine';
+import { squareToWorld, worldToBoard } from './coords';
+import { PIECE_HEIGHT } from './pieceGeometry';
+import { diceObstacles } from './toys';
 import { TABLE_TOP_Y } from './WoodTable';
 import { restingChunks } from './debris';
-import type { Obstacles } from './shatter';
+import type { Obstacle, Obstacles } from './piecePhysics';
 
 /*
  * Picking things up off the table (docs/SPEC.md, "만지작거리기"): taken pieces beside the board and
@@ -17,6 +19,8 @@ export interface TableHands {
   hold(on: boolean): void;
   /** The board as it is shown now. */
   board(): Board;
+  /** The taken pieces beside the board, where they lie. */
+  taken(): Obstacle[];
 }
 
 export const TableContext = createContext<TableHands | null>(null);
@@ -28,17 +32,38 @@ export const LIFT = 0.5;
 
 const plane = new Plane(new Vector3(0, 1, 0), 0);
 
-/** Where the finger's ray meets the height things are carried at there (over the board or the table). */
-export function carryPoint(ray: Ray, out: Vector3): boolean {
-  plane.constant = -LIFT;
-  if (ray.intersectPlane(plane, out) && Math.abs(out.x) < BOARD_HALF && Math.abs(out.z) < BOARD_HALF) return true;
-  plane.constant = -(TABLE_TOP_Y + LIFT);
-  if (!ray.intersectPlane(plane, out)) return false;
+/** How high things are carried over the table beside the board (clear of the dice tray's walls). */
+export const TABLE_LIFT = 0.75;
+
+/**
+ * Where the finger's ray meets the height things are carried at there: over the board, clear of
+ * the piece (and rider) standing on that square; over the table, clear of the tray and the dice.
+ */
+export function carryPoint(ray: Ray, out: Vector3, board?: Board): boolean {
+  const over = (h: number) => {
+    plane.constant = -h;
+    return ray.intersectPlane(plane, out) !== null;
+  };
+  if (over(LIFT) && Math.abs(out.x) < BOARD_HALF && Math.abs(out.z) < BOARD_HALF) {
+    const top = board ? topAt(board, out.x, out.z) : 0;
+    if (top + 0.15 > LIFT) over(top + 0.15);
+    return true;
+  }
+  if (!over(TABLE_TOP_Y + TABLE_LIFT)) return false;
   out.x = Math.max(-13, Math.min(13, out.x));
   out.z = Math.max(-8.5, Math.min(8.5, out.z));
   // Back over the board from the table: up onto it.
-  if (Math.abs(out.x) < BOARD_HALF && Math.abs(out.z) < BOARD_HALF) out.y = LIFT;
+  if (Math.abs(out.x) < BOARD_HALF && Math.abs(out.z) < BOARD_HALF) out.y = Math.max(LIFT, (board ? topAt(board, out.x, out.z) : 0) + 0.15);
   return true;
+}
+
+/** How tall what stands on the square under (x, z) is, rider and all (0: nothing). */
+function topAt(board: Board, x: number, z: number): number {
+  const { file, rank } = worldToBoard(x, z);
+  const sq = squareAt(Math.round(file), Math.round(rank));
+  const p = sq === null ? null : board[sq];
+  if (!p) return 0;
+  return p.rider ? PIECE_HEIGHT[p.type] - 0.06 + PIECE_HEIGHT[p.rider.type] : PIECE_HEIGHT[p.type];
 }
 
 /** The finger's last few points, for how hard it throws when it lets go. */
@@ -64,8 +89,13 @@ export class Fling {
   }
 }
 
-/** What a thrown thing can hit: the pieces on the board and the chunks lying still (all but `except`'s). */
-export function tableObstacles(board: Board, except?: { square?: number; chunkKey?: string }): Obstacles {
+/**
+ * What a thrown thing can hit: the pieces on the board, the chunks lying still, the taken pieces
+ * beside the board and the dice (all but `except`: the square a piece bursts on, a chunk or a
+ * taken piece being thrown).
+ */
+export function tableObstacles(hands: TableHands, except?: { square?: number; chunkKey?: string; takenId?: string }): Obstacles {
+  const board = hands.board();
   const pieces: Obstacles['pieces'] = [];
   board.forEach((p, sq) => {
     if (!p || isAir(sq) || sq === except?.square) return;
@@ -74,5 +104,5 @@ export function tableObstacles(board: Board, except?: { square?: number; chunkKe
   const chunks = restingChunks()
     .filter((c) => c.key !== except?.chunkKey)
     .map((c) => ({ hull: c.hull, p: c.p.clone(), q: c.q.clone() }));
-  return { pieces, chunks };
+  return { pieces, chunks, taken: hands.taken().filter((t) => t.id !== except?.takenId), dice: diceObstacles() };
 }

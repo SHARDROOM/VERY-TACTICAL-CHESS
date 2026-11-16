@@ -53,6 +53,7 @@ import type { FxShow } from '../scene/FxLayer';
 import { duelLength, planDuel, simulateDuel, type DuelPlan, type DuelRun } from '../scene/duel';
 import { runLength, simulateFalls, simulateRomp, type BoardRun, type Mover } from '../scene/boardPhysics';
 import { playChunkTracks, restingChunks } from '../scene/debris';
+import { receiveToy, setToySender } from '../scene/toys';
 import type { PieceDirection } from '../scene/pieceMotion';
 
 interface LogLine extends LogEntry {
@@ -635,6 +636,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       setFrozen(null);
     };
 
+    // What this screen does with the table's toys goes to the others.
+    setToySender((op) => session.toy(op));
     const unsubscribe = session.subscribe((e) => {
       if (e.kind === 'view') {
         setView(e.view);
@@ -649,13 +652,21 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         if (tabRef.current !== 'chat') setUnread((n) => n + 1);
         return;
       }
+      // Someone on another screen playing with what lies about the table.
+      if (e.kind === 'toy') {
+        receiveToy(e.op);
+        return;
+      }
       queueRef.current.push({ events: e.events, before: e.before, after: e.after, rolled: false });
       // While a roll is on screen, later batches wait their turn.
       if (queueRef.current.length === 1) pump();
     });
     // Anything that arrived between the first render and this subscription (e.g. the host's welcome).
     setView(session.view());
-    return unsubscribe;
+    return () => {
+      setToySender(null);
+      unsubscribe();
+    };
   }, [session, seat]);
 
   const diceRef = useRef(dice);

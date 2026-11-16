@@ -6,6 +6,7 @@ import { D20_FACES, d20Vertices, faceWithNumber } from './d20';
 import { DIE_RADIUS, TRAY, type DiceRun } from './simulate';
 import { TABLE_TOP_Y } from '../scene/WoodTable';
 import { playSfx } from '../audio/sfx';
+import { setDie } from '../scene/toys';
 
 /** The tray is drawn smaller than the physics units so the die is in scale with the pieces. */
 export const TRAY_SCALE = 0.7;
@@ -179,6 +180,15 @@ export function DiceTray({ side, roll, onLanded, onFirstLanded }: Props) {
     landed2For.current = null;
     if (!roll) setLit(null);
   }, [roll?.run, roll === null]);
+
+  // Where the dice lie, for things thrown about the table to hit (as of the last frame).
+  useFrame(() => {
+    const radius = DIE_RADIUS * TRAY_SCALE;
+    for (const [key, g] of [['d1', die.current], ['d2', die2.current]] as const) {
+      if (g && g.visible) setDie(key, { p: g.getWorldPosition(new Vector3()), q: g.getWorldQuaternion(new Quaternion()), radius });
+      else setDie(key, null);
+    }
+  });
 
   useFrame(({ clock }) => {
     const g = die.current;

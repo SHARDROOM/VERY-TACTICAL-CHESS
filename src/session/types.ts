@@ -1,6 +1,7 @@
 import type { Color, GameEvent, GameState, PromotionType, RuleConfig, Square } from '../engine';
 import type { GameMaster } from '../gm/types';
 import type { Doodle, DoodleOp } from './doodle';
+import type { ToyOp } from './toy';
 
 export const CHAT_MAX_LENGTH = 300;
 export const NAME_MAX_LENGTH = 16;
@@ -109,7 +110,9 @@ export type SessionEvent =
   | { kind: 'events'; events: GameEvent[]; before: GameState; after: GameState }
   | { kind: 'notice'; text: string; tone: NoticeTone }
   /** A new chat message (not a game action, not saved). */
-  | { kind: 'chat'; message: ChatMessage; mine: boolean };
+  | { kind: 'chat'; message: ChatMessage; mine: boolean }
+  /** Someone on another screen is playing with what lies about the table (never this screen's own). */
+  | { kind: 'toy'; op: ToyOp };
 
 export interface Session {
   view(): SessionView;
@@ -118,6 +121,8 @@ export interface Session {
   sendChat(text: string): void;
   setName(name: string): void;
   doodle(op: DoodleOp): void;
+  /** Tells the other screens about something picked up off the table (this screen already shows it). */
+  toy(op: ToyOp): void;
   /** Authority only. */
   setGm(gm: GameMaster): void;
   /** Authority only, in the waiting room. */

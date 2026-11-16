@@ -4,6 +4,7 @@ import { Emitter } from './emitter';
 import { PROTOCOL_VERSION, parseHostMessage, type GuestMessage } from './protocol';
 import { startHeartbeat } from './heartbeat';
 import { applyDoodleChange, type Doodle, type DoodleOp } from './doodle';
+import type { ToyOp } from './toy';
 import {
   cleanChat,
   cleanName,
@@ -107,6 +108,10 @@ export class GuestSession implements Session {
 
   doodle(op: DoodleOp): void {
     this.send({ t: 'doodle', op });
+  }
+
+  toy(op: ToyOp): void {
+    this.send({ t: 'toy', op });
   }
 
   setGm(): void {}
@@ -231,6 +236,9 @@ export class GuestSession implements Session {
       case 'chat':
         this.chat = pushChat(this.chat, msg.message);
         this.emitter.emit({ kind: 'chat', message: msg.message, mine: msg.message.author === this.myKey });
+        break;
+      case 'toy':
+        this.emitter.emit({ kind: 'toy', op: msg.op });
         break;
       case 'doodle':
         this.doodles = applyDoodleChange(this.doodles, msg.change);
