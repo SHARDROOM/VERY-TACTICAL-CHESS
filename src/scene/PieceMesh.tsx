@@ -32,6 +32,7 @@ export const PiecePhysicsContext = createContext<PiecePhysics | null>(null);
 const LOOK = {
   white: { body: '#efe5cf', accent: '#5a4632', sheen: 0.55 },
   black: { body: '#2e2b31', accent: '#b89a5e', sheen: 0.75 },
+  red: { body: '#8e2a22', accent: '#e3c27a', sheen: 0.65 },
 } as const;
 
 /** Just the shape and material of a piece; `finish` marks how it left the board, if it did. */

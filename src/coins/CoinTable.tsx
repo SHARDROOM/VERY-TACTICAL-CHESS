@@ -12,12 +12,13 @@ export function coinLayout(side: 1 | -1) {
   // Kept toward the middle of the table so the default camera (and the side panel) leave them in view.
   const whiteZ = 1.5;
   const blackZ = -1.9;
+  const redZ = -0.2;
   const tallyX = side * 5.3;
   return {
     dealerX: dishX + side * 5,
-    dish: { white: [dishX, whiteZ] as [number, number], black: [dishX, blackZ] as [number, number] },
+    dish: { white: [dishX, whiteZ] as [number, number], black: [dishX, blackZ] as [number, number], red: [dishX, redZ] as [number, number] },
     /** Tally marks carved between the board and each dish. */
-    tally: { white: [tallyX, whiteZ] as [number, number], black: [tallyX, blackZ] as [number, number] },
+    tally: { white: [tallyX, whiteZ] as [number, number], black: [tallyX, blackZ] as [number, number], red: [tallyX, redZ] as [number, number] },
   };
 }
 
@@ -280,26 +281,26 @@ let nextCoinId = 1;
  */
 export function CoinTable({ ap, side }: { ap: Record<Color, number>; side: 1 | -1 }) {
   const layout = useMemo(() => coinLayout(side), [side]);
-  const [piles, setPiles] = useState<Record<Color, { id: number; pose: Pose }[]>>({ white: [], black: [] });
+  const [piles, setPiles] = useState<Record<Color, { id: number; pose: Pose }[]>>({ white: [], black: [], red: [] });
   const [flight, setFlight] = useState<Flight | null>(null);
   const [collect, setCollect] = useState<Collect | null>(null);
   const busy = useRef(false);
   const queue = useRef<Op[]>([]);
-  const planned = useRef<Record<Color, number>>({ white: 0, black: 0 });
+  const planned = useRef<Record<Color, number>>({ white: 0, black: 0, red: 0 });
   const pilesRef = useRef(piles);
   pilesRef.current = piles;
   const coinRefs = useRef(new Map<number, Group>());
 
   // Plan the difference between what is on the table (or on its way) and the AP to show.
   useEffect(() => {
-    for (const color of ['white', 'black'] as const) {
-      const diff = ap[color] - planned.current[color];
+    for (const color of ['white', 'black', 'red'] as const) {
+      const diff = (ap[color] ?? 0) - planned.current[color];
       if (diff > 0) queue.current.push({ color, kind: 'throw', count: diff });
       if (diff < 0) queue.current.push({ color, kind: 'collect', count: -diff });
-      planned.current[color] = ap[color];
+      planned.current[color] = ap[color] ?? 0;
     }
     pump();
-  }, [ap.white, ap.black]);
+  }, [ap.white, ap.black, ap.red]);
 
   const pump = () => {
     if (busy.current) return;

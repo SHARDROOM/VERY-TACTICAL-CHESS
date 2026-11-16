@@ -168,7 +168,7 @@ describe('falling', () => {
   });
 
   it('taking the levitation away makes it fall at once (a special action)', () => {
-    const s = { ...scene({ d4: { color: 'black', type: 'knight' }, d3: { color: 'white', type: 'rook' } }, ['d4']), ap: { white: 3, black: 0 } };
+    const s = { ...scene({ d4: { color: 'black', type: 'knight' }, d3: { color: 'white', type: 'rook' } }, ['d4']), ap: { white: 3, black: 0, red: 0 } };
     const ruling: Ruling = {
       interpretation: 'x',
       actor: sq('d3'),

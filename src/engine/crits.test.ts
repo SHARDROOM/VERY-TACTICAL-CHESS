@@ -12,7 +12,7 @@ const ruling = (over: Partial<Ruling> = {}): Ruling => ({
   narration: { success: '성공', failure: '실패', critFailure: '대실패' },
   ...over,
 });
-const rich = (): GameState => ({ ...createInitialState(), ap: { white: 5, black: 5 } });
+const rich = (): GameState => ({ ...createInitialState(), ap: { white: 5, black: 5, red: 0 } });
 const run = (r: Ruling, roll: number, state = rich()) => {
   const p = ok(applyCommand(state, { type: 'proposeSpecial', action: 'b1 나이트 발사', ruling: r }));
   return ok(applyCommand(p.state, { type: 'attemptSpecial', roll }));

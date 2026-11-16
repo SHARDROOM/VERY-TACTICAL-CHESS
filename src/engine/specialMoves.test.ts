@@ -6,6 +6,7 @@ const legal = (state: GameState, from: string) => legalTargets(state, sq(from)).
 const allRights = {
   white: { kingSide: true, queenSide: true },
   black: { kingSide: true, queenSide: true },
+  red: { kingSide: false, queenSide: false },
 };
 
 describe('castling', () => {

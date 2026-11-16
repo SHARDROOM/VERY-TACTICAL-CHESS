@@ -98,7 +98,7 @@ function ShakeGroup({ shake, children }: { shake: Props['shake']; children: Reac
  * dice tray. Black pieces (taken by white) wait near white's edge, white pieces near black's.
  */
 export function graveyardLayout(captured: CapturedPiece[], side: 1 | -1): { piece: CapturedPiece; position: [number, number, number] }[] {
-  const counts = { white: 0, black: 0 };
+  const counts = { white: 0, black: 0, red: 0 };
   return captured.map((piece) => {
     const i = counts[piece.color]++;
     const col = i % 7;

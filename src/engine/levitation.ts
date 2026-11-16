@@ -1,5 +1,5 @@
 import { LEVITATE, SHIELD, type Board, type FallingPiece, type GameEvent, type Landing, type Piece, type Square, type TerrainCell } from './types';
-import { AIR, SQUARES, airOf, fileOf, groundOf, isAir, rankOf, squareAt } from './squares';
+import { AIR, SQUARES, airOf, byDistance, groundOf, isAir, isHex, planeOf, squareAtPoint } from './squares';
 import { hasTag, isShielded, ridersOf, withTag, withoutTag } from './tags';
 import { blockedSquares, terrainAt } from './terrain';
 
@@ -29,12 +29,16 @@ export function footprint(file: number, rank: number): { sq: Square | null; shar
       const dy = ((j + 0.5) / GRID - 0.5) * 2 * FOOTPRINT;
       if (dx * dx + dy * dy > FOOTPRINT * FOOTPRINT) continue;
       total++;
-      const sq = squareAt(Math.round(file + dx), Math.round(rank + dy));
+      const sq = squareAtPoint(file + dx, rank + dy);
       const key = sq ?? -1;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
-  const dist = (key: number) => (key < 0 ? Infinity : Math.hypot(fileOf(key) - file, rankOf(key) - rank));
+  const dist = (key: number) => {
+    if (key < 0) return Infinity;
+    const c = planeOf(key);
+    return Math.hypot(c.x - file, c.y - rank);
+  };
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || dist(a[0]) - dist(b[0]) || a[0] - b[0])
     .map(([key, n]) => ({ sq: key < 0 ? null : key, share: n / total }));
@@ -79,15 +83,8 @@ export function startFalls(board: (Piece | null)[], events: GameEvent[]): Fallin
 /** The closest square a piece may stand on (no piece, no wall, no open pit), nearest rings first. */
 function nearestFree(board: Board, terrain: readonly TerrainCell[] | undefined, from: Square): Square | null {
   const blocked = blockedSquares(terrain);
-  for (let r = 0; r < 8; r++) {
-    for (let dr = -r; dr <= r; dr++) {
-      for (let df = -r; df <= r; df++) {
-        if (Math.max(Math.abs(df), Math.abs(dr)) !== r) continue;
-        const sq = squareAt(fileOf(from) + df, rankOf(from) + dr);
-        if (sq !== null && !board[sq] && !blocked.has(sq)) return sq;
-      }
-    }
-  }
+  const g = groundOf(from);
+  for (const sq of [g, ...byDistance(g)]) if (!board[sq] && !blocked.has(sq)) return sq;
   return null;
 }
 
@@ -96,11 +93,12 @@ function nearestFree(board: Board, terrain: readonly TerrainCell[] | undefined, 
  * off a carrier, a little way off its square, away from the blow (or toward the middle of the board).
  */
 function withoutPhysics({ from, rodeOn, push }: FallingPiece): { file: number; rank: number } {
-  const file = fileOf(from);
-  const rank = rankOf(from);
+  const { x: file, y: rank } = planeOf(from);
   if (!rodeOn) return { file, rank };
-  let df = push === undefined ? 3.5 - file : file - fileOf(push);
-  let dr = push === undefined ? 3.5 - rank : rank - rankOf(push);
+  const middle = isHex() ? { x: 0, y: 0 } : { x: 3.5, y: 3.5 };
+  const p = push === undefined ? middle : planeOf(push);
+  let df = push === undefined ? p.x - file : file - p.x;
+  let dr = push === undefined ? p.y - rank : rank - p.y;
   const d = Math.hypot(df, dr) || 1;
   df /= d;
   dr /= d;

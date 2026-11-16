@@ -12,7 +12,7 @@ const ruling = (actor: string | null, means: Means, effects: Effect[]): Ruling =
   effects,
   narration: { success: 's', failure: 'f' },
 });
-const propose = (state: GameState, r: Ruling) => applyCommand({ ...state, ap: { white: 5, black: 5 } }, { type: 'proposeSpecial', action: 'a', ruling: r });
+const propose = (state: GameState, r: Ruling) => applyCommand({ ...state, ap: { white: 5, black: 5, red: 0 } }, { type: 'proposeSpecial', action: 'a', ruling: r });
 const problem = (state: GameState, r: Ruling) => {
   const res = propose(state, r);
   expect(res).toMatchObject({ ok: false, reason: 'invalidRuling' });

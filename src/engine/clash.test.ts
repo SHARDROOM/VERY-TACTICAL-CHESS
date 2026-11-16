@@ -135,7 +135,7 @@ describe('clashes in normal moves', () => {
 
 const ruling = (effects: Effect[]): Ruling => ({ interpretation: 'x', feasible: true, dc: 5, cost: 1, effects, narration: { success: 's', failure: 'f' } });
 const attempt = (state: GameState, effects: Effect[], clashRolls?: number[]) => {
-  const p = ok(applyCommand({ ...state, ap: { white: 5, black: 5 } }, { type: 'proposeSpecial', action: 'a', ruling: ruling(effects) }));
+  const p = ok(applyCommand({ ...state, ap: { white: 5, black: 5, red: 0 } }, { type: 'proposeSpecial', action: 'a', ruling: ruling(effects) }));
   return applyCommand(p.state, { type: 'attemptSpecial', roll: 5, ...(clashRolls && { clashRolls }) });
 };
 

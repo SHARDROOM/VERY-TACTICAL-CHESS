@@ -44,17 +44,17 @@ export const GM_EFFECT_JSON_SCHEMAS = [
   effect('transform', { at: sq('변환할 기물의 칸'), into: { type: 'string', enum: PIECES, description: '새 기물 종류 (킹 불가)' } }),
   effect('spawn', {
     at: sq('기물을 만들 빈 칸'),
-    color: { type: 'string', enum: ['white', 'black'], description: '만들 기물의 편' },
+    color: { type: 'string', enum: ['white', 'black', 'red'], description: '(red는 3인 맵에서만) 만들 기물의 편' },
     piece: { type: 'string', enum: PIECES, description: '만들 기물 종류 (킹 불가)' },
   }),
   effect('convert', {
     at: sq('편을 바꿀 기물의 칸 (킹 불가)'),
-    color: { type: 'string', enum: ['white', 'black'], description: '새로 속할 편' },
+    color: { type: 'string', enum: ['white', 'black', 'red'], description: '(red는 3인 맵에서만) 새로 속할 편' },
   }),
   effect('swap', { a: sq('자리를 바꿀 기물 하나의 칸'), b: sq('자리를 바꿀 다른 기물의 칸') }),
   effect('revive', {
     at: sq('되살린 기물을 놓을 빈 칸'),
-    color: { type: 'string', enum: ['white', 'black'], description: '되살릴 잡힌 기물의 편' },
+    color: { type: 'string', enum: ['white', 'black', 'red'], description: '(red는 3인 맵에서만) 되살릴 잡힌 기물의 편' },
     piece: { type: 'string', enum: PIECES, description: '되살릴 잡힌 기물의 종류' },
   }),
   effect('terrain', {

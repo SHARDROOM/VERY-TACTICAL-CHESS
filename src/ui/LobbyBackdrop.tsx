@@ -21,7 +21,7 @@ const CUE_DELAY = { dice: 1.6, coins: 1.8 };
 export function LobbyBackdrop({ inset }: { inset: TourInset }) {
   const board = useMemo(() => createInitialState().board, []);
   const [roll, setRoll] = useState<ActiveRoll | null>(null);
-  const [ap, setAp] = useState<Record<Color, number>>({ white: 0, black: 0 });
+  const [ap, setAp] = useState<Record<Color, number>>({ white: 0, black: 0, red: 0 });
   const timers = useRef<number[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
@@ -41,12 +41,13 @@ export function LobbyBackdrop({ inset }: { inset: TourInset }) {
   const onPhase = (phase: TourPhase) => {
     if (phase === 'board') {
       // Full dishes are collected by the dealer while the camera is away.
-      setAp((a) => ({ white: a.white >= 5 ? 0 : a.white, black: a.black >= 5 ? 0 : a.black }));
+      setAp((a) => ({ ...a, white: a.white >= 5 ? 0 : a.white, black: a.black >= 5 ? 0 : a.black }));
     } else if (phase === 'dice') {
       later(CUE_DELAY.dice, throwDie);
     } else {
       later(CUE_DELAY.coins, () =>
         setAp((a) => ({
+          ...a,
           white: Math.min(5, a.white + 1 + Math.round(Math.random())),
           black: Math.min(5, a.black + 1 + Math.round(Math.random())),
         })),

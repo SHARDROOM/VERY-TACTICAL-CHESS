@@ -15,8 +15,8 @@ import {
   type TerrainCell,
 } from './types';
 import type { Exit, Staging } from './staging';
-import { isInCheck, legalTargets } from './moves';
-import { fileOf, isAir, opponent, rankOf, squareAt } from './squares';
+import { enPassantVictim, isInCheck, legalTargets } from './moves';
+import { backRank, setBoardMap, isAir, pawnForward, pawnStart, playersOf, promotesOn, step } from './squares';
 import { revokeCastling } from './castling';
 import { DIE_SIDES } from './config';
 import { applyEffects, validateRuling, type EffectContext } from './effects';
@@ -34,6 +34,8 @@ function effectContext(state: GameState, nextSpawnId = state.nextSpawnId): Effec
 
 /** The single entry point for changing game state. Pure: no I/O, no randomness. */
 export function applyCommand(state: GameState, cmd: Command): CommandResult {
+  // Every square helper follows the board this game is played on.
+  setBoardMap(state.map);
   if (state.status.kind !== 'playing') return { ok: false, reason: 'gameOver' };
   // A piece in mid-fall comes down before anything else happens.
   if (state.falling?.length && cmd.type !== 'land') return { ok: false, reason: 'landingPending' };
@@ -77,7 +79,7 @@ function land(state: GameState, cmd: Extract<Command, { type: 'land' }>): Comman
   const seed = Number.isInteger(cmd.seed) ? cmd.seed : 0;
   const played = playFalls(state.board, state.terrain, falling, Array.isArray(cmd.landings) ? cmd.landings : [], seed, state.turnNumber);
   const events = [...played.events];
-  for (const c of ['white', 'black'] as const) if (isInCheck(played.board, c, state.terrain)) events.push({ type: 'check', color: c });
+  for (const c of playersOf()) if (isInCheck(played.board, c, state.terrain)) events.push({ type: 'check', color: c });
   const { falling: _done, ...rest } = state;
   void _done;
   return { ok: true, state: withCaptured({ ...rest, board: played.board }, events), events };
@@ -107,7 +109,7 @@ function chaos(state: GameState, event: ChaosEvent): CommandResult {
   if (event.effects.length > state.rules.maxEffects) return bad(`효과가 너무 많음 (최대 ${state.rules.maxEffects}개)`);
   const applied = applyEffects(state.board, event.effects, effectContext(state));
   if (!applied.ok) return bad(applied.detail);
-  if (isInCheck(applied.board, 'white', applied.terrain) || isInCheck(applied.board, 'black', applied.terrain)) return bad('혼돈 뒤에 킹이 공격받는 상태가 됨');
+  if (playersOf().some((c) => isInCheck(applied.board, c, applied.terrain))) return bad('혼돈 뒤에 킹이 공격받는 상태가 됨');
   const title = event.title.trim().slice(0, 40);
   const narration = event.narration.trim().slice(0, 300);
   const events: GameEvent[] = [
@@ -162,6 +164,17 @@ function withCaptured(state: GameState, events: GameEvent[], exits?: Map<string,
     : state;
 }
 
+/** Who moves after the player now to move: the next in turn order who still has pieces. */
+function nextPlayer(state: GameState, board: Board): Color {
+  const all = playersOf();
+  const i = all.indexOf(state.turn);
+  for (let k = 1; k <= all.length; k++) {
+    const c = all[(i + k) % all.length];
+    if (board.some((p) => p?.color === c)) return c;
+  }
+  return all[(i + 1) % all.length];
+}
+
 /** Ends the current player's turn: the opponent moves next and gains AP. */
 function passTurn(
   state: GameState,
@@ -170,7 +183,7 @@ function passTurn(
   events: GameEvent[],
 ): { state: GameState; events: GameEvent[] } {
   // Tags of the player whose turn is ending count down here.
-  const next = opponent(state.turn);
+  const next = nextPlayer(state, board);
   const { apMax, apPerTurn } = state.rules;
   const apNext = Math.min(apMax, state.ap[next] + apPerTurn);
   const turnNumber = state.turnNumber + 1;
@@ -186,7 +199,7 @@ function passTurn(
   events = [...events, ...tagged.events, ...land.events, ...dropped.events, ...fallEvents];
   // A piece burnt up or a wall gone may open a line onto a king.
   if (ticked.events.some((e) => e.type === 'removed' || e.type === 'pushed') || land.events.length) {
-    for (const c of ['white', 'black'] as const) if (isInCheck(ticked.board, c, land.terrain)) events.push({ type: 'check', color: c });
+    for (const c of playersOf()) if (isInCheck(ticked.board, c, land.terrain)) events.push({ type: 'check', color: c });
   }
   const { chain: _chain, ...rest } = withCaptured(state, ticked.events);
   void _chain;
@@ -210,7 +223,7 @@ function passTurn(
 function checkEvents(board: Board, mover: Color, terrain: readonly TerrainCell[] | undefined): GameEvent[] {
   const events: GameEvent[] = [];
   if (isInCheck(board, mover, terrain)) events.push({ type: 'ownKingExposed', color: mover });
-  if (isInCheck(board, opponent(mover), terrain)) events.push({ type: 'check', color: opponent(mover) });
+  for (const c of playersOf()) if (c !== mover && isInCheck(board, c, terrain)) events.push({ type: 'check', color: c });
   return events;
 }
 
@@ -224,8 +237,7 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   // One-turn-kill guard: after any special-action attempt this turn, kings are off limits.
   if (state.usedApThisTurn && state.board[cmd.to]?.type === 'king') return { ok: false, reason: 'kingProtectedThisTurn' };
 
-  const lastRank = piece.color === 'white' ? 7 : 0;
-  const promotes = piece.type === 'pawn' && rankOf(cmd.to) === lastRank;
+  const promotes = piece.type === 'pawn' && !isAir(cmd.to) && promotesOn(piece.color, cmd.to);
   if (promotes && !cmd.promotion) return { ok: false, reason: 'promotionRequired' };
   if (cmd.promotion && (!promotes || !PROMOTION_TYPES.includes(cmd.promotion))) {
     return { ok: false, reason: 'invalidPromotion' };
@@ -233,7 +245,7 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
 
   const board: (Piece | null)[] = [...state.board];
   const victimSquare =
-    target.special?.kind === 'enPassant' ? squareAt(fileOf(cmd.to), rankOf(cmd.from))! : cmd.to;
+    target.special?.kind === 'enPassant' ? enPassantVictim(cmd.from, cmd.to) : cmd.to;
   const victim = board[victimSquare];
 
   // Capturing a piece that can stand its ground (a clash multiplier or a shield) is a clash (합).
@@ -287,9 +299,8 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   }
 
   if (target.special?.kind === 'castle') {
-    const rank = rankOf(cmd.from);
-    const [rookFrom, rookTo] =
-      target.special.side === 'king' ? [squareAt(7, rank)!, squareAt(5, rank)!] : [squareAt(0, rank)!, squareAt(3, rank)!];
+    const c = piece.color;
+    const [rookFrom, rookTo] = target.special.side === 'king' ? [backRank(c, 7), backRank(c, 5)] : [backRank(c, 0), backRank(c, 3)];
     board[rookTo] = extinguish(board[rookFrom]!, rookTo, fireOut);
     board[rookFrom] = null;
     touched.push(rookFrom, rookTo);
@@ -314,10 +325,9 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
   }
 
   // A pawn's double step from its first rank (not a pawn that slid two squares like a rook elsewhere).
-  const dir = piece.color === 'white' ? 1 : -1;
-  const doubleStep =
-    piece.type === 'pawn' && !isAir(cmd.from) && fileOf(cmd.to) === fileOf(cmd.from) && rankOf(cmd.from) === (dir === 1 ? 1 : 6) && rankOf(cmd.to) === rankOf(cmd.from) + 2 * dir;
-  const enPassant = doubleStep ? squareAt(fileOf(cmd.from), rankOf(cmd.from) + dir) : null;
+  const skipped = piece.type === 'pawn' && pawnStart(piece.color, cmd.from) ? step(cmd.from, { df: 0, dr: pawnForward(piece.color, cmd.from) })[0] : undefined;
+  const doubleStep = skipped !== undefined && step(skipped.sq, skipped.dir)[0]?.sq === cmd.to;
+  const enPassant = doubleStep ? skipped.sq : null;
 
   events.push(...checkEvents(board, piece.color, state.terrain));
   const withRights = withCaptured({ ...state, castling: revokeCastling(state.castling, touched), ...withFalls(state, falls) }, events);
@@ -407,9 +417,9 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
     castling = revokeCastling(castling, applied.touched);
     exits = exitsOf(applied.events, applied.sources, ruling.staging?.[outcome]);
     effectEvents.push(...applied.events, ...checkEvents(board, color, terrain));
-  } else if (isInCheck(board, opponent(color), terrain)) {
-    // Nothing changed, but the opponent's king was already attacked (e.g. since the turn began).
-    effectEvents.push({ type: 'check', color: opponent(color) });
+  } else {
+    // Nothing changed, but another king was already attacked (e.g. since the turn began).
+    for (const c of playersOf()) if (c !== color && isInCheck(board, c, terrain)) effectEvents.push({ type: 'check', color: c });
   }
 
   const narration =

@@ -13,6 +13,7 @@ const PIECE_WORDS: [RegExp, Exclude<PieceType, 'king'>][] = [
   [/폰|병사/, 'pawn'],
 ];
 const PIECE_KO: Record<Exclude<PieceType, 'king'>, string> = { queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
+const COLOR_KO: Record<Color, string> = { white: '백', black: '흑', red: '적' };
 
 /** The piece type named last in the text ("a2 폰을 퀸으로" → queen). */
 function lastPieceWord(text: string): Exclude<PieceType, 'king'> | null {
@@ -455,7 +456,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
     if (missing) return missing;
     const strong = named === 'queen' || named === 'rook';
     return {
-      interpretation: `${who} 잡혔던 ${color === 'white' ? '백' : '흑'} ${josa(PIECE_KO[named], '을/를')} ${last}에 되살린다.`,
+      interpretation: `${who} 잡혔던 ${COLOR_KO[color]} ${josa(PIECE_KO[named], '을/를')} ${last}에 되살린다.`,
       actor: actor!,
       means: 'magic',
       feasible: true,
@@ -472,7 +473,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
     if (missing) return missing;
     const strong = named === 'queen' || named === 'rook';
     return {
-      interpretation: `${who} ${last}에 ${color === 'white' ? '백' : '흑'} ${josa(PIECE_KO[named], '을/를')} 불러낸다.`,
+      interpretation: `${who} ${last}에 ${COLOR_KO[color]} ${josa(PIECE_KO[named], '을/를')} 불러낸다.`,
       actor: actor!,
       means: 'magic',
       feasible: true,

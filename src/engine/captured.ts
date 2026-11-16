@@ -1,6 +1,7 @@
 import type { Exit } from './staging';
 import type { CapturedPiece, GameEvent, Square } from './types';
-import { fileOf, groundOf, rankOf, squareAt } from './squares';
+import { groundOf } from './squares';
+import { enPassantVictim } from './moves';
 
 /** How a piece that left in this event goes when the GM staged nothing: burnt up to ash, sunk into a pit. */
 function plainExit(e: GameEvent): Exit | undefined {
@@ -11,7 +12,7 @@ function plainExit(e: GameEvent): Exit | undefined {
 /** The square a piece was taken on (a pawn taken en passant stood beside the square moved to). */
 function whereTaken(e: Extract<GameEvent, { type: 'moved' | 'removed' }>): Square {
   if (e.type === 'removed') return e.at;
-  return e.special?.kind === 'enPassant' ? squareAt(fileOf(e.to), rankOf(e.from))! : e.to;
+  return e.special?.kind === 'enPassant' ? enPassantVictim(e.from, e.to) : e.to;
 }
 
 /**

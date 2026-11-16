@@ -34,7 +34,7 @@ const proposeFails = (state: GameState, ...effects: Effect[]) => {
   return r.ok ? '' : r.detail ?? '';
 };
 const endTurn = (s: GameState) => passTurn(s);
-const rich = (): GameState => ({ ...createInitialState(), ap: { white: 5, black: 5 } });
+const rich = (): GameState => ({ ...createInitialState(), ap: { white: 5, black: 5, red: 0 } });
 const legal = (s: GameState, from: string) => legalTargets(s, sq(from)).map((t) => squareName(t.to)).sort();
 const tagsAt = (s: GameState, at: string) => s.board[sq(at)]?.tags?.map((t) => [t.name, t.turnsLeft]) ?? [];
 
@@ -80,7 +80,7 @@ describe('stun (기절)', () => {
     const s = createStateFrom(
       { e1: { color: 'white', type: 'king' }, a8: { color: 'white', type: 'rook' }, e8: { color: 'black', type: 'king' } },
       'white',
-      { ap: { white: 3, black: 0 } },
+      { ap: { white: 3, black: 0, red: 0 } },
     );
     expect(isInCheck(s.board, 'black')).toBe(true);
     const r = act(s, { type: 'tag', at: sq('a8'), tag: '기절', turns: 0 });
@@ -88,11 +88,11 @@ describe('stun (기절)', () => {
   });
 
   it('a stunned king or rook cannot castle', () => {
-    const rights = { white: { kingSide: true, queenSide: true }, black: { kingSide: true, queenSide: true } };
+    const rights = { white: { kingSide: true, queenSide: true }, black: { kingSide: true, queenSide: true }, red: { kingSide: false, queenSide: false } };
     const base = createStateFrom(
       { e1: { color: 'white', type: 'king' }, h1: { color: 'white', type: 'rook' }, e8: { color: 'black', type: 'king' } },
       'white',
-      { castling: rights, ap: { white: 5, black: 0 } },
+      { castling: rights, ap: { white: 5, black: 0, red: 0 } },
     );
     expect(legal(base, 'e1')).toContain('g1');
     expect(legal(act(base, { type: 'tag', at: sq('h1'), tag: '기절', turns: 0 }).state, 'e1')).not.toContain('g1');
@@ -180,7 +180,7 @@ describe('ride (탑승)', () => {
     const s = createStateFrom(
       { e1: { color: 'white', type: 'king' }, d1: { color: 'white', type: 'queen' }, c2: { color: 'white', type: 'knight' }, e8: { color: 'black', type: 'king' } },
       'white',
-      { ap: { white: 5, black: 0 } },
+      { ap: { white: 5, black: 0, red: 0 } },
     );
     const r = act(s, { type: 'board', rider: sq('d1'), carrier: sq('c2') });
     // The queen on d1 would attack the d-file; riding the knight it attacks only by knight moves from c2.
@@ -199,7 +199,7 @@ describe('shield (보호막)', () => {
         e8: { color: 'black', type: 'king' },
       },
       'black',
-      { ap: { white: 0, black: 5 } },
+      { ap: { white: 0, black: 5, red: 0 } },
     );
     return act(s, { type: 'tag', at: sq('d7'), tag: '보호막', turns: 0 }).state;
   };
@@ -220,7 +220,7 @@ describe('shield (보호막)', () => {
   it('absorbs effect removal and effect capture too', () => {
     let s = shielded();
     s = endTurn(s);
-    s = { ...s, ap: { white: 5, black: 5 } };
+    s = { ...s, ap: { white: 5, black: 5, red: 0 } };
     const r = act(s, { type: 'remove', at: sq('d7') });
     expect(r.state.board[sq('d7')]).toMatchObject({ type: 'knight', tags: [] });
     expect(r.events).toContainEqual(expect.objectContaining({ type: 'shieldBroken', attackerId: null }));
@@ -230,7 +230,7 @@ describe('shield (보호막)', () => {
     const s = createStateFrom(
       { e1: { color: 'white', type: 'king' }, e4: { color: 'white', type: 'rook' }, e8: { color: 'black', type: 'king' } },
       'black',
-      { ap: { white: 0, black: 5 } },
+      { ap: { white: 0, black: 5, red: 0 } },
     );
     let t = act(s, { type: 'tag', at: sq('e8'), tag: '보호막', turns: 0 }).state;
     t = endTurn(t);
@@ -244,7 +244,7 @@ describe('transform and spawn', () => {
   it('transforms a piece, keeping its id and tags', () => {
     let s = act(rich(), { type: 'tag', at: sq('a2'), tag: '불꽃', turns: 0 }).state;
     const id = s.board[sq('a2')]!.id;
-    s = { ...s, ap: { white: 5, black: 5 } };
+    s = { ...s, ap: { white: 5, black: 5, red: 0 } };
     const r = act(s, { type: 'transform', at: sq('a2'), into: 'queen' });
     expect(r.state.board[sq('a2')]).toMatchObject({ id, type: 'queen', tags: [expect.objectContaining({ name: '불꽃' })] });
   });
@@ -265,7 +265,7 @@ describe('transform and spawn', () => {
   });
 
   it('never creates a pawn that could not move: not on its own last rank', () => {
-    const s = { ...createStateFrom({ e1: { color: 'white', type: 'king' }, h8: { color: 'black', type: 'king' }, a8: { color: 'white', type: 'rook' } }), ap: { white: 5, black: 5 } };
+    const s = { ...createStateFrom({ e1: { color: 'white', type: 'king' }, h8: { color: 'black', type: 'king' }, a8: { color: 'white', type: 'rook' } }), ap: { white: 5, black: 5, red: 0 } };
     expect(proposeFails(s, { type: 'spawn', at: sq('d8'), color: 'white', piece: 'pawn' })).toContain('마지막 줄');
     expect(proposeFails(s, { type: 'transform', at: sq('a8'), into: 'pawn' })).toContain('마지막 줄');
     // A black pawn on the 8th rank is on its own first rank: it can still move down.
@@ -274,7 +274,7 @@ describe('transform and spawn', () => {
   });
 
   it('a pawn carried to its last rank by an effect promotes to a queen', () => {
-    const s = { ...createStateFrom({ e1: { color: 'white', type: 'king' }, h8: { color: 'black', type: 'king' }, b2: { color: 'white', type: 'pawn' } }), ap: { white: 5, black: 5 } };
+    const s = { ...createStateFrom({ e1: { color: 'white', type: 'king' }, h8: { color: 'black', type: 'king' }, b2: { color: 'white', type: 'pawn' } }), ap: { white: 5, black: 5, red: 0 } };
     const r = act(s, { type: 'move', from: sq('b2'), to: sq('b8') });
     expect(r.state.board[sq('b8')]).toMatchObject({ color: 'white', type: 'queen' });
     expect(r.events).toContainEqual(expect.objectContaining({ type: 'transformed', at: sq('b8'), from: 'pawn', to: 'queen' }));
@@ -288,7 +288,7 @@ describe('transform and spawn', () => {
 
   it('untag removes a tag; untagging a missing tag is a no-op', () => {
     let s = act(rich(), { type: 'tag', at: sq('g1'), tag: '기절', turns: 0 }).state;
-    s = { ...s, ap: { white: 5, black: 5 } };
+    s = { ...s, ap: { white: 5, black: 5, red: 0 } };
     s = act(s, { type: 'untag', at: sq('g1'), tag: '기절' }, { type: 'untag', at: sq('g1'), tag: '없는 태그' }).state;
     expect(tagsAt(s, 'g1')).toEqual([]);
   });

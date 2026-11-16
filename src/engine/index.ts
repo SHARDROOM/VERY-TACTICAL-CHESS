@@ -7,7 +7,7 @@ export { blockedSquares, dropFromBridges, terrainAt, terrainBlocks, tickTerrain,
 export { createInitialState, createStateFrom, withAir } from './setup';
 export { movesFrom, legalTargets, isAttacked, isInCheck, findKing, type Target } from './moves';
 export { parseMoveText } from './notation';
-export { squareName, parseSquare, fileOf, rankOf, squareAt, opponent, AIR, SQUARES, isAir, groundOf, airOf, sameLayer } from './squares';
+export { squareName, parseSquare, fileOf, rankOf, squareAt, opponent, AIR, SQUARES, isAir, groundOf, airOf, sameLayer, setBoardMap, boardMap, isHex, playersOf, homeHalf, halfOf, backRank, step, planeOf, squareAtPoint, pawnForward, promotesOn, SQUARE_PATTERN, byDistance, type BoardMap } from './squares';
 export { applyEffects, validateRuling, type EffectContext } from './effects';
 export { checkActor, distance, targetsOf } from './actor';
 export { hasTag, isStunned, isShielded, isBurning, isFloating, CORE_TAGS, MAX_MOVE_TIMES, movePatterns, moveTimesOf, ridersOf, stackOf } from './tags';

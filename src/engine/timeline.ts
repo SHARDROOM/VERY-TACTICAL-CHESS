@@ -1,6 +1,6 @@
 import type { Board, Effect } from './types';
 import { STAGING_LIMITS, type ActKind, type Beat, type Exit, type MotionStyle, type Speed, type Staging } from './staging';
-import { fileOf, rankOf } from './squares';
+import { planeOf } from './squares';
 
 /**
  * When each part of a show happens: the outcome's effects one after another (each after its
@@ -54,7 +54,9 @@ export const REVIVE_DURATION = 1.3;
 export const EXIT_DURATION: Record<Exit, number> = { default: 1, knock: 1, burn: 1.2, ash: 1.3, shatter: 1.4, vanish: 1, sink: 1.1 };
 
 function distance(a: number, b: number): number {
-  return Math.hypot(fileOf(a) - fileOf(b), rankOf(a) - rankOf(b));
+  const p = planeOf(a);
+  const q = planeOf(b);
+  return Math.hypot(p.x - q.x, p.y - q.y);
 }
 
 /** How long one effect takes on screen. `board` is the board just before it (for distances). */

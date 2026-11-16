@@ -20,7 +20,7 @@ import { chaosLabel, rerollLabel, rulesSummary, secondsLabel } from './rules';
 import { playSfx } from '../audio/sfx';
 import { Icon } from './Icon';
 
-const ROLE_BADGE: Record<Member['role'], string> = { white: '백', black: '흑', spectator: '관전' };
+const ROLE_BADGE: Record<Member['role'], string> = { white: '백', black: '흑', red: '적', spectator: '관전' };
 
 interface Props {
   session: Session;

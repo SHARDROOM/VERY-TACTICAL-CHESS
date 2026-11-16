@@ -1,8 +1,10 @@
 import type { RuleConfig } from './config';
 import type { Aura, Exit, Staging } from './staging';
 import type { Prop } from './props';
+import type { BoardMap } from './squares';
 
-export type Color = 'white' | 'black';
+/** The players' sides: white and black, and red on the three-player hexagon. */
+export type Color = 'white' | 'black' | 'red';
 export type PieceType = 'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn';
 export type PromotionType = 'queen' | 'rook' | 'bishop' | 'knight';
 export const PROMOTION_TYPES: readonly PromotionType[] = ['queen', 'rook', 'bishop', 'knight'];
@@ -230,8 +232,9 @@ export interface FallingPiece {
 }
 
 /**
- * Where a falling piece came to rest, as the physics put it: continuous board coordinates (a
- * square's centre is its file and rank; off the board is below 0 or above 7).
+ * Where a falling piece came to rest, as the physics put it: a point on the board's plane (see
+ * squares.ts, planeOf). On the classic board a square's centre is its file and rank (off the board
+ * is below 0 or above 7); on the hexagon it is board units from the centre.
  */
 export interface Landing {
   id: string;
@@ -241,6 +244,8 @@ export interface Landing {
 
 export interface GameState {
   rules: RuleConfig;
+  /** The board: the classic 8×8 for two, or the three-player hexagon (missing: classic). */
+  map?: BoardMap;
   /** SQUARES entries: the ground, then the air (see Square). */
   board: Board;
   turn: Color;

@@ -137,7 +137,7 @@ export default function FxLab() {
         diceSide={-1}
         diceRoll={null}
         onDiceLanded={() => {}}
-        ap={{ white: 0, black: 0 }}
+        ap={{ white: 0, black: 0, red: 0 }}
         captured={scene.captured}
         terrain={scene.terrain}
         fx={fx}

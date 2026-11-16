@@ -1,6 +1,6 @@
 import { COVER_NAME, type Board, type Color, type FallingPiece, type GameEvent, type Piece, type Square, type TerrainCell } from './types';
 import { unseat } from './tags';
-import { fileOf, rankOf, squareAt } from './squares';
+import { byDistance } from './squares';
 
 /**
  * How terrain gets in the way. `noPass`: nothing enters or passes (a wall, a pit); `noLand`:
@@ -107,15 +107,7 @@ export function dropFromBridges(
 
 /** The closest empty square a piece may stand on, nearest rings first, in board order. */
 function nearestFree(board: Board, from: Square, blocked: ReadonlySet<Square>): Square | null {
-  for (let r = 1; r < 8; r++) {
-    for (let dr = -r; dr <= r; dr++) {
-      for (let df = -r; df <= r; df++) {
-        if (Math.max(Math.abs(df), Math.abs(dr)) !== r) continue;
-        const sq = squareAt(fileOf(from) + df, rankOf(from) + dr);
-        if (sq !== null && !board[sq] && !blocked.has(sq)) return sq;
-      }
-    }
-  }
+  for (const sq of byDistance(from)) if (!board[sq] && !blocked.has(sq)) return sq;
   return null;
 }
 

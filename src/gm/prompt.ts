@@ -1,6 +1,6 @@
 import { AIR, BASE_CLASH, COVER_NAME, ridersOf, MAX_TERRAIN, PROP_PRESET_NAME, RIDE, TERRAIN_NAME, airOf, distance, isAir, parseSquare, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig } from '../engine';
 
-const COLOR: Record<Color, string> = { white: '백', black: '흑' };
+const COLOR: Record<Color, string> = { white: '백', black: '흑', red: '적' };
 const PIECE: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
 const LETTER: Record<PieceType, string> = { king: 'k', queen: 'q', rook: 'r', bishop: 'b', knight: 'n', pawn: 'p' };
 

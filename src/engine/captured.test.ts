@@ -19,7 +19,7 @@ describe('captured pieces', () => {
   });
 
   it('special-action removals and effect captures are recorded; a rider is thrown off its carrier, not taken with it', () => {
-    let s: GameState = { ...createInitialState(), ap: { white: 5, black: 5 } };
+    let s: GameState = { ...createInitialState(), ap: { white: 5, black: 5, red: 0 } };
     s = act(s, [{ type: 'board', rider: sq('a2'), carrier: sq('b1') }]);
     s = act(s, [{ type: 'tag', at: sq('b1'), tag: '불타는 중', turns: 0 }]);
     s = act(s, [{ type: 'remove', at: sq('b1') }]);
@@ -36,7 +36,7 @@ describe('captured pieces', () => {
     let s = createStateFrom(
       { e1: { color: 'white', type: 'king' }, e4: { color: 'white', type: 'rook' }, e8: { color: 'black', type: 'king' } },
       'black',
-      { ap: { white: 0, black: 5 } },
+      { ap: { white: 0, black: 5, red: 0 } },
     );
     s = act(s, [{ type: 'tag', at: sq('e8'), tag: '보호막', turns: 0 }]);
     s = passTurn(s);

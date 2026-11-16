@@ -1,7 +1,7 @@
 import { josa } from './josa';
 import { BURN, COVER_NAME, TERRAIN_NAME, clashScore, squareName, type Color, type GameEvent, type Outcome, type PieceType, type RejectReason } from '../engine';
 
-export const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑' };
+export const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑', red: '적' };
 
 export const PIECE_NAME: Record<PieceType, string> = {
   king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰',

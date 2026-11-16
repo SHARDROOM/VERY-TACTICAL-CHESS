@@ -66,3 +66,74 @@ export function parseHexSquare(name: string): number | null {
   if (!m) return null;
   return hexSquare('wbr'.indexOf(m[1]) as Half, 'abcdefgh'.indexOf(m[2]), Number(m[3]) - 1);
 }
+
+// ---- the board's plane ----------------------------------------------------------------
+
+/** The hexagon's corner radius in board units: a back-rank square is 1 wide (like a normal square). */
+export const HEX_R = 8;
+type P = { x: number; y: number };
+const corner = (k: number): P => {
+  const a = ((-120 + 60 * k) * Math.PI) / 180;
+  return { x: HEX_R * Math.cos(a), y: HEX_R * Math.sin(a) };
+};
+const V = [0, 1, 2, 3, 4, 5].map(corner);
+const M = V.map((v, k) => ({ x: (v.x + V[(k + 1) % 6].x) / 2, y: (v.y + V[(k + 1) % 6].y) / 2 }));
+const C: P = { x: 0, y: 0 };
+const lerp2 = (q: P[], u: number, v: number): P => ({
+  x: (1 - u) * (1 - v) * q[0].x + u * (1 - v) * q[1].x + u * v * q[2].x + (1 - u) * v * q[3].x,
+  y: (1 - u) * (1 - v) * q[0].y + u * (1 - v) * q[1].y + u * v * q[2].y + (1 - u) * v * q[3].y,
+});
+/** The quarter of a half the file is in: its corners at (file 0, rank 0), (4, 0), (4, 4), (0, 4) of that quarter. */
+function quarter(h: Half, file: number): P[] {
+  const s = h * 2;
+  return file < 4 ? [V[s], M[s], C, M[(s + 5) % 6]] : [M[s], V[(s + 1) % 6], M[(s + 1) % 6], C];
+}
+/** A point on a half by continuous file and rank (0..8, 0..4: a square's centre is +0.5). */
+export function hexPoint(h: Half, file: number, rank: number): P {
+  const left = file < 4;
+  return lerp2(quarter(h, left ? 0 : 4), (left ? file : file - 4) / 4, rank / 4);
+}
+/** A square's four corners on the board's plane (y toward black and red, white at the bottom). */
+export function hexCorners(sq: number): P[] {
+  const h = halfOf(sq);
+  const f = hexFile(sq);
+  const r = hexRank(sq);
+  return [hexPoint(h, f, r), hexPoint(h, f + 1, r), hexPoint(h, f + 1, r + 1), hexPoint(h, f, r + 1)];
+}
+export const hexCenter = (sq: number): P => hexPoint(halfOf(sq), hexFile(sq) + 0.5, hexRank(sq) + 0.5);
+
+const inside = (p: P, poly: P[]): boolean => {
+  let sign = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const c = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+    if (Math.abs(c) < 1e-12) continue;
+    if (sign === 0) sign = Math.sign(c);
+    else if (Math.sign(c) !== sign) return false;
+  }
+  return true;
+};
+const CORNERS = Array.from({ length: HEX_SQUARES }, (_, sq) => hexCorners(sq));
+/** The square under a point of the board's plane, or null off the board. */
+export function hexSquareAt(x: number, y: number): number | null {
+  for (let sq = 0; sq < HEX_SQUARES; sq++) if (inside({ x, y }, CORNERS[sq])) return sq;
+  return null;
+}
+
+/** How many king steps apart two squares are (the board's own distance). */
+export const hexDistance = (() => {
+  const all: Dir[] = [-1, 0, 1].flatMap((df) => [-1, 0, 1].map((dr) => ({ df, dr }))).filter((d) => d.df || d.dr);
+  const table = Array.from({ length: HEX_SQUARES }, (_, from) => {
+    const dist = Array<number>(HEX_SQUARES).fill(Infinity);
+    dist[from] = 0;
+    let frontier = [from];
+    for (let d = 1; frontier.length; d++) {
+      const next: number[] = [];
+      for (const s of frontier) for (const dir of all) for (const t of step(s, dir)) if (dist[t.sq] === Infinity) { dist[t.sq] = d; next.push(t.sq); }
+      frontier = next;
+    }
+    return dist;
+  });
+  return (a: number, b: number) => table[a][b];
+})();

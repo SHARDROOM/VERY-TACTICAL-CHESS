@@ -8,7 +8,7 @@ const label = (o: string) => o;
 /** A special action with these effects, attempted with this roll. */
 function resolve(effects: Effect[], roll = 5) {
   const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 4, cost: 2, effects, narration: { success: '해냈다', failure: '놓쳤다' } };
-  let s: GameState = { ...createInitialState(), ap: { white: 3, black: 0 } };
+  let s: GameState = { ...createInitialState(), ap: { white: 3, black: 0, red: 0 } };
   const proposed = applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling });
   if (!proposed.ok) throw new Error(proposed.reason);
   s = proposed.state;
@@ -81,7 +81,7 @@ describe('what each piece does in a show', () => {
         },
       },
     };
-    let s: GameState = { ...createInitialState(), ap: { white: 3, black: 0 } };
+    let s: GameState = { ...createInitialState(), ap: { white: 3, black: 0, red: 0 } };
     const p = applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling });
     if (!p.ok) throw new Error(p.detail);
     s = p.state;
@@ -141,7 +141,7 @@ describe('swaps, revivals, pits and walls in a show', () => {
 describe('clashes in a show', () => {
   it('a move effect that sets off a clash marks where the show stops; the board steps match the real result', () => {
     const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 5, cost: 1, effects: [{ type: 'move', from: sq('b1'), to: sq('c3') }, { type: 'move', from: sq('c3'), to: sq('d5') }, { type: 'tag', at: sq('d5'), tag: '용기', turns: 1 }], narration: { success: 's', failure: 'f' } };
-    let s: GameState = { ...createInitialState(), ap: { white: 3, black: 0 } };
+    let s: GameState = { ...createInitialState(), ap: { white: 3, black: 0, red: 0 } };
     const b = [...s.board];
     b[sq('d5')] = { id: 'bp', color: 'black', type: 'pawn', tags: [{ name: '검술', turnsLeft: null, appliedOnTurn: 1, clash: 1.5 }] };
     s = { ...s, board: b };

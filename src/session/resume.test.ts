@@ -45,7 +45,7 @@ class TestGm implements GameMaster {
 
 /** A mid-game state with tags, a rider, a pending ruling and precedents. */
 function busyState(): GameState {
-  let s: GameState = { ...createInitialState(), ap: { white: 5, black: 5 } };
+  let s: GameState = { ...createInitialState(), ap: { white: 5, black: 5, red: 0 } };
   const act = (effects: Ruling['effects'], roll = 6) => {
     const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 4, cost: 1, effects, narration: { success: 's', failure: 'f' } };
     const p = applyCommand(s, { type: 'proposeSpecial', action: 'act', ruling });

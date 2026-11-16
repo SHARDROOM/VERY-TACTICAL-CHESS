@@ -1,5 +1,5 @@
 import { MEANS, MEANS_NAME, type Board, type Color, type Effect, type Means, type Ruling, type Square } from './types';
-import { fileOf, isAir, rankOf, squareName } from './squares';
+import { distance, squareName } from './squares';
 import { isStunned, stackOf } from './tags';
 import { applyEffects, type EffectContext } from './effects';
 
@@ -10,9 +10,7 @@ import { applyEffects, type EffectContext } from './effects';
  */
 
 /** Steps a king would need: e6 to e7 is 1, b1 to g8 is 7; the air above a square is 1 from it. */
-export function distance(a: Square, b: Square): number {
-  return Math.max(Math.abs(fileOf(a) - fileOf(b)), Math.abs(rankOf(a) - rankOf(b)), isAir(a) === isAir(b) ? 0 : 1);
-}
+export { distance };
 
 /** The squares an effect acts on, other than the actor's own (where it does things to others). */
 export function targetsOf(e: Effect): Square[] {
@@ -54,7 +52,7 @@ export function checkActor(board: Board, ruling: Ruling, color: Color, ctx: Effe
   if (ruling.actor === null) return '행동하는 내 기물(주체)이 없음: 누가 하는지 정해야 함';
   const at = ruling.actor;
   const piece = board[at];
-  if (!piece || piece.color !== color) return `주체 칸 ${squareName(at)}에 ${color === 'white' ? '백' : '흑'} 기물이 없음`;
+  if (!piece || piece.color !== color) return `주체 칸 ${squareName(at)}에 ${{ white: '백', black: '흑', red: '적' }[color]} 기물이 없음`;
   if (isStunned(piece)) return `주체 ${squareName(at)}의 기물은 기절해서 행동할 수 없음`;
   const means: Means | undefined = ruling.means;
   if (!means || !MEANS.includes(means)) return '수단(means)이 올바르지 않음';

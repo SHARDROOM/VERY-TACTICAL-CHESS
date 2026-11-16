@@ -19,7 +19,7 @@ import {
   type TerrainKind,
 } from './types';
 import type { RuleConfig } from './config';
-import { SQUARES, airOf, isAir, rankOf, sameLayer, squareName } from './squares';
+import { SQUARES, airOf, isAir, playersOf, promotesOn, sameLayer, squareName } from './squares';
 import { MAX_MOVE_TIMES, extinguish, isShielded, isStunned, mapStack, unseat, withRiderOnTop, withTag, withoutTag, withoutTopRider } from './tags';
 import { SHIELD } from './types';
 import { MAX_TERRAIN, dropFromBridges } from './terrain';
@@ -29,7 +29,7 @@ import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, clashSkill, resolveCl
 import { cleanProp } from './props';
 import { startFalls } from './levitation';
 
-const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑' };
+const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑', red: '적' };
 const PIECE_NAME: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
 
 export interface EffectContext {
@@ -76,13 +76,12 @@ const onBoard = (sq: unknown): sq is Square => isInt(sq) && sq >= 0 && sq < SQUA
 /** Things that only happen on the ground (walls, pits, bridges, new pieces). */
 const onGround = (sq: unknown): sq is Square => onBoard(sq) && !isAir(sq);
 const AIR_ONLY_LEVITATE = '공중 칸에는 공중부양 중인 기물만 있을 수 있음: 땅의 기물에 공중부양 태그를 붙여 띄우세요';
-const isColor = (c: unknown): c is Color => c === 'white' || c === 'black';
+const isColor = (c: unknown): c is Color => playersOf().includes(c as Color);
 const isPieceType = (t: unknown): t is PieceType => PIECE_TYPES.includes(t as PieceType);
 const isTerrainKind = (k: unknown): k is TerrainKind => TERRAIN_KINDS.includes(k as TerrainKind);
 const MAX_TAG_LENGTH = 20;
 /** The rank a pawn of this colour promotes on. */
-const lastRank = (color: Color) => (color === 'white' ? 7 : 0);
-const pawnStuckAt = (sq: Square, color: Color) => rankOf(sq) === lastRank(color);
+const pawnStuckAt = (sq: Square, color: Color) => promotesOn(color, sq);
 
 /**
  * Applies effects in order. Fails (without partial changes) if any effect is
