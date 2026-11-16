@@ -1,27 +1,47 @@
-import { SHIELD, type Piece } from './types';
+import { SHIELD, type Piece, type PieceType } from './types';
 import { hasTag } from './tags';
 
 /*
  * 합 (clash): when a piece tries to capture one that can stand its ground (it has a clash
- * multiplier, e.g. 검술 ×1.5, or a shield), both roll a d20 and multiply by their best
- * multiplier; the higher wins, a tie rolls again. docs/SPEC.md, "합과 조형물".
+ * multiplier, e.g. 검술 ×1.5, or a shield), both roll a d20 and multiply by their multiplier:
+ * the base of their kind times their best tag's. The higher wins, a tie rolls again.
+ * docs/SPEC.md, "합과 조형물".
  */
+
+/**
+ * Every kind's base clash multiplier, from its usual chess value (pawn 1, knight and bishop 3,
+ * rook 5, queen 9) as 0.7 + 0.1 × value; the king, worth no points, fights like a knight.
+ */
+export const BASE_CLASH: Record<PieceType, number> = { pawn: 0.8, knight: 1, bishop: 1, rook: 1.2, queen: 1.6, king: 1 };
 
 export const CLASH_MIN = 1.2;
 export const CLASH_MAX = 2.0;
 /** Rolls the authority sends with each move or attempt: enough for five ties and a decision. */
 export const CLASH_ROLLS = 12;
 
-/** The best multiplier among a piece's tags and its rider's (1 if none). */
-export function clashMultiplier(piece: Piece): number {
-  let best = 1;
-  for (const p of [piece, piece.rider]) for (const t of p?.tags ?? []) if (t.clash && t.clash > best) best = t.clash;
-  return best;
+/** The best multiplier among one piece's own tags (1 if none). */
+const tagMultiplier = (p: Piece): number => Math.max(1, ...(p.tags ?? []).map((t) => t.clash ?? 1));
+
+/**
+ * Its fighting skill: the best tag multiplier among a piece's and its rider's (1 if none). A
+ * piece with skill wears a weapon of some kind, stands its ground and cuts down whom it beats.
+ */
+export function clashSkill(piece: Piece): number {
+  return Math.max(tagMultiplier(piece), piece.rider ? tagMultiplier(piece.rider) : 1);
 }
 
-/** A capture of this piece becomes a clash: it (or its rider) has a multiplier, or it has a shield. */
+/**
+ * What its d20 is multiplied by in a clash: its kind's base times its best tag's multiplier
+ * (in hundredths). With a rider, whichever of the two fights better.
+ */
+export function clashMultiplier(piece: Piece): number {
+  const own = (p: Piece) => Math.round(BASE_CLASH[p.type] * tagMultiplier(p) * 100) / 100;
+  return Math.max(own(piece), piece.rider ? own(piece.rider) : 0);
+}
+
+/** A capture of this piece becomes a clash: it (or its rider) has skill, or it has a shield. */
 export function canResist(defender: Piece): boolean {
-  return clashMultiplier(defender) > 1 || hasTag(defender, SHIELD);
+  return clashSkill(defender) > 1 || hasTag(defender, SHIELD);
 }
 
 /** How many times the two meet on screen: closer scores, longer fights; each tie adds one. */

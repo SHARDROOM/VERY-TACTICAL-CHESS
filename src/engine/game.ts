@@ -24,7 +24,7 @@ import { SHIELD } from './types';
 import { dropFromBridges, tickTerrain } from './terrain';
 import { capturedAfter } from './captured';
 import { playFalls, startFalls } from './levitation';
-import { canResist, clashMultiplier, resolveClash } from './clash';
+import { canResist, clashMultiplier, clashSkill, resolveClash } from './clash';
 
 /** What effects applied now start from: the turn, whose it is, the walls and pits, the side of the board. */
 function effectContext(state: GameState, nextSpawnId = state.nextSpawnId): EffectContext {
@@ -244,7 +244,7 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
     if (clash.winner === 'defender') {
       // The attacker falls on its own square (with whoever rides it); cut down by a fighter, knocked off otherwise.
       board[cmd.from] = null;
-      const exit: Exit | undefined = clash.defense > 1 ? 'shatter' : undefined;
+      const exit: Exit | undefined = clashSkill(victim) > 1 ? 'shatter' : undefined;
       const events: GameEvent[] = [...opening, { type: 'removed', piece, at: cmd.from, cause: 'clash', ...(exit && { exit }) }];
       if (piece.rider) events.push({ type: 'removed', piece: piece.rider, at: cmd.from, cause: 'clash', ...(exit && { exit }) });
       const after = withCaptured({ ...state, castling: revokeCastling(state.castling, [cmd.from]) }, events);
@@ -256,7 +256,7 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
       return { ok: true, ...passTurn(after, board, null, events) };
     }
     // Lost by the defender: a shield breaks instead (the attacker goes back to its square), or it is cut down.
-    if (!isShielded(victim)) capturedExit = clash.attack > 1 ? 'shatter' : undefined;
+    if (!isShielded(victim)) capturedExit = clashSkill(piece) > 1 ? 'shatter' : undefined;
   }
 
   // A shield absorbs the capture: it breaks, the target stays, the attacker does not move,

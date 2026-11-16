@@ -147,11 +147,11 @@ describe('clashes in a show', () => {
     s = { ...s, board: b };
     const proposed = applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling });
     if (!proposed.ok) throw new Error(proposed.detail);
-    // The knight loses the clash: 4 against 15×1.5.
+    // The knight loses the clash: 4 against 15 × 1.2 (a pawn's ×0.8 with 검술 ×1.5).
     const r = applyCommand(proposed.state, { type: 'attemptSpecial', roll: 15, clashRolls: [4, 15] });
     if (!r.ok) throw new Error(r.reason);
     const show = buildShow(r.events, proposed.state, label)!;
-    expect(show.clashes).toEqual([{ effect: 1, clash: expect.objectContaining({ winner: 'defender', defense: 1.5 }) }]);
+    expect(show.clashes).toEqual([{ effect: 1, clash: expect.objectContaining({ winner: 'defender', defense: 1.2 }) }]);
     // Only the effects that happened: the third never did.
     expect(show.effects).toHaveLength(2);
     expect(show.steps[2].board).toEqual(r.state.board);

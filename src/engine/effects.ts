@@ -25,7 +25,7 @@ import { SHIELD } from './types';
 import { MAX_TERRAIN, dropFromBridges } from './terrain';
 import { capturedAfter } from './captured';
 import { checkActor } from './actor';
-import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, resolveClash } from './clash';
+import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, clashSkill, resolveClash } from './clash';
 import { cleanProp } from './props';
 import { startFalls } from './levitation';
 
@@ -180,7 +180,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           }
           if (winner === 'defender') {
             // The attacker falls where it stood, and the rest of the action never happens.
-            const exit: Exit | undefined = defense > 1 ? 'shatter' : undefined;
+            const exit: Exit | undefined = clashSkill(occupant) > 1 ? 'shatter' : undefined;
             board[e.from] = null;
             touched.push(e.from);
             events.push({ type: 'removed', piece, at: e.from, cause: 'clash', ...(exit && { exit }) });
@@ -189,7 +189,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
             cut = i;
             break;
           }
-          if (!isShielded(occupant)) capturedExit = attack > 1 ? 'shatter' : undefined;
+          if (!isShielded(occupant)) capturedExit = clashSkill(piece) > 1 ? 'shatter' : undefined;
         }
         if (occupant && isShielded(occupant)) {
           board[e.to] = withoutTag(occupant, SHIELD);

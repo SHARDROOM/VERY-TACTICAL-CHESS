@@ -1,8 +1,12 @@
-import { AIR, COVER_NAME, MAX_TERRAIN, PROP_PRESET_NAME, RIDE, TERRAIN_NAME, airOf, distance, isAir, parseSquare, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig } from '../engine';
+import { AIR, BASE_CLASH, COVER_NAME, MAX_TERRAIN, PROP_PRESET_NAME, RIDE, TERRAIN_NAME, airOf, distance, isAir, parseSquare, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig } from '../engine';
 
 const COLOR: Record<Color, string> = { white: '백', black: '흑' };
 const PIECE: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
 const LETTER: Record<PieceType, string> = { king: 'k', queen: 'q', rook: 'r', bishop: 'b', knight: 'n', pawn: 'p' };
+
+const times = (a: number, b: number) => Math.round(a * b * 100) / 100;
+/** The kinds' base clash multipliers, as the prompts tell them. */
+const BASE_LIST = `폰 ×${BASE_CLASH.pawn}, 나이트 ×${BASE_CLASH.knight}, 비숍 ×${BASE_CLASH.bishop}, 룩 ×${BASE_CLASH.rook}, 퀸 ×${BASE_CLASH.queen}, 킹 ×${BASE_CLASH.king}`;
 
 /**
  * The GM's standing instructions. Depends only on the rule numbers, so it stays
@@ -99,7 +103,8 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 
 ## 합 (clash)
 - 태그에 합 배율(clash, 1.2~2.0)을 주면 그 기물은 싸움 실력이 생깁니다. 예: "검술" ×1.5, 대가의 검술 ×2.0.
-- 배율 태그나 보호막이 있는 기물을 손으로 잡으려 하면(일반 수, 또는 move 효과로 그 칸에 들어갈 때) 합이 일어납니다: 양쪽이 d20 × 배율을 굴려 큰 쪽이 이기고, 공격 쪽이 지면 공격 기물이 잡힙니다. 보호막은 지면 보호막만 깨지고 기물은 살아남습니다. remove 같은 원거리·주문 효과와 혼돈에는 합이 없습니다.
+- 배율 태그나 보호막이 있는 기물을 손으로 잡으려 하면(일반 수, 또는 move 효과로 그 칸에 들어갈 때) 합이 일어납니다: 양쪽이 d20 × 배율을 굴려 큰 쪽이 이기고, 공격 쪽이 지면 공격 기물이 잡힙니다.
+- 기물마다 기물 점수에 따른 기본 배율이 있습니다: ${BASE_LIST}. 합에서는 기본 배율에 태그 배율을 곱합니다(검술 ×1.5인 폰은 ×${times(BASE_CLASH.pawn, 1.5)}, 검술 ×1.5인 퀸은 ×${times(BASE_CLASH.queen, 1.5)}). 기본 배율만으로는 합이 일어나지 않습니다(배율 태그나 보호막이 있어야 함). 그래서 같은 태그라도 강한 기물에 줄수록 더 강합니다. 보호막은 지면 보호막만 깨지고 기물은 살아남습니다. remove 같은 원거리·주문 효과와 혼돈에는 합이 없습니다.
 - 그러니 배율 태그와 보호막은 강합니다. 기준: 배율 ×1.2~1.4는 DC 11~14·AP 2, ×1.5~2.0은 DC 15~20·AP 3, 영구면 DC +3. 보호막은 위 기준보다 DC +2.
 - move 효과로 배율 태그나 보호막이 있는 상대 기물을 잡게 하면, 그 행동은 합의 결과에 따라 실패할 수 있습니다(지면 남은 효과는 취소). 판정할 때 이 위험을 감안하세요.
 
@@ -371,7 +376,8 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 
 ## 합 (clash)
 - 태그에 합 배율(clash, 1.2~2.0)을 주면 그 기물은 싸움 실력이 생깁니다. 예: "검술" ×1.5, 대가의 검술 ×2.0.
-- 배율 태그나 보호막이 있는 기물을 손으로 잡으려 하면(일반 수, 또는 move 효과로 그 칸에 들어갈 때) 합이 일어납니다: 양쪽이 d20 × 배율을 굴려 큰 쪽이 이기고, 공격 쪽이 지면 공격 기물이 잡힙니다. 보호막은 지면 보호막만 깨지고 기물은 살아남습니다. remove 같은 원거리·주문 효과와 혼돈에는 합이 없습니다.
+- 배율 태그나 보호막이 있는 기물을 손으로 잡으려 하면(일반 수, 또는 move 효과로 그 칸에 들어갈 때) 합이 일어납니다: 양쪽이 d20 × 배율을 굴려 큰 쪽이 이기고, 공격 쪽이 지면 공격 기물이 잡힙니다.
+- 기물마다 기물 점수에 따른 기본 배율이 있습니다: ${BASE_LIST}. 합에서는 기본 배율에 태그 배율을 곱합니다(검술 ×1.5인 폰은 ×${times(BASE_CLASH.pawn, 1.5)}, 검술 ×1.5인 퀸은 ×${times(BASE_CLASH.queen, 1.5)}). 기본 배율만으로는 합이 일어나지 않습니다(배율 태그나 보호막이 있어야 함). 그래서 같은 태그라도 강한 기물에 줄수록 더 강합니다. 보호막은 지면 보호막만 깨지고 기물은 살아남습니다. remove 같은 원거리·주문 효과와 혼돈에는 합이 없습니다.
 - 그러니 배율 태그와 보호막은 강합니다. 기준: 배율 ×1.2~1.4는 DC 11~14·AP 2, ×1.5~2.0은 DC 15~20·AP 3, 영구면 DC +3. 보호막은 위 기준보다 DC +2.
 - move 효과로 배율 태그나 보호막이 있는 상대 기물을 잡게 하면, 그 행동은 합의 결과에 따라 실패할 수 있습니다(지면 남은 효과는 취소). 판정할 때 이 위험을 감안하세요.
 

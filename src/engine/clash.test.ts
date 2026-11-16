@@ -8,7 +8,7 @@ import {
   type Ruling,
   type Tag,
 } from './index';
-import { canResist, clashMultiplier, clashWinChance, exchangesFor, resolveClash } from './clash';
+import { canResist, clashMultiplier, clashSkill, clashWinChance, exchangesFor, resolveClash } from './clash';
 import { ok, okMove, move, sq } from './testUtil';
 
 const tag = (name: string, clash?: number): Tag => ({ name, turnsLeft: null, appliedOnTurn: 1, ...(clash && { clash }) });
@@ -28,11 +28,18 @@ function duel(opts: { defender?: number; attacker?: number; shield?: boolean } =
 }
 
 describe('clash rules (합)', () => {
-  it('the best multiplier counts, the rider\'s too; 1 without', () => {
+  it('every kind has a base, by its chess value: the pawn weakest, the queen strongest', () => {
+    const of = (type: Piece['type']) => clashMultiplier({ id: type, color: 'white', type });
+    expect(['pawn', 'knight', 'bishop', 'rook', 'queen', 'king'].map((t) => of(t as Piece['type']))).toEqual([0.8, 1, 1, 1.2, 1.6, 1]);
+  });
+
+  it('the best tag multiplier times the base, the rider\'s too if it fights better; skill is the tag alone', () => {
     const p: Piece = { id: 'p', color: 'white', type: 'pawn' };
-    expect(clashMultiplier(p)).toBe(1);
-    expect(clashMultiplier({ ...p, tags: [tag('검술', 1.5), tag('창술', 1.3)] })).toBe(1.5);
-    expect(clashMultiplier({ ...p, rider: fighter({ id: 'r', color: 'white', type: 'pawn' }, 1.8) })).toBe(1.8);
+    expect(clashMultiplier({ ...p, tags: [tag('검술', 1.5), tag('창술', 1.3)] })).toBe(1.2);
+    expect(clashMultiplier({ id: 'q', color: 'white', type: 'queen', tags: [tag('검술', 1.5)] })).toBe(2.4);
+    expect(clashMultiplier({ ...p, rider: fighter({ id: 'r', color: 'white', type: 'knight' }, 1.8) })).toBe(1.8);
+    expect(clashSkill(p)).toBe(1);
+    expect(clashSkill(fighter(p))).toBe(1.5);
     expect(canResist(p)).toBe(false);
     expect(canResist({ ...p, tags: [tag('보호막')] })).toBe(true);
     expect(canResist(fighter(p))).toBe(true);
@@ -71,7 +78,8 @@ describe('clashes in normal moves', () => {
 
   it('the attacker wins: a normal capture, the loser cut down if the winner fights with a multiplier', () => {
     const r = okMove(duel({ defender: 1.5, attacker: 1.2 }), 'd4', 'd7', { clashRolls: [18, 5] });
-    expect(r.events[0]).toMatchObject({ type: 'clash', winner: 'attacker', attack: 1.2, defense: 1.5, rounds: [{ attack: 18, defense: 5 }] });
+    // The rook: base ×1.2 × 검술 ×1.2; the knight: base ×1 × 1.5.
+    expect(r.events[0]).toMatchObject({ type: 'clash', winner: 'attacker', attack: 1.44, defense: 1.5, rounds: [{ attack: 18, defense: 5 }] });
     expect(r.state.board[sq('d7')]?.type).toBe('rook');
     expect(r.state.captured).toEqual([expect.objectContaining({ type: 'knight', exit: 'shatter' })]);
   });
@@ -85,6 +93,12 @@ describe('clashes in normal moves', () => {
     expect(r.state.board[sq('d7')]?.type).toBe('knight');
     expect(r.state.captured).toEqual([expect.objectContaining({ type: 'rook', color: 'white', exit: 'shatter' })]);
     expect(r.state.turn).toBe('black');
+  });
+
+  it('the bases count even with no weapon: a plain rook into a shielded knight fights ×1.2 against ×1', () => {
+    // 10 × 1.2 = 12 against 12: a tie, rolled again; then 10.8 against 10.
+    const again = okMove(duel({ shield: true }), 'd4', 'd7', { clashRolls: [10, 12, 9, 10] });
+    expect(again.events[0]).toMatchObject({ type: 'clash', attack: 1.2, defense: 1, rounds: [{ attack: 10, defense: 12 }, { attack: 9, defense: 10 }], winner: 'attacker' });
   });
 
   it('a shield: losing breaks it (the attacker goes back), winning takes the attacker (knocked off, no blade)', () => {

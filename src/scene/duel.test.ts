@@ -20,16 +20,24 @@ const clash = (over: Partial<Extract<GameEvent, { type: 'clash' }>> = {}): Extra
   exchanges: 3,
   ...over,
 });
+/** The board with the piece on `name` given a sword (검술 ×1.5). */
+const armed = (name: string) => {
+  const b = [...board];
+  b[sq(name)] = { ...b[sq(name)]!, tags: [{ name: '검술', turnsLeft: null, appliedOnTurn: 1, clash: 1.5 }] };
+  return b;
+};
 const at = (run: Parameters<typeof duelPose>[0], who: 'attacker' | 'defender', t: number) => duelPose(run, who, t, { p: new Vector3(), q: new Quaternion() });
 
 describe('planning a duel', () => {
   it('the attacker steps up to just short of the defender; the finale follows who won and how', () => {
-    const plan = planDuel(clash(), board)!;
+    const plan = planDuel(clash(), armed('d7'))!;
     expect(plan.attacker.stance.z).toBeCloseTo(plan.defender.home.z + 0.95);
     expect(plan.finale).toBe('shatter'); // lost to a fighter
     expect(planDuel(clash({ defense: 1, shield: true }), board)!.finale).toBe('knock');
     expect(planDuel(clash({ winner: 'attacker', shield: true }), board)!.finale).toBe('shield');
-    expect(planDuel(clash({ winner: 'attacker', attack: 1.5 }), board)!.finale).toBe('shatter');
+    expect(planDuel(clash({ winner: 'attacker', attack: 1.8 }), armed('d4'))!.finale).toBe('shatter');
+    // A strong kind with no weapon (a rook's base ×1.2) only knocks it over.
+    expect(planDuel(clash({ winner: 'attacker', attack: 1.2 }), board)!.finale).toBe('knock');
     expect(planDuel(clash(), board, 2)!.exchanges).toBe(2);
   });
 });

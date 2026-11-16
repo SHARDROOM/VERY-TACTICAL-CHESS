@@ -1,4 +1,4 @@
-import { BURN, ELEMENT_NAME, RIDE, squareName, type Piece, type Square, type Tag } from '../engine';
+import { BASE_CLASH, BURN, ELEMENT_NAME, RIDE, clashMultiplier, clashSkill, squareName, type Piece, type Square, type Tag } from '../engine';
 import { ELEMENT_LOOK } from '../scene/fxLooks';
 import { COLOR_NAME, PIECE_NAME, movePowers } from './messages';
 
@@ -25,6 +25,24 @@ function AuraMark({ tag }: { tag: Tag }) {
   );
 }
 
+/** Its clash multiplier (합 배율): the kind's base, times its weapon's if it has one. */
+function ClashLine({ piece }: { piece: Piece }) {
+  const base = BASE_CLASH[piece.type];
+  const skill = clashSkill(piece);
+  const total = clashMultiplier(piece);
+  return (
+    <span className="clash-base" title="합에서 주사위에 곱하는 수. 기물 점수가 높을수록 기본 배율이 높습니다.">
+      합 ×{total}
+      {skill > 1 && total === Math.round(base * skill * 100) / 100 && (
+        <span className="muted">
+          {' '}
+          (기본 ×{base} × 태그 ×{skill})
+        </span>
+      )}
+    </span>
+  );
+}
+
 function Line({ piece }: { piece: Piece }) {
   const tags = (piece.tags ?? []).filter((t) => t.name !== RIDE);
   return (
@@ -32,6 +50,7 @@ function Line({ piece }: { piece: Piece }) {
       <strong>
         {COLOR_NAME[piece.color]} {PIECE_NAME[piece.type]}
       </strong>
+      <ClashLine piece={piece} />
       {tags.length > 0 ? (
         <ul>
           {tags.map((t) => (

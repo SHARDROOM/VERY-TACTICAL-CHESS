@@ -373,6 +373,8 @@ select option { background: var(--walnut); }
 .piece-info strong { font-family: var(--font-voice); font-weight: 700; }
 .piece-info ul { margin: 4px 0 0; padding-left: 16px; }
 .piece-info .muted { color: var(--muted); display: block; }
+.piece-info .clash-base { margin-left: 8px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.piece-info .clash-base .muted { display: inline; }
 .piece-info .rider { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
 .piece-info-square { color: var(--muted); font-size: 0.8125rem; }
 .aura-mark { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; color: var(--muted); font-size: 0.8125rem; white-space: nowrap; }

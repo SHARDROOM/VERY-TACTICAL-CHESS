@@ -1,5 +1,5 @@
 import { Quaternion, Vector3 } from 'three';
-import { DUEL_TIMING, type Board, type GameEvent, type Piece, type PieceType } from '../engine';
+import { DUEL_TIMING, clashSkill, type Board, type GameEvent, type Piece, type PieceType } from '../engine';
 import { loadPhysics } from '../dice3d/simulate';
 import { hullPoints } from './piecePhysics';
 import { squareToWorld } from './coords';
@@ -50,8 +50,9 @@ export function planDuel(clash: ClashEvent, board: Board, maxExchanges = 6): Due
   const dir = home.clone().sub(target).setY(0);
   const len = dir.length() || 1;
   const stance = target.clone().add(dir.multiplyScalar(Math.min(len, 0.95) / len));
+  // A winner with skill (a weapon) cuts the loser down; anyone else knocks it over.
   const finale: Finale =
-    clash.winner === 'defender' ? (clash.defense > 1 ? 'shatter' : 'knock') : clash.shield ? 'shield' : clash.attack > 1 ? 'shatter' : 'knock';
+    clash.winner === 'defender' ? (clashSkill(d) > 1 ? 'shatter' : 'knock') : clash.shield ? 'shield' : clashSkill(a) > 1 ? 'shatter' : 'knock';
   return {
     attackerId: clash.attackerId,
     defenderId: clash.defenderId,
