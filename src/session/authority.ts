@@ -43,10 +43,10 @@ export interface AuthorityOptions {
 /** How long a fall plays on screen; the clock does not run during it. */
 export const FALL_SHOW_MS = 3200;
 
-/** Extra time after an attempt, for the dice to roll on screen. */
-export const DICE_GRACE_MS = 4000;
-/** A clash's two dice, thrown one after the other, and a moment to read both scores. */
-export const CLASH_DICE_GRACE_MS = 7500;
+/** Extra time after an attempt, for the die to roll on screen (up to about five seconds) and be read. */
+export const DICE_GRACE_MS = 7000;
+/** A clash's two dice, thrown one after the other (up to about seven seconds), and a moment to read both scores. */
+export const CLASH_DICE_GRACE_MS = 10500;
 
 /** How long a staged show takes on screen, in ms (the clock does not run during it). */
 export function showMs(staging: Staging | undefined, effects: Effect[]): number {
