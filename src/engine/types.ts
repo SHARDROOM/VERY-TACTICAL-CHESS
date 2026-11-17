@@ -60,6 +60,22 @@ export interface Tag {
   mind?: number;
 }
 
+/**
+ * The remains (유해) of a piece that fell on the board: for a few of its owner's turns the place
+ * remembers it, and reviving it there gets a bonus (see modifiers.ts) and brings back that very piece.
+ */
+export interface RemainsMark {
+  pieceId: string;
+  color: Color;
+  type: PieceType;
+  /** The ground square it fell on (under it, if it was in the air). */
+  at: Square;
+  /** Its owner's turns left (a gray wanderer's: anyone's). */
+  turnsLeft: number;
+  /** The turn it fell on (that turn never counts down). */
+  appliedOnTurn: number;
+}
+
 /** A piece beside the board, and how it left (as the GM staged it; missing = knocked off). */
 export interface CapturedPiece extends Piece {
   exit?: Exit;
@@ -292,6 +308,8 @@ export interface GameState {
   precedents: Precedent[];
   /** Pieces taken off the board (captured or removed), oldest first, as plain pieces. */
   captured: CapturedPiece[];
+  /** Where pieces fell lately (유해), oldest first: reviving one there is easier. See captured.ts. */
+  remains?: RemainsMark[];
   /** Chaos events so far, oldest first (missing in saves from before the rule existed). */
   chaosLog?: ChaosRecord[];
   /** Walls and pits on the board (missing = none). */

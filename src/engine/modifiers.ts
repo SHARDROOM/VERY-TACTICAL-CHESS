@@ -1,6 +1,7 @@
 import { distance, squareName } from './squares';
 import { stackOf } from './tags';
-import type { Board, Color, PendingAction, PieceType, Ruling } from './types';
+import type { Board, Color, PendingAction, PieceType, RemainsMark, Ruling } from './types';
+import { remainsAt } from './captured';
 
 /*
  * Roll modifiers (판정 보정, docs/SPEC.md "판정 보정"): numbers the system adds to the two dice
@@ -67,9 +68,17 @@ export function sacrificeModifiers(board: Board, ruling: Ruling): RollModifier[]
   return out;
 }
 
-/** The modifiers this ruling's roll gets on `board`, declared by `color`. */
-export function rollModifiers(board: Board, ruling: Ruling, color: Color): RollModifier[] {
+/** Reviving a piece where its remains (유해) still are. */
+export const REMAINS_BONUS = 2;
+
+/** The modifiers this ruling's roll gets on `board`, declared by `color` (`remains`: the game's 유해). */
+export function rollModifiers(board: Board, ruling: Ruling, color: Color, remains?: readonly RemainsMark[]): RollModifier[] {
   const mods: RollModifier[] = [...sacrificeModifiers(board, ruling)];
+  for (const e of ruling.effects) {
+    if (e.type !== 'revive') continue;
+    const r = remainsAt(remains, e.at);
+    if (r && r.color === e.color && r.type === e.piece) mods.push({ kind: 'remains', label: `유해 ${KIND_NAME[r.type]} ${squareName(r.at)}`, value: REMAINS_BONUS });
+  }
   const named = new Set(ruling.skills ?? []);
   const actor = ruling.actor != null ? board[ruling.actor] : null;
   if (actor && named.size) {
@@ -87,9 +96,9 @@ export function rollModifiers(board: Board, ruling: Ruling, color: Color): RollM
  * The modifiers of a pending action's next roll. A second try after a failure keeps what was given
  * up for the first (`offered`): the pieces are gone, but the offering still counts.
  */
-export function pendingModifiers(board: Board, pending: PendingAction): RollModifier[] {
-  if (!pending.offered) return rollModifiers(board, pending.ruling, pending.color);
-  return [...pending.offered, ...rollModifiers(board, { ...pending.ruling, sacrifice: [] }, pending.color)];
+export function pendingModifiers(board: Board, pending: PendingAction, remains?: readonly RemainsMark[]): RollModifier[] {
+  if (!pending.offered) return rollModifiers(board, pending.ruling, pending.color, remains);
+  return [...pending.offered, ...rollModifiers(board, { ...pending.ruling, sacrifice: [] }, pending.color, remains)];
 }
 
 /** What the modifiers add up to, held within ±MOD_TOTAL_MAX. */

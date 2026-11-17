@@ -8,6 +8,7 @@ import {
   TERRAIN_NAME,
   type Board,
   type CapturedPiece,
+  type RemainsMark,
   type Color,
   type Effect,
   type FallingPiece,
@@ -24,7 +25,7 @@ import { SQUARES, airOf, isAir, playersOf, promotesOn, sameLayer, squareName } f
 import { MAX_MOVE_TIMES, extinguish, isShielded, isStunned, mapStack, unseat, withRiderOnTop, withTag, withoutTag, withoutTopRider } from './tags';
 import { SHIELD } from './types';
 import { MAX_TERRAIN, dropFromBridges } from './terrain';
-import { capturedAfter } from './captured';
+import { capturedAfter, remainsAt } from './captured';
 import { checkActor } from './actor';
 import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, clashSkill, resolveClash } from './clash';
 import { cleanProp } from './props';
@@ -45,6 +46,8 @@ export interface EffectContext {
   terrain?: readonly TerrainCell[];
   /** Pieces beside the board before the effects (oldest first), for revive. */
   captured?: readonly CapturedPiece[];
+  /** Where pieces fell lately (유해): a revive there brings back that very piece. */
+  remains?: readonly RemainsMark[];
   /**
    * Whether a move effect into a piece that can stand its ground is a clash (special actions;
    * not chaos): 'check' while a ruling is only being checked (the attacker is taken to win, the
@@ -398,7 +401,10 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (e.piece === 'pawn' && pawnStuckAt(e.at, e.color)) return fail('폰은 그 편의 마지막 줄에 되살릴 수 없음');
         // Whoever lies beside the board right now: before the effects, plus anything taken by the earlier ones.
         const graveyard = capturedAfter(ctx.captured, events);
-        const found = graveyard.filter((p) => p.color === e.color && p.type === e.piece).pop();
+        // On its remains: that very piece, if it still lies beside the board. Otherwise the latest of its kind.
+        const mark = remainsAt(ctx.remains, e.at);
+        const kin = graveyard.filter((p) => p.color === e.color && p.type === e.piece);
+        const found = (mark && kin.find((p) => p.id === mark.pieceId)) || kin.pop();
         if (!found) return fail(`잡힌 ${COLOR_NAME[e.color]} ${PIECE_NAME[e.piece]}이(가) 없음`);
         const piece: Piece = { id: found.id, color: found.color, type: found.type };
         board[e.at] = piece;

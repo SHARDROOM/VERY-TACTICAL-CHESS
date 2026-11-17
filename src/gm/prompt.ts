@@ -136,6 +136,7 @@ ${hexRules(rules)}
 - spawn, unboard, revive의 도착 칸은 비어 있어야 하고 벽이나 구덩이도 없어야 합니다.
 - swap은 두 칸 모두에 기물이 있어야 하고, 둘 다 기절하지 않아야 합니다.
 - revive는 "잡힌 기물" 목록에 있는 기물만 되살립니다. 킹은 되살릴 수 없습니다.
+- 유해: 기물이 쓰러진 자리는 그 주인의 턴으로 3턴 동안 기억됩니다(보드 상태의 "유해" 목록). 그 자리에 같은 편·같은 종류를 revive하면 시스템이 +2 보정을 더하고 바로 그 기물이 돌아옵니다. DC는 유해 없이 정하세요. "쓰러진 자리에서 되살린다"는 선언이면 그 칸을 at으로 쓰세요.
 - 킹이 서 있는 칸에는 구덩이를 팔 수 없고, 킹을 구덩이에 빠뜨릴 수도 없습니다. 킹에는 화상을 붙일 수 없습니다.
 - 폰을 그 편의 마지막 줄(백은 8번 줄, 흑은 1번 줄)에 spawn이나 revive하거나 그 줄의 기물을 폰으로 transform할 수 없습니다. 효과로 폰이 마지막 줄에 도착하면 자동으로 퀸으로 승격됩니다.
 
@@ -283,6 +284,12 @@ function capturedList(state: GameState, color: Color): string {
   return items.join(', ') || '(없음)';
 }
 
+function remainsList(state: GameState): string {
+  const marks = state.remains ?? [];
+  if (!marks.length) return '(없음)';
+  return marks.map((r) => `- ${squareName(r.at)}: ${COLOR[r.color]} ${PIECE[r.type]} (${r.turnsLeft}턴 남음)`).join('\n');
+}
+
 function terrainList(state: GameState): string {
   const cells = state.terrain ?? [];
   if (!cells.length) return '(없음)';
@@ -347,6 +354,9 @@ ${sides.map((c) => `- ${COLOR[c]}: ${pieceList(state, c)}`).join('\n')}${wandere
 
 ## 잡힌 기물 (보드 옆, revive로 되살릴 수 있음)
 ${sides.map((c) => `- ${COLOR[c]}: ${capturedList(state, c)}`).join('\n')}
+
+## 유해 (최근에 기물이 쓰러진 자리, 그 자리에 revive하면 시스템이 +2 보정을 주고 바로 그 기물이 돌아옴)
+${remainsList(state)}
 
 ## 지형
 ${terrainList(state)}
@@ -502,6 +512,9 @@ ${sides.map((c) => `- ${COLOR[c]}: ${pieceList(state, c)}`).join('\n')}${wandere
 
 ## 잡힌 기물 (보드 옆, revive로 되살릴 수 있음)
 ${sides.map((c) => `- ${COLOR[c]}: ${capturedList(state, c)}`).join('\n')}
+
+## 유해 (최근에 기물이 쓰러진 자리, 그 자리에 revive하면 시스템이 +2 보정을 주고 바로 그 기물이 돌아옴)
+${remainsList(state)}
 
 ## 지형
 ${terrainList(state)}

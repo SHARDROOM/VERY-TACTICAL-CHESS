@@ -25,13 +25,13 @@ import { extinguish, hasTag, isShielded, mapStack, moveTimesOf, ridersOf, stackO
 import { GRAY, HOOD, SHIELD, type Ruling, type Tag } from './types';
 import { checkActor } from './actor';
 import { dropFromBridges, tickTerrain } from './terrain';
-import { capturedAfter } from './captured';
+import { capturedAfter, remainsAfter, tickRemains } from './captured';
 import { playFalls, startFalls } from './levitation';
 import { canResist, clashMultiplier, clashSkill, resolveClash } from './clash';
 
 /** What effects applied now start from: the turn, whose it is, the walls and pits, the side of the board. */
 function effectContext(state: GameState, nextSpawnId = state.nextSpawnId): EffectContext {
-  return { turnNumber: state.turnNumber, nextSpawnId, color: state.turn, terrain: state.terrain ?? [], captured: state.captured ?? [] };
+  return { turnNumber: state.turnNumber, nextSpawnId, color: state.turn, terrain: state.terrain ?? [], captured: state.captured ?? [], remains: state.remains ?? [] };
 }
 
 /** A ruling's effects: with a sacrifice they may hand out stronger buffs (see modifiers.ts). */
@@ -181,7 +181,7 @@ export function exitsOf(events: GameEvent[], sources: number[], staging: Staging
 /** Records the pieces that left the board in these events (with how they left) and those that came back. */
 function withCaptured(state: GameState, events: GameEvent[], exits?: Map<string, Exit>): GameState {
   return events.some((e) => e.type === 'moved' || e.type === 'removed' || e.type === 'revived')
-    ? { ...state, captured: capturedAfter(state.captured, events, exits) }
+    ? { ...state, captured: capturedAfter(state.captured, events, exits), remains: remainsAfter(state.remains, events, state.turnNumber) }
     : state;
 }
 
@@ -314,6 +314,7 @@ function passTurn(
   const apNext = Math.min(apMax, state.ap[next] + apPerTurn);
   const turnNumber = state.turnNumber + 1;
   const tagged = tickTags(board, state.turn, state.turnNumber);
+  const remains = tickRemains(state.remains, state.turn, state.turnNumber);
   const land = tickTerrain(state.terrain, state.turn, state.turnNumber);
   // A bridge that ran out drops whoever stands on it.
   const dropped = dropFromBridges(tagged.board, land.fallen, land.terrain);
@@ -327,7 +328,8 @@ function passTurn(
   if (ticked.events.some((e) => e.type === 'removed' || e.type === 'pushed') || land.events.length) {
     for (const c of playersOf()) if (isInCheck(ticked.board, c, land.terrain)) events.push({ type: 'check', color: c });
   }
-  const { chain: _chain, ...rest } = withCaptured(state, ticked.events);
+  // Older remains fade first; pieces burnt up just now leave fresh ones.
+  const { chain: _chain, ...rest } = withCaptured({ ...state, remains }, ticked.events);
   void _chain;
   return {
     state: {
@@ -528,7 +530,7 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
   // Two dice added up, plus what the actor's skills and the target's will add (modifiers.ts).
   // Snake eyes (1 and 1) always fails, and backfires, whatever the DC and the modifiers;
   // otherwise the DC decides (there is no critical success).
-  const mods = pendingModifiers(state.board, state.pending!);
+  const mods = pendingModifiers(state.board, state.pending!, state.remains);
   const bonus = modifierTotal(mods);
   const outcome: Outcome = roll === ROLL_MIN ? 'critFailure' : roll + bonus >= ruling.dc ? 'success' : 'failure';
   const success = outcome === 'success';

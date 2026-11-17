@@ -73,7 +73,7 @@ const ON_SQUARE = 0.72;
 const easeOutBack = (t: number) => 1 + 2.7 * (t - 1) ** 3 + 1.7 * (t - 1) ** 2;
 
 /** Knights look toward the opponent, turned toward the board centre so players see their profile. */
-function knightFacing(color: Color, x: number, z = 0): number {
+export function knightFacing(color: Color, x: number, z = 0): number {
   // The hexagon: every knight looks toward the middle of the board (its model faces +x).
   if (isHex()) return Math.abs(x) + Math.abs(z) < 0.01 ? 0 : Math.atan2(z, -x);
   const turn = 0.9;

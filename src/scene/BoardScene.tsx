@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject, type React
 import { CanvasTexture, Quaternion, SRGBColorSpace, Vector3, type Group } from 'three';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { CameraControls, Environment, Lightformer } from '@react-three/drei';
-import { AIR, fileOf, isAir, isHex, rankOf, type Board, type CapturedPiece, type Color, type FallingPiece, type Square, type TerrainCell } from '../engine';
+import { AIR, fileOf, isAir, isHex, rankOf, type Board, type CapturedPiece, type Color, type FallingPiece, type Square, type TerrainCell, type RemainsMark } from '../engine';
 import { HEX_FRAME_R, sideDir, squareToWorld } from './coords';
 import { HexFrame, tileGeometry } from './HexBoard';
 import { fallStart } from './boardPhysics';
@@ -17,6 +17,9 @@ import { CoinTable } from '../coins/CoinTable';
 import { DiceTray, trayCenterX, type ActiveRoll } from '../dice3d/DiceTray';
 import { TourCamera, type TourInset, type TourPhase } from './TourCamera';
 import { RenderPace, keepAwake } from './renderPace';
+import { Ghosts } from './Ghosts';
+
+const NO_REMAINS: RemainsMark[] = [];
 import { DoodleLayer, type DoodleTool } from './DoodleLayer';
 import type { Doodle, DoodleOp } from '../session/doodle';
 import { FxLayer, type FxShow } from './FxLayer';
@@ -75,6 +78,8 @@ interface Props {
   lightFx?: boolean;
   /** Walls and pits on the board. */
   terrain?: readonly TerrainCell[];
+  /** Where pieces fell lately (유해): faint outlines. */
+  remains?: readonly RemainsMark[];
   /** While a ruling waits: the square of the piece that acts and the squares it acts on. */
   marks?: { actor: Square; targets: Square[] } | null;
   /** Targets of the selected piece whose capture would be a clash (합), with its chance of winning each. */
@@ -415,6 +420,7 @@ export function BoardScene({
   shake = null,
   lightFx = false,
   terrain = NO_TERRAIN,
+  remains = NO_REMAINS,
   marks = null,
   clashOdds = NO_ODDS,
   falling = NO_FALLING,
@@ -542,6 +548,7 @@ export function BoardScene({
       })}
 
       <TerrainLayer terrain={terrain} />
+      <Ghosts remains={remains} />
       <AirMarks board={board} selected={selected} targets={targets} checkedKing={checkedKing} marks={marks} clashOdds={clashOdds} onClick={click} />
       {clashOdds.map((c) => (
         <ClashOdds key={c.at} at={c.at} chance={c.chance} height={squareToWorld(c.at)[1] + (board[c.at] ? PIECE_HEIGHT[board[c.at]!.type] : 1)} />
