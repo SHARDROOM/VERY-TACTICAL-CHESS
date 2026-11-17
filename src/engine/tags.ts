@@ -24,12 +24,18 @@ export const isFloating = (piece: Piece | null | undefined) => hasTag(piece, LEV
 /** Most normal moves a piece may make in a row in one turn (a tag's moveTimes). */
 export const MAX_MOVE_TIMES = 3;
 
-/** The kinds of piece this one moves like: its own, and any its tags lend it (moveAs). */
+/**
+ * The kinds of piece this one moves like: its own, or, while a tag lends it others (moveAs),
+ * those instead (docs/SPEC.md, "이동 능력"). With several such tags the newest one counts (a tag
+ * put on again counts as new). A tag may list several kinds: it moves like any of them.
+ */
 export function movePatterns(piece: Piece): PieceType[] {
-  const kinds = new Set<PieceType>([piece.type]);
-  for (const t of piece.tags ?? []) for (const k of t.moveAs ?? []) kinds.add(k);
-  return [...kinds];
+  const lent = [...(piece.tags ?? [])].reverse().find((t) => t.moveAs?.length);
+  return lent ? [...new Set(lent.moveAs)] : [piece.type];
 }
+
+/** Its own moves are replaced by a tag's (and with them a pawn's two-step and en passant, a king's castling). */
+export const movesReplaced = (piece: Piece): boolean => !!piece.tags?.some((t) => t.moveAs?.length);
 
 /** How many normal moves in a row this piece makes in one turn (1 = the usual one). */
 export function moveTimesOf(piece: Piece): number {

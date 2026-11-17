@@ -65,7 +65,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 ## 효과 (이것만 쓸 수 있습니다)
 - {"type": "move", "from": "b1", "to": "e5"}: from 칸의 기물을 to 칸으로 옮긴다. to에 상대 기물이 있으면 그 기물을 잡는다.
 - {"type": "remove", "at": "d7"}: at 칸의 기물을 보드에서 없앤다.
-- {"type": "tag", "at": "g8", "tag": "기절", "turns": 1}: 기물에 태그를 붙인다. turns는 그 기물 주인의 턴 기준 지속 턴 수이고, 0이면 영구다. clash에 합 배율(1.2~2.0, 없으면 0)을, prop에 태그의 모습(조형물, 없으면 preset "none")을 줄 수 있다. moveAs에 기물 종류 목록을 주면 그 태그가 있는 동안 원래 움직임에 더해 그 기물들처럼도 움직이고(없으면 빈 목록), moveTimes에 2~3을 주면 한 턴에 일반 수를 그만큼 연속으로 둔다(없으면 1). 아래 "이동 능력" 참고.
+- {"type": "tag", "at": "g8", "tag": "기절", "turns": 1}: 기물에 태그를 붙인다. turns는 그 기물 주인의 턴 기준 지속 턴 수이고, 0이면 영구다. clash에 합 배율(1.2~2.0, 없으면 0)을, prop에 태그의 모습(조형물, 없으면 preset "none")을 줄 수 있다. moveAs에 기물 종류 목록을 주면 그 태그가 있는 동안 원래 움직임 대신 그 기물들처럼 움직이고(없으면 빈 목록), moveTimes에 2~3을 주면 한 턴에 일반 수를 그만큼 연속으로 둔다(없으면 1). 아래 "이동 능력" 참고.
 - {"type": "untag", "at": "g8", "tag": "기절"}: 기물에서 태그를 뗀다.
 - {"type": "board", "rider": "a2", "carrier": "b1"}: rider 칸의 기물(과 그 위에 탄 기물들)이 같은 편 carrier 기물에 올라탄다. 이미 누가 타 있으면 그 맨 위에 쌓인다.
 - {"type": "unboard", "at": "b1", "to": "a3"}: at 칸 기물에 탄 기물 중 맨 위의 기물이 빈 칸 to로 내린다.
@@ -92,7 +92,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 
 ## 이동 능력 (moveAs, moveTimes)
 "폰이 룩처럼 이동한다", "나이트가 두 번 연속 뛴다", "퀸처럼 날아다닌다"처럼 기물이 움직이는 방식을 바꾸는 선언은 서사용 태그만 붙이지 말고 tag 효과의 moveAs나 moveTimes로 실제 규칙을 주세요. 태그 이름은 "성탑의 걸음", "질주"처럼 짓습니다.
-- moveAs: ["rook"]이면 그 기물이 원래 움직임에 더해 룩처럼도 움직이고 잡고 체크합니다(폰은 여전히 대각선으로 잡고 앞으로 갑니다). 여러 종류를 줄 수 있습니다(["rook", "bishop"]). 종류: king, queen, rook, bishop, knight, pawn. 원래 움직임을 빼앗는 저주는 moveAs가 아니라 transform이나 기절로 하세요.
+- moveAs: ["rook"]이면 그 기물이 원래 움직임 대신 룩처럼 움직이고 잡고 체크합니다(폰이면 앞으로 걷기, 두 칸 전진, 대각선 잡기, 앙파상을 쓸 수 없고, 킹이면 캐슬링을 못 합니다. 폰이 끝줄에 닿으면 승격은 그대로 합니다). 여러 종류를 줄 수 있습니다(["rook", "bishop"]이면 둘 다). 원래 움직임도 남기려면 그 종류도 넣으세요("나이트가 비숍처럼도 움직인다" → ["knight", "bishop"]). 종류: king, queen, rook, bishop, knight, pawn. 이동 태그가 둘 이상이면 가장 나중에 붙은 것만 효력이 있습니다.
 - moveTimes: 2면 그 기물로 일반 수를 두 번 연속 둡니다. 첫 수 뒤에 같은 기물로 한 번 더 두거나 턴을 넘길 수 있고, 그사이에는 다른 기물을 움직이거나 특수 행동을 할 수 없습니다. 체크를 건 수 뒤에는 바로 상대 차례가 됩니다(한 턴에 킹을 두 번 노릴 수 없음).
 - 특수 행동은 그 턴의 일반 수보다 먼저 하므로, 내 기물에 붙인 이동 능력은 이번 턴의 수부터 쓸 수 있습니다. 1턴짜리를 내 기물에 붙이면 이번 턴과 다음 내 턴까지 갑니다.
 - 한 번만 특별하게 움직이는 행동("폰이 룩처럼 a7까지 달려간다")은 move 효과로 바로 옮기면 됩니다. "이제부터", "~할 수 있게" 같은 지속되는 능력일 때 moveAs, moveTimes를 쓰세요.
@@ -231,7 +231,7 @@ function describeTags(p: Piece): string {
   const one = (t: (typeof tags)[number]) => {
     const notes = [t.turnsLeft === null ? '영구' : `${t.turnsLeft}턴 남음`];
     if (t.clash) notes.push(`합 ×${t.clash}`);
-    if (t.moveAs?.length) notes.push(`${t.moveAs.map((k) => PIECE[k]).join('·')}처럼도 이동`);
+    if (t.moveAs?.length) notes.push(`원래 대신 ${t.moveAs.map((k) => PIECE[k]).join('·')}처럼 이동`);
     if (t.moveTimes && t.moveTimes > 1) notes.push(`한 턴에 ${t.moveTimes}번 연속 이동`);
     if (t.prop) notes.push(t.prop.preset ? PROP_PRESET_NAME[t.prop.preset] : '조형물');
     return `${t.name}(${notes.join(', ')})`;

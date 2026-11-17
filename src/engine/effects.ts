@@ -239,8 +239,8 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (e.moveTimes !== undefined && (!isInt(e.moveTimes) || e.moveTimes < 1 || e.moveTimes > MAX_MOVE_TIMES)) {
           return fail(`연속 이동 횟수는 1~${MAX_MOVE_TIMES}`);
         }
-        // Lending a piece its own moves changes nothing.
-        const moveAs = [...new Set(e.moveAs ?? [])].filter((k) => k !== piece.type);
+        // The kinds it moves like instead of itself (its own kind among them keeps its own moves too).
+        const moveAs = [...new Set(e.moveAs ?? [])];
         const prop = e.prop ? cleanProp(e.prop) : null;
         // 공중부양 lifts a piece on the ground into the air above it (already floating: it lasts longer).
         let at = e.at as Square;

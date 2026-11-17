@@ -36,10 +36,10 @@ export const REJECT_MESSAGE: Record<RejectReason, string> = {
   chainInProgress: '연속 이동 중에는 특수 행동을 할 수 없습니다. 기물을 한 번 더 움직이거나 턴을 넘기세요.',
 };
 
-/** What a tag lets its piece do beyond its own moves, e.g. "룩·비숍처럼도 이동, 한 턴에 2번 연속 이동" ('' if nothing). */
+/** How a tag changes its piece's moves, e.g. "룩·비숍처럼 이동, 한 턴에 2번 연속 이동" ('' if nothing). */
 export function movePowers(t: { moveAs?: readonly PieceType[]; moveTimes?: number }): string {
   const out: string[] = [];
-  if (t.moveAs?.length) out.push(`${t.moveAs.map((k) => PIECE_NAME[k]).join('·')}처럼도 이동`);
+  if (t.moveAs?.length) out.push(`${t.moveAs.map((k) => PIECE_NAME[k]).join('·')}처럼 이동`);
   if (t.moveTimes && t.moveTimes > 1) out.push(`한 턴에 ${t.moveTimes}번 연속 이동`);
   return out.join(', ');
 }

@@ -258,14 +258,17 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
     if (!actor) return needsActor()!;
     const kinds = likeKinds.map((k) => MOVE_KIND_KO[k]).join('·');
     const strong = likeKinds.includes('queen');
+    // "처럼도": its own moves stay too (a lent move replaces the piece's own otherwise).
+    const own = /처럼도/.test(action) && board ? board[parseSquare(last)!]?.type : undefined;
+    const moveAs = own && !likeKinds.includes(own) ? [own, ...likeKinds] : likeKinds;
     return {
-      interpretation: `${last}의 기물이 두 턴 동안 원래 움직임에 더해 ${kinds}처럼도 움직인다.`,
+      interpretation: `${last}의 기물이 두 턴 동안 ${own ? '원래 움직임과 함께 ' : '원래 움직임 대신 '}${kinds}처럼 움직인다.`,
       actor,
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
       dc: strong ? 9 : 8,
       cost: strong ? 3 : 2,
-      effects: [tag(last, `${kinds}의 걸음`, 2, { moveAs: likeKinds, aura: 'wind', auraStrength: 1 })],
+      effects: [tag(last, `${kinds}의 걸음`, 2, { moveAs, aura: 'wind', auraStrength: 1 })],
       look: look({ fx: [fx('wind', 'burst', last, { strength: 3, radius: 0.7, withEffect: 1 })], acts: [{ at: last, act: 'spin', delay: 0.2 }] }),
       narration: { success: `${last}의 기물이 ${kinds}의 걸음을 익혔다!`, failure: '발이 꼬여 제자리에서 비틀거렸다.' },
     };

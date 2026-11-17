@@ -1,7 +1,7 @@
 import { GRAY, type Board, type Color, type GameState, type MoveSpecial, type Square, type TerrainCell } from './types';
 import { SQUARES, backRank, isAir, pawnForward, pawnStart, step, type Dir } from './squares';
 import { kingStart, rookStart } from './castling';
-import { isStunned, movePatterns } from './tags';
+import { isStunned, movePatterns, movesReplaced } from './tags';
 import { blockedSquares, terrainBlocks } from './terrain';
 
 const ORTHO: Dir[] = [{ df: 1, dr: 0 }, { df: -1, dr: 0 }, { df: 0, dr: 1 }, { df: 0, dr: -1 }];
@@ -42,7 +42,7 @@ function knightSquares(from: Square): Square[] {
  * allows them (the king is captured, not mated).
  * Walls and pits (`terrain`) can be neither entered nor passed; knights still jump over them.
  * A piece in the air moves (and captures) on the air layer only, over all terrain.
- * A piece whose tags lend it other kinds' moves (moveAs) has those too, on top of its own.
+ * A piece whose tag lends it other kinds' moves (moveAs) moves like those instead of itself.
  * On the hexagon lines follow the seams and split through the centre (see squares.ts, step).
  */
 export function movesFrom(board: Board, from: Square, terrain?: readonly TerrainCell[]): Square[] {
@@ -188,7 +188,7 @@ export function legalTargets(state: GameState, from: Square): Target[] {
 
   // Castling ignores check entirely: this game lets a king stand in, pass
   // through, or land on attacked squares (it can then simply be captured).
-  if (piece.type === 'king' && from === kingStart(piece.color)) {
+  if (piece.type === 'king' && !movesReplaced(piece) && from === kingStart(piece.color)) {
     const rights = state.castling[piece.color];
     const sides = [
       { side: 'king' as const, allowed: rights.kingSide, rook: rookStart(piece.color, 'king'), between: [5, 6], kingTo: 6 },

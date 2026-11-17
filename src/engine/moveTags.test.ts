@@ -17,13 +17,35 @@ const targets = (s: GameState, from: string) => legalTargets(s, sq(from)).map((t
 const ctx = { turnNumber: 1, nextSpawnId: 1, color: 'white' as const };
 
 describe('moving like another piece (moveAs)', () => {
-  it('a pawn that moves like a rook keeps its own moves and gains the rook\'s', () => {
+  it('a pawn that moves like a rook moves only like a rook (its own moves are replaced)', () => {
     const s = scene({ a2: { color: 'white', type: 'pawn', tags: [tag({ moveAs: ['rook'] })] }, b3: { color: 'black', type: 'knight' } });
     const t = targets(s, 'a2');
     expect(t).toContain('a8'); // rook up the file
     expect(t).toContain('h2'); // rook along the rank
-    expect(t).toContain('b3'); // pawn capture, still
     expect(t).toContain('a1'); // rook backwards
+    expect(t).not.toContain('b3'); // no pawn capture any more
+  });
+
+  it('listing its own kind too keeps its own moves', () => {
+    const s = scene({ a2: { color: 'white', type: 'pawn', tags: [tag({ moveAs: ['pawn', 'rook'] })] }, b3: { color: 'black', type: 'knight' } });
+    expect(targets(s, 'a2')).toEqual(expect.arrayContaining(['a8', 'b3', 'a4']));
+  });
+
+  it('with two such tags the newest one counts', () => {
+    const s = scene({ b1: { color: 'white', type: 'knight', tags: [tag({ name: '성탑', moveAs: ['rook'] }), tag({ name: '주교', moveAs: ['bishop'] })] } });
+    const t = targets(s, 'b1');
+    expect(t).toContain('h7'); // bishop diagonal
+    expect(t).not.toContain('b8'); // not the rook's file
+    expect(t).not.toContain('c3'); // not its own jump
+  });
+
+  it('a king whose moves are replaced cannot castle; a lent pawn walk has no two-step from elsewhere', () => {
+    const s = createStateFrom({ e1: { color: 'white', type: 'king' }, h1: { color: 'white', type: 'rook' }, e8: { color: 'black', type: 'king' } }, 'white');
+    const board = [...s.board];
+    board[sq('e1')] = { ...board[sq('e1')]!, tags: [tag({ moveAs: ['knight'] })] };
+    const t = legalTargets({ ...s, board }, sq('e1'));
+    expect(t.some((x) => x.special?.kind === 'castle')).toBe(false);
+    expect(t.map((x) => squareName(x.to))).toContain('f3');
   });
 
   it('it captures and checks like that piece too', () => {
@@ -38,18 +60,18 @@ describe('moving like another piece (moveAs)', () => {
     expect(okMove(s, 'a3', 'a5').state.enPassant).toBeNull();
   });
 
-  it('a knight lent the king\'s steps goes one square too', () => {
+  it('a knight lent the king\'s steps goes one square instead of jumping', () => {
     const s = scene({ b1: { color: 'white', type: 'knight', tags: [tag({ moveAs: ['king'] })] } });
-    expect(targets(s, 'b1')).toEqual(expect.arrayContaining(['a1', 'c1', 'b2', 'c3', 'a3', 'd2']));
+    expect(targets(s, 'b1')).toEqual(['a1', 'a2', 'b2', 'c1', 'c2']);
   });
 
-  it('a tag effect lends the moves (and its own kind is dropped)', () => {
+  it('a tag effect lends the moves (its own kind kept when listed)', () => {
     const s = scene({ a2: { color: 'white', type: 'pawn' } });
     const r = applyEffects(s.board, [{ type: 'tag', at: sq('a2'), tag: '성탑의 걸음', turns: 2, moveAs: ['rook', 'pawn'] }], ctx);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.board[sq('a2')]?.tags?.[0]).toMatchObject({ name: '성탑의 걸음', moveAs: ['rook'] });
-    expect(r.events[0]).toMatchObject({ type: 'tagged', moveAs: ['rook'] });
+    expect(r.board[sq('a2')]?.tags?.[0]).toMatchObject({ name: '성탑의 걸음', moveAs: ['rook', 'pawn'] });
+    expect(r.events[0]).toMatchObject({ type: 'tagged', moveAs: ['rook', 'pawn'] });
   });
 
   it('rejects kinds that do not exist', () => {

@@ -19,7 +19,7 @@ const auraStrengthField = z.number().describe('오라 세기 1~3 (none이면 0)'
 
 const clashField = z.number().describe('합 배율 1.2~2.0 (검술처럼 싸움 실력을 주는 태그). 없으면 0');
 const propField = GmPropSchema.describe('조형물: 태그나 지형의 모습. 필요 없으면 preset "none"에 parts 빈 목록');
-export const MOVE_AS_DESCRIPTION = '태그가 있는 동안 원래 움직임에 더해 이 기물들처럼도 움직인다(잡기와 체크 포함). 예: 폰이 룩처럼 → ["rook"]. 없으면 빈 목록';
+export const MOVE_AS_DESCRIPTION = '태그가 있는 동안 원래 움직임 대신 이 기물들처럼 움직인다(잡기와 체크 포함). 예: 폰이 룩처럼 → ["rook"], 원래 움직임도 남기려면 그 종류도 넣는다(나이트가 비숍처럼도 → ["knight", "bishop"]). 없으면 빈 목록';
 export const MOVE_TIMES_DESCRIPTION = '태그가 있는 동안 한 턴에 일반 수를 연속으로 두는 횟수 2~3 (같은 기물로). 없으면 1';
 const moveAsField = z.array(z.enum(['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'])).describe(MOVE_AS_DESCRIPTION);
 const moveTimesField = z.number().int().describe(MOVE_TIMES_DESCRIPTION);
