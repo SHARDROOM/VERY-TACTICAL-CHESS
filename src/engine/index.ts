@@ -10,6 +10,8 @@ export { parseMoveText } from './notation';
 export { squareName, parseSquare, fileOf, rankOf, squareAt, opponent, AIR, SQUARES, isAir, groundOf, airOf, sameLayer, setBoardMap, boardMap, isHex, playersOf, homeHalf, halfOf, backRank, step, planeOf, squareAtPoint, pawnForward, promotesOn, SQUARE_PATTERN, byDistance, type BoardMap } from './squares';
 export { applyEffects, validateRuling, type EffectContext } from './effects';
 export { checkActor, distance, targetsOf } from './actor';
+export { impulseOf, impulseTargets, vanguardChoice, type ImpulseKind } from './vanguard';
+export { saverFor } from './guard';
 export { hasTag, isStunned, isShielded, isBurning, isFloating, CORE_TAGS, MAX_MOVE_TIMES, movePatterns, movesReplaced, moveTimesOf, ridersOf, stackOf } from './tags';
 export { DEFAULT_RULES, DIE_SIDES, DICE_PER_ROLL, ROLL_MAX, ROLL_MIN, withDefaultRules, type RuleConfig } from './config';
 export * from './staging';

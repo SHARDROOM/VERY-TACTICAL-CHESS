@@ -755,6 +755,28 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       };
       return;
     }
+    const lunge = captured ? direction?.lunge : undefined;
+    if (lunge) {
+      // Went down in another's place: it throws itself most of the way at the attacker, then is gone.
+      const [ax, , az] = squareToWorld(lunge.at);
+      const reach = new Vector3(from.x + (ax - from.x) * 0.6, from.y, from.z + (az - from.z) * 0.6);
+      const down: Exit = exit && IN_PLACE_EXITS.includes(exit) ? exit : 'vanish';
+      phys.current = null;
+      travel.current = { x: ax - from.x, z: az - from.z };
+      motion.current = {
+        from,
+        to: reach,
+        fromScale: shownScale.current,
+        toScale: shownScale.current,
+        delay: 0,
+        duration: Math.max(0.25, lunge.duration),
+        arc: 0.35,
+        startedAt: null,
+        kind: 'move',
+        next: () => beginExit(down, reach, to, 0),
+      };
+      return;
+    }
     if (captured && exit && IN_PLACE_EXITS.includes(exit)) {
       // Burnt to ash, shattered, vanished or sunk on its square; then it shows up beside the board.
       beginExit(exit, from, to, direction?.exitDelay ?? 0);

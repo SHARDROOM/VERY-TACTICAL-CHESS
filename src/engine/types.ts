@@ -31,6 +31,14 @@ export const LEVITATE = '공중부양';
  * ×1: a capture of it is always a clash (see clash.ts, canResist), so it never dies in one blow.
  */
 export const HOOD = '누더기 후드';
+/** 혼란: at the end of its owner's turn it staggers to a random free square it could move to. */
+export const CONFUSED = '혼란';
+/** 행동대장: at the end of its owner's turn it makes the best move it sees (or holds its ground). */
+export const VANGUARD = '행동대장';
+/** 원호: a friend next to it about to be taken, it throws itself in and is taken instead. */
+export const GUARD = '원호';
+/** 인질: held by another side's piece next to it (`holder`); it cannot move, and dies in its holder's stead. */
+export const HOSTAGE = '인질';
 
 export interface Tag {
   name: string;
@@ -58,6 +66,8 @@ export interface Tag {
   skill?: { about: string; bonus: number };
   /** Will (정신력, ±1..3): mental actions by another side against this piece get minus this. See modifiers.ts. */
   mind?: number;
+  /** 인질: the id of the piece holding it. See guard.ts. */
+  holder?: string;
 }
 
 /**
@@ -357,7 +367,12 @@ export type Command =
   /** The surrendering player keeps the piece on `at` (see GameState.surrender). */
   | { type: 'exile'; at: Square }
   /** Chaos's gray wanderers each make the move given (picked at random outside the engine), after a turn passes. */
-  | { type: 'wander'; moves: { from: Square; to: Square }[] };
+  | { type: 'wander'; moves: { from: Square; to: Square }[] }
+  /**
+   * A piece moves of its own accord at the end of its owner's turn (혼란: at random, 행동대장: its
+   * best move; `to` null: it holds its ground). The game's runner picks and sends it.
+   */
+  | { type: 'impulse'; from: Square; to: Square | null; clashRolls?: number[] };
 
 export type MoveSpecial =
   | { kind: 'castle'; side: 'king' | 'queen' }
@@ -387,7 +402,7 @@ export type GameEvent =
       exchanges: number;
     }
   /** `cause`: burnt up by 화상, fell into a pit, or lost a clash it started. `exit`: how it goes, if the rules say. */
-  | { type: 'removed'; piece: Piece; at: Square; cause?: 'burn' | 'pit' | 'clash' | 'fall' | 'sacrifice'; exit?: Exit }
+  | { type: 'removed'; piece: Piece; at: Square; cause?: 'burn' | 'pit' | 'clash' | 'fall' | 'sacrifice' | 'guard' | 'hostage'; exit?: Exit }
   /** The piece that just moved may move again this turn (`left` more times), or the turn may be ended. */
   | { type: 'moveAgain'; pieceId: string; at: Square; left: number }
   /** A piece given 공중부양 rises from its square to the air above it. */
@@ -444,7 +459,15 @@ export type GameEvent =
   | { type: 'check'; color: Color }
   /** The mover left their own king attacked (allowed, but warned). */
   | { type: 'ownKingExposed'; color: Color }
-  | { type: 'turnPassed'; turn: Color; turnNumber: number; apGained: number }
+  /** `ended`: whose turn it was (their 혼란 and 행동대장 pieces now move of their own accord). */
+  | { type: 'turnPassed'; turn: Color; turnNumber: number; apGained: number; ended?: Color }
+  /** A piece moved of its own accord (혼란 / 행동대장); `to` null: it held its ground. The move itself follows as 'moved'. */
+  | { type: 'impulse'; pieceId: string; kind: 'confused' | 'vanguard'; from: Square; to: Square | null }
+  /**
+   * Someone was about to be taken and another went down in its place: a 원호 friend that threw
+   * itself in (`guard`), or the hostage its holder hid behind (`hostage`). `by`: the attacker's square.
+   */
+  | { type: 'intercepted'; kind: 'guard' | 'hostage'; saverId: string; savedId: string; attackerId: string; from: Square; at: Square; by: Square }
   | { type: 'specialProposed'; color: Color; action: string; ruling: Ruling }
   /** `afterFailure`: the player let a failed action go instead of rolling again. */
   | { type: 'specialCancelled'; color: Color; action: string; afterFailure?: boolean }

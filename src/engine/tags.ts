@@ -1,4 +1,4 @@
-import { BURN, LEVITATE, RIDE, STUN, SHIELD, type Board, type Color, type FallingPiece, type GameEvent, type Piece, type PieceType, type Square, type Tag } from './types';
+import { BURN, CONFUSED, GUARD, HOSTAGE, LEVITATE, RIDE, STUN, SHIELD, VANGUARD, type Board, type Color, type FallingPiece, type GameEvent, type Piece, type PieceType, type Square, type Tag } from './types';
 
 export const hasTag = (piece: Piece | null | undefined, name: string): boolean =>
   !!piece?.tags?.some((t) => t.name === name);
@@ -17,7 +17,7 @@ export function withoutTag(piece: Piece, name: string): Piece {
   return { ...piece, tags };
 }
 
-export const CORE_TAGS: readonly string[] = [STUN, RIDE, SHIELD, BURN, LEVITATE];
+export const CORE_TAGS: readonly string[] = [STUN, RIDE, SHIELD, BURN, LEVITATE, CONFUSED, VANGUARD, GUARD, HOSTAGE];
 
 export const isFloating = (piece: Piece | null | undefined) => hasTag(piece, LEVITATE);
 

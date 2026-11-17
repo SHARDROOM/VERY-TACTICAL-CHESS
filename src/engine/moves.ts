@@ -1,7 +1,7 @@
-import { GRAY, type Board, type Color, type GameState, type MoveSpecial, type Square, type TerrainCell } from './types';
+import { GRAY, HOSTAGE, type Board, type Color, type GameState, type MoveSpecial, type Square, type TerrainCell } from './types';
 import { SQUARES, backRank, isAir, pawnForward, pawnStart, step, type Dir } from './squares';
 import { kingStart, rookStart } from './castling';
-import { isStunned, movePatterns, movesReplaced } from './tags';
+import { hasTag, isStunned, movePatterns, movesReplaced } from './tags';
 import { blockedSquares, terrainBlocks } from './terrain';
 
 const ORTHO: Dir[] = [{ df: 1, dr: 0 }, { df: -1, dr: 0 }, { df: 0, dr: 1 }, { df: 0, dr: -1 }];
@@ -47,8 +47,8 @@ function knightSquares(from: Square): Square[] {
  */
 export function movesFrom(board: Board, from: Square, terrain?: readonly TerrainCell[]): Square[] {
   const piece = board[from];
-  // A stunned piece cannot move, so it attacks nothing either.
-  if (!piece || isStunned(piece)) return [];
+  // A stunned piece (or a hostage) cannot move, so it attacks nothing either.
+  if (!piece || isStunned(piece) || hasTag(piece, HOSTAGE)) return [];
   const out: Square[] = [];
   // Walls and unbridged pits stop everything; a laddered wall can be crossed but not stood on.
   const { noPass, noLand } = isAir(from) ? terrainBlocks([]) : terrainBlocks(terrain);

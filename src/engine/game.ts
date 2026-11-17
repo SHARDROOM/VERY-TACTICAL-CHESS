@@ -22,8 +22,10 @@ import { revokeCastling } from './castling';
 import { DIE_SIDES, ROLL_MAX, ROLL_MIN } from './config';
 import { applyEffects, validateRuling, type EffectContext } from './effects';
 import { extinguish, hasTag, isShielded, mapStack, moveTimesOf, ridersOf, stackOf, tickTags, unseat, withTag, withoutTag } from './tags';
-import { GRAY, HOOD, SHIELD, type Ruling, type Tag } from './types';
+import { GRAY, HOOD, HOSTAGE, SHIELD, type Ruling, type Tag } from './types';
 import { checkActor } from './actor';
+import { intercept, releaseHostages, saverFor } from './guard';
+import { impulseOf, impulseTargets } from './vanguard';
 import { dropFromBridges, tickTerrain } from './terrain';
 import { capturedAfter, remainsAfter, tickRemains } from './captured';
 import { playFalls, startFalls } from './levitation';
@@ -37,7 +39,11 @@ function effectContext(state: GameState, nextSpawnId = state.nextSpawnId): Effec
 /** A ruling's effects: with a sacrifice they may hand out stronger buffs (see modifiers.ts). */
 function rulingContext(state: GameState, ruling: Ruling, nextSpawnId = state.nextSpawnId): EffectContext {
   const offered = !!ruling.sacrifice?.length;
-  return { ...effectContext(state, nextSpawnId), ...(offered && { modMax: SACRIFICE_MOD_MAX, clashMax: SACRIFICE_CLASH_MAX }) };
+  return {
+    ...effectContext(state, nextSpawnId),
+    ...(offered && { modMax: SACRIFICE_MOD_MAX, clashMax: SACRIFICE_CLASH_MAX }),
+    ...(ruling.actor != null && { actor: ruling.actor }),
+  };
 }
 
 /** The board once the ruling's sacrifices are gone (the effects happen on it). */
@@ -50,6 +56,16 @@ function withoutSacrifices(board: Board, ruling: Ruling): Board {
 
 /** The single entry point for changing game state. Pure: no I/O, no randomness. */
 export function applyCommand(state: GameState, cmd: Command): CommandResult {
+  const result = applyOne(state, cmd);
+  // A hostage whose holder is gone or moved away is let go, whatever moved it.
+  if (!result.ok || !result.state.board.some((p) => p?.tags?.some((t) => t.name === HOSTAGE))) return result;
+  const board = [...result.state.board];
+  const released: GameEvent[] = [];
+  releaseHostages(board, released);
+  return released.length ? { ...result, state: { ...result.state, board }, events: [...result.events, ...released] } : result;
+}
+
+function applyOne(state: GameState, cmd: Command): CommandResult {
   // Every square helper follows the board this game is played on.
   setBoardMap(state.map);
   if (state.status.kind !== 'playing') return { ok: false, reason: 'gameOver' };
@@ -90,7 +106,73 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
       return chaos(state, cmd.chaos);
     case 'wander':
       return wander(state, cmd.moves);
+    case 'impulse':
+      return impulse(state, cmd);
   }
+}
+
+/**
+ * A 혼란 or 행동대장 piece moves of its own accord at the end of its owner's turn (see vanguard.ts):
+ * nobody's turn changes. A 행동대장 may capture (a clash, a guard or a hostage as for any capture).
+ */
+function impulse(state: GameState, cmd: Extract<Command, { type: 'impulse' }>): CommandResult {
+  const piece = Number.isInteger(cmd.from) ? state.board[cmd.from] : null;
+  const kind = piece ? impulseOf(state.board, cmd.from) : null;
+  if (!piece || !kind) return { ok: false, reason: 'illegalMove' };
+  if (cmd.to === null) {
+    if (kind !== 'vanguard') return { ok: false, reason: 'illegalMove' };
+    return { ok: true, state, events: [{ type: 'impulse', pieceId: piece.id, kind, from: cmd.from, to: null }] };
+  }
+  if (!impulseTargets(state, cmd.from, kind).includes(cmd.to)) return { ok: false, reason: 'illegalMove' };
+  const board: (Piece | null)[] = [...state.board];
+  const events: GameEvent[] = [{ type: 'impulse', pieceId: piece.id, kind, from: cmd.from, to: cmd.to }];
+  const victim = board[cmd.to];
+  const done = (falls: GameState['falling'], touched: Square[]): CommandResult => {
+    for (const c of playersOf()) if (isInCheck(board, c, state.terrain)) events.push({ type: 'check', color: c });
+    return { ok: true, state: withCaptured({ ...state, board, castling: revokeCastling(state.castling, touched), ...withFalls(state, falls) }, events), events };
+  };
+  if (victim) {
+    const saver = saverFor(board, cmd.to);
+    if (saver) {
+      const r = intercept(board, cmd.from, cmd.to, saver, events, (a, d) => {
+        if (!cmd.clashRolls?.length) return null;
+        const clash = clashEventFor(a, d, cmd.from, saver.at, cmd.clashRolls);
+        events.push(clash);
+        return clash.winner;
+      });
+      if (r === 'needRolls') return { ok: false, reason: 'clashRollsNeeded' };
+      return done(r.falls, [cmd.from, saver.at]);
+    }
+    if (canResist(victim)) {
+      if (!cmd.clashRolls?.length) return { ok: false, reason: 'clashRollsNeeded' };
+      const clash = clashEventFor(piece, victim, cmd.from, cmd.to, cmd.clashRolls);
+      events.push(clash);
+      if (clash.winner === 'defender') {
+        board[cmd.from] = null;
+        const exit: Exit | undefined = clashSkill(victim) > 1 ? 'shatter' : undefined;
+        events.push({ type: 'removed', piece, at: cmd.from, cause: 'clash', ...(exit && { exit }) });
+        return done(unseat(piece, cmd.from, events, cmd.to), [cmd.from]);
+      }
+      if (isShielded(victim)) {
+        board[cmd.to] = withoutTag(victim, SHIELD);
+        events.push({ type: 'shieldBroken', pieceId: victim.id, at: cmd.to, attackerId: piece.id });
+        return done([], []);
+      }
+    } else if (isShielded(victim)) {
+      board[cmd.to] = withoutTag(victim, SHIELD);
+      events.push({ type: 'shieldBroken', pieceId: victim.id, at: cmd.to, attackerId: piece.id });
+      return done([], []);
+    }
+  }
+  // A pawn that reaches the far side becomes a queen (no one is asked).
+  const promotes = piece.type === 'pawn' && !isAir(cmd.to) && promotesOn(piece.color, cmd.to);
+  const fireOut: GameEvent[] = [];
+  board[cmd.to] = extinguish(promotes ? { ...piece, type: 'queen' } : piece, cmd.to, fireOut);
+  board[cmd.from] = null;
+  events.push({ type: 'moved', pieceId: piece.id, from: cmd.from, to: cmd.to, captured: victim, ...(promotes && { special: { kind: 'promotion' as const, to: 'queen' as const } }) });
+  const falls = victim ? unseat(victim, cmd.to, events, cmd.from) : [];
+  events.push(...fireOut);
+  return done(falls, [cmd.from, cmd.to]);
 }
 
 /** The falling pieces come down (see levitation.ts); a piece that lands may open or close a check. */
@@ -344,7 +426,7 @@ function passTurn(
       pending: null,
       ...withFalls(state, falls),
     },
-    events: [...events, { type: 'turnPassed', turn: next, turnNumber, apGained: apNext - state.ap[next] }],
+    events: [...events, { type: 'turnPassed', turn: next, turnNumber, apGained: apNext - state.ap[next], ended: state.turn }],
   };
 }
 
@@ -378,6 +460,27 @@ function applyMove(state: GameState, cmd: Extract<Command, { type: 'move' }>): C
 
   // Capturing a piece that can stand its ground (a clash multiplier or a shield) is a clash (합).
   const opening: GameEvent[] = [];
+  // Someone goes down in its place: its hostage, or a 원호 friend next to it (see guard.ts).
+  const saver = victim && victim.color !== piece.color ? saverFor(board, victimSquare) : null;
+  if (victim && saver) {
+    const done = intercept(board, cmd.from, victimSquare, saver, opening, (a, d) => {
+      if (!cmd.clashRolls?.length) return null;
+      const clash = clashEventFor(a, d, cmd.from, saver.at, cmd.clashRolls);
+      opening.push(clash);
+      return clash.winner;
+    });
+    if (done === 'needRolls') return { ok: false, reason: 'clashRollsNeeded' };
+    const events = [...opening];
+    const after = withCaptured({ ...state, castling: revokeCastling(state.castling, [cmd.from, saver.at]), ...withFalls(state, done.falls) }, events);
+    if (done.attackerFell && piece.type === 'king') {
+      const fell = kingFell(board, piece.color, victim.color, saver.at, events);
+      if (fell.status) return { ok: true, state: { ...after, board, ...fell }, events };
+      events.push(...checkEvents(board, piece.color, state.terrain));
+      return { ok: true, ...passTurn({ ...after, ...fell }, board, null, events) };
+    }
+    events.push(...checkEvents(board, piece.color, state.terrain));
+    return { ok: true, ...passTurn(after, board, null, events) };
+  }
   let capturedExit: Exit | undefined;
   if (victim && canResist(victim)) {
     if (!cmd.clashRolls?.length) return { ok: false, reason: 'clashRollsNeeded' };

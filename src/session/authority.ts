@@ -1,4 +1,4 @@
-import { CLASH_ROLLS, applyCommand, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
+import { CLASH_ROLLS, applyCommand, impulseOf, impulseTargets, isStunned as isStunnedPiece, vanguardChoice, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
@@ -174,7 +174,7 @@ export class Authority {
     const before = this.state;
     let result = applyCommand(before, cmd);
     // A capture that turns into a clash (합) needs dice: roll them only then.
-    if (!result.ok && result.reason === 'clashRollsNeeded' && (cmd.type === 'move' || cmd.type === 'attemptSpecial')) {
+    if (!result.ok && result.reason === 'clashRollsNeeded' && (cmd.type === 'move' || cmd.type === 'attemptSpecial' || cmd.type === 'impulse')) {
       result = applyCommand(before, { ...cmd, clashRolls: this.clashRolls() });
     }
     if (!result.ok) {
@@ -222,6 +222,8 @@ export class Authority {
     if (passed) {
       this.restartClock();
       if (clashTime) this.addTime(clashTime);
+      // Whoever just ended their turn: their 혼란 pieces stagger, their 행동대장 pieces step out.
+      if (passed.type === 'turnPassed' && passed.ended) this.impulses(passed.ended);
       // Chaos's gray wanderers each take a step of their own whenever a turn passes.
       this.wander();
       // Chaos may strike once a round: when white's turn begins (both sides have moved).
@@ -232,6 +234,29 @@ export class Authority {
       if (resolved) this.addTime(DICE_GRACE_MS + showMs(resolved.staging, resolved.effects) + clashTime);
       // Nor does a fall.
       if (events.some((e) => e.type === 'fell')) this.addTime(FALL_SHOW_MS);
+    }
+  }
+
+  /**
+   * `color`'s pieces that move of their own accord at the end of its turn (see engine/vanguard.ts):
+   * a 혼란 piece to a random free square, a 행동대장 piece to its best move (or it holds its ground).
+   * One at a time, in board order, each on the board the ones before it left.
+   */
+  private impulses(color: Color): void {
+    const ids = this.state.board.flatMap((p, sq) => (p && p.color === color && impulseOf(this.state.board, sq) ? [p.id] : []));
+    for (const id of ids) {
+      const s = this.state;
+      if (s.status.kind !== 'playing' || s.surrender || s.falling?.length || s.pending) return;
+      const from = s.board.findIndex((p) => p?.id === id);
+      const kind = from >= 0 ? impulseOf(s.board, from) : null;
+      if (!kind || isStunnedPiece(s.board[from])) continue;
+      if (kind === 'confused') {
+        const options = impulseTargets(s, from, 'confused');
+        if (!options.length) continue;
+        this.apply({ type: 'impulse', from, to: options[Math.floor(this.chance() * options.length) % options.length] }, 'all');
+      } else {
+        this.apply({ type: 'impulse', from, to: vanguardChoice(s, from) }, 'all');
+      }
     }
   }
 

@@ -32,6 +32,8 @@ export interface PieceDirection {
   revive?: { style: Entrance; duration: number };
   /** Thrown into a pit: it travels there for `duration` seconds, then falls in. */
   fallInto?: { at: Square; duration: number };
+  /** Taken in another's place (원호, 인질): it throws itself toward the attacker on `at`, then goes down. */
+  lunge?: { at: Square; duration: number };
   /**
    * Played from a recording (a clash's duel, or a move as a romp that shoves pieces about): its
    * poses, 7 numbers per step, from `start` (performance.now() ms). Afterwards it eases back to

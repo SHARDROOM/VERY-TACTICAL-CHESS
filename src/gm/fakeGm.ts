@@ -426,6 +426,35 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
     };
   }
 
+  // The four tags that change who moves or who falls: 혼란, 행동대장, 원호, 인질.
+  const special = /혼란/.test(action) ? '혼란' : /행동대장|선봉/.test(action) ? '행동대장' : /원호|호위|대신 막/.test(action) ? '원호' : /인질/.test(action) ? '인질' : null;
+  if (special && squares.length >= 1) {
+    if (!actor) return needsActor()!;
+    // 인질 and 혼란 are put on someone else's piece; 행동대장 and 원호 on one's own (the actor itself if no other square).
+    const onEnemy = special === '인질' || special === '혼란';
+    if (onEnemy && squares.length < 2) return refuse('누가 누구에게 하는지 두 칸을 써 주세요.');
+    const at = onEnemy ? last : squares.length >= 2 ? last : actor;
+    const turns = special === '행동대장' || special === '혼란' ? 2 : 3;
+    return {
+      interpretation:
+        special === '혼란'
+          ? `${who} ${at}의 기물을 ${turns}턴 동안 혼란에 빠뜨린다.`
+          : special === '행동대장'
+            ? `${at}의 기물이 ${turns}턴 동안 행동대장이 되어 턴 끝마다 스스로 나선다.`
+            : special === '원호'
+              ? `${at}의 기물이 ${turns}턴 동안 곁의 아군을 원호한다.`
+              : `${who} 곁의 ${at} 기물을 ${turns}턴 동안 인질로 잡는다.`,
+      actor,
+      means: far <= 1 ? 'touch' : 'magic',
+      feasible: true,
+      dc: special === '인질' || special === '행동대장' ? 9 : 8,
+      cost: 2,
+      effects: [tag(at, special, turns, { aura: special === '혼란' ? 'arcane' : special === '행동대장' ? 'light' : 'none', auraStrength: special === '혼란' || special === '행동대장' ? 1 : 0 })],
+      look: look({ fx: [fx(special === '혼란' ? 'arcane' : 'light', 'burst', at, { strength: 2, withEffect: 1 })], acts: [{ at, act: special === '혼란' ? 'shiver' : 'hop', delay: 0.2 }] }),
+      narration: { success: `${at}의 기물에 ${special}의 기운이 깃들었다.`, failure: '아무 일도 일어나지 않았다.' },
+    };
+  }
+
   if (/기절|스턴|마비/.test(action)) {
     const missing = needsActor();
     if (missing) return missing;

@@ -207,6 +207,17 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
       case 'wandered':
         add(`🚶 떠돌이가 제멋대로 움직입니다: ${squareName(e.from)} → ${squareName(e.to)}`);
         break;
+      case 'impulse': {
+        const who = `${squareName(e.from)}의 ${name(e.pieceId)}`;
+        if (e.to === null) add(`🚩 ${josa(who, '이/가')} 판세를 읽고 자리를 지킵니다.`);
+        else if (e.kind === 'confused') add(`😵 ${josa(who, '이/가')} 혼란에 빠져 ${josa(squareName(e.to), '으로/로')} 비틀거립니다.`);
+        else add(`🚩 ${josa(who, '이/가')} 판세를 읽고 ${josa(squareName(e.to), '으로/로')} 나섭니다.`);
+        break;
+      }
+      case 'intercepted':
+        if (e.kind === 'guard') add(`🛡 ${squareName(e.from)}의 ${josa(name(e.saverId), '이/가')} 몸을 던져 ${squareName(e.at)}의 ${josa(name(e.savedId), '을/를')} 지켰습니다!`, 'warn');
+        else add(`⛓ ${squareName(e.at)}의 ${josa(name(e.savedId), '이/가')} 인질 ${josa(name(e.saverId), '을/를')} 방패로 삼았습니다!`, 'warn');
+        break;
       case 'crowned':
         add(`👑 망명자가 킹을 잡고 ${COLOR_NAME[e.color]}의 새 킹이 되었습니다!`, 'warn');
         break;

@@ -306,6 +306,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const [stage, setStage] = useState<Playing | null>(null);
   const [duel, setDuel] = useState<Duel | null>(null);
   const [romp, setRomp] = useState<Romp | null>(null);
+  const [lunges, setLunges] = useState<Map<string, PieceDirection> | null>(null);
   const endDuel = useRef<(() => void) | null>(null);
   const lightRef = useRef(false);
   const [caption, setCaption] = useState<Caption | null>(null);
@@ -364,6 +365,12 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     /** Logs a batch of game events and reacts to them (the moment the board shows them). */
     const applyBatch = (batch: Batch, staged = false) => {
       const { events, before, after } = batch;
+      // Someone went down in another's place: it throws itself at the attacker as it goes.
+      const saves = events.filter((ev): ev is Extract<GameEvent, { type: 'intercepted' }> => ev.type === 'intercepted');
+      if (saves.length && !staged) {
+        setLunges(new Map(saves.map((s) => [s.saverId, { motions: [], acts: [], lunge: { at: s.by, duration: 0.45 } } as PieceDirection])));
+        window.setTimeout(() => setLunges(null), 2500);
+      }
       const typeOf = (id: string) =>
         findPiece(before.board, id)?.type ??
         findPiece(after.board, id)?.type ??
@@ -804,14 +811,14 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       ]);
     }
     if (romp) return puppets(romp.run, romp.start);
-    if (!stage) return undefined;
+    if (!stage) return lunges ?? undefined;
     const base = directionsFor(stage.show, stage.startedAt, stage.from);
     for (const r of stage.romps) {
       if (r.effect < stage.from) continue;
       puppets(r.run, stage.startedAt + (stage.show.timeline.effectStarts[r.effect] ?? 0) * 1000, base);
     }
     return base;
-  }, [stage, duel, romp]);
+  }, [stage, duel, romp, lunges]);
   const shake = useMemo(() => {
     if (look === 'light' || prefersReducedMotion()) return null;
     if (duel) {

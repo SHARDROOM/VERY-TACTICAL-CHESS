@@ -29,7 +29,7 @@ export const GM_EFFECT_JSON_SCHEMAS = [
   effect('remove', { at: sq('제거할 기물이 있는 칸, 예: "d7"') }),
   effect('tag', {
     at: sq('태그를 붙일 기물의 칸'),
-    tag: { type: 'string', description: '태그 이름. 핵심 태그: "기절", "보호막", "화상", "공중부양". 그 밖의 이름은 자유 태그 (합 배율이나 이동 능력을 줄 수 있음)' },
+    tag: { type: 'string', description: '태그 이름. 핵심 태그: "기절", "보호막", "화상", "공중부양", "혼란", "행동대장", "원호", "인질". 그 밖의 이름은 자유 태그 (합 배율, 이동 능력, 특기, 정신력을 줄 수 있음)' },
     turns: { type: 'integer', description: '지속 턴 수 (그 기물 주인의 턴 기준). 0이면 영구' },
     aura: { type: 'string', enum: ['none', ...ELEMENTS], description: '태그가 남아 있는 동안 기물에 두를 원소 오라' },
     auraStrength: { type: 'number', description: '오라 세기 1~3 (none이면 0)' },

@@ -2,6 +2,8 @@ import type { Exit } from './staging';
 import {
   BURN,
   GRAY,
+  GUARD,
+  HOSTAGE,
   LEVITATE,
   RIDE,
   TERRAIN_KINDS,
@@ -21,7 +23,7 @@ import {
   type TerrainKind,
 } from './types';
 import type { RuleConfig } from './config';
-import { SQUARES, airOf, isAir, playersOf, promotesOn, sameLayer, squareName } from './squares';
+import { SQUARES, airOf, distance, isAir, playersOf, promotesOn, sameLayer, squareName } from './squares';
 import { MAX_MOVE_TIMES, extinguish, isShielded, isStunned, mapStack, unseat, withRiderOnTop, withTag, withoutTag, withoutTopRider } from './tags';
 import { SHIELD } from './types';
 import { MAX_TERRAIN, dropFromBridges } from './terrain';
@@ -30,6 +32,7 @@ import { checkActor } from './actor';
 import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, clashSkill, resolveClash } from './clash';
 import { cleanProp } from './props';
 import { MOD_EACH_MAX } from './modifiers';
+import { intercept, saverFor } from './guard';
 import { startFalls } from './levitation';
 
 const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
@@ -60,6 +63,8 @@ export interface EffectContext {
   modMax?: number;
   /** Strongest clash multiplier a tag may get (raised by a sacrifice). */
   clashMax?: number;
+  /** The ruling's actor (a 인질 is held by it). */
+  actor?: Square;
 }
 
 export type EffectResult =
@@ -158,6 +163,32 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (occupant?.color === piece.color) return fail(`${squareName(e.to)}에 같은 편 기물이 있음`);
         if (occupant?.type === 'king') return fail('특수 행동으로는 킹을 잡을 수 없음');
         let capturedExit: Exit | undefined;
+        // In a special action (not chaos) a hostage or a 원호 friend goes down in the target's place (guard.ts).
+        const saver = occupant && ctx.clash ? saverFor(board, e.to) : null;
+        if (saver && ctx.clash) {
+          const clashMode = ctx.clash;
+          let short = false;
+          const done = intercept(board, e.from, e.to, saver, events, (a, d) => {
+            if (clashMode.mode === 'check') return 'attacker';
+            const rolls = clashMode.rolls.slice(rollAt);
+            if (rolls.length < 2) {
+              short = true;
+              return null;
+            }
+            const result = resolveClash(clashMultiplier(a), clashMultiplier(d), rolls);
+            rollAt += result.rounds.length * 2;
+            events.push({ type: 'clash', attackerId: a.id, defenderId: d.id, attacker: a.color, from: e.from, at: saver.at, attack: clashMultiplier(a), defense: clashMultiplier(d), rounds: result.rounds, winner: result.winner, shield: isShielded(d), exchanges: result.exchanges });
+            return result.winner;
+          });
+          if (done === 'needRolls' || short) return { ok: false, detail: `${where}: 합 주사위가 없음`, code: 'clashRollsNeeded' };
+          touched.push(e.from, saver.at);
+          falling.push(...done.falls);
+          if (done.attackerFell) {
+            if (piece.type === 'king') events.push({ type: 'kingCaptured', winner: board[saver.at]?.color ?? occupant!.color, loser: piece.color });
+            cut = i;
+          }
+          break;
+        }
         if (occupant && ctx.clash && canResist(occupant)) {
           // A clash (합). While only checking a ruling the attacker is taken to win.
           const attack = clashMultiplier(piece);
@@ -235,6 +266,17 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (name === RIDE) return fail('탑승은 tag가 아니라 board 효과로 표현해야 함');
         if (!isInt(e.turns) || e.turns < 0) return fail('지속 턴은 0(영구) 이상의 정수여야 함');
         if (name === BURN && piece.type === 'king') return fail('킹에는 화상을 입힐 수 없음');
+        if ((name === GUARD || name === HOSTAGE) && piece.type === 'king') return fail(`킹에는 ${name}을(를) 붙일 수 없음`);
+        // A hostage is held by the actor, next to it, of another side, and not a king.
+        let holder: string | undefined;
+        if (name === HOSTAGE) {
+          const by = ctx.actor !== undefined ? board[ctx.actor] : null;
+          if (!by || ctx.actor === undefined) return fail('인질은 행동하는 기물(주체)이 잡음: 주체가 있어야 함');
+          if (by.color === piece.color) return fail('인질은 다른 편 기물만 잡을 수 있음');
+          if (by.type === 'king') return fail('킹은 인질을 잡을 수 없음');
+          if (distance(ctx.actor, e.at) > 1) return fail(`인질은 주체(${squareName(ctx.actor)}) 바로 옆(1칸)에 있어야 함`);
+          holder = by.id;
+        }
         if (name === BURN && e.turns === 0) return fail('화상은 1턴 이상이어야 함 (턴이 다하면 기물이 탄다)');
         const turnsLeft = e.turns === 0 ? null : e.turns;
         const clashMax = ctx.clashMax ?? CLASH_MAX;
@@ -280,6 +322,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           ...(e.moveTimes !== undefined && e.moveTimes > 1 && { moveTimes: e.moveTimes }),
           ...(e.skill && { skill: { about: e.skill.about.trim(), bonus: e.skill.bonus } }),
           ...(e.mind && { mind: e.mind }),
+          ...(holder && { holder }),
         });
         const moveTimes = e.moveTimes !== undefined && e.moveTimes > 1 ? e.moveTimes : undefined;
         events.push({ type: 'tagged', pieceId: piece.id, at, tag: name, turns: turnsLeft, ...(moveAs.length > 0 && { moveAs }), ...(moveTimes && { moveTimes }) });

@@ -46,7 +46,7 @@ function effectSchema<
     z.object({
       type: z.literal('tag'),
       at: square('태그를 붙일 기물의 칸'),
-      tag: z.string().describe('태그 이름. 핵심 태그: "기절", "보호막", "화상", "공중부양". 그 밖의 이름은 자유 태그 (합 배율이나 이동 능력을 줄 수 있음)'),
+      tag: z.string().describe('태그 이름. 핵심 태그: "기절", "보호막", "화상", "공중부양", "혼란", "행동대장", "원호", "인질". 그 밖의 이름은 자유 태그 (합 배율, 이동 능력, 특기, 정신력을 줄 수 있음)'),
       turns: z.number().int().describe('지속 턴 수 (그 기물 주인의 턴 기준). 0이면 영구'),
       aura,
       auraStrength,

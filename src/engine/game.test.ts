@@ -75,7 +75,7 @@ describe('applyCommand: move', () => {
     expect(r.state.board[sq('e2')]).toBeNull();
     expect(r.state.turn).toBe('black');
     expect(r.state.turnNumber).toBe(2);
-    expect(r.events).toContainEqual({ type: 'turnPassed', turn: 'black', turnNumber: 2, apGained: 1 });
+    expect(r.events).toContainEqual({ type: 'turnPassed', turn: 'black', turnNumber: 2, apGained: 1, ended: 'white' });
   });
 
   it('does not mutate the previous state', () => {
