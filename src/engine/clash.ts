@@ -29,7 +29,8 @@ const tagMultiplier = (p: Piece): number => Math.max(1, ...(p.tags ?? []).map((t
  * piece with skill wears a weapon of some kind, stands its ground and cuts down whom it beats.
  */
 export function clashSkill(piece: Piece): number {
-  return Math.max(...stackOf(piece).map(tagMultiplier));
+  // A fused piece fights by being fused (융합), weapon or not.
+  return Math.max(...stackOf(piece).map((p) => (p.fuse ? Math.max(tagMultiplier(p), 1.25) : tagMultiplier(p))));
 }
 
 /**
@@ -37,12 +38,16 @@ export function clashSkill(piece: Piece): number {
  * (in hundredths). With riders, whichever of the stack fights best.
  */
 export function clashMultiplier(piece: Piece): number {
-  const own = (p: Piece) => Math.round(BASE_CLASH[p.type] * tagMultiplier(p) * 100) / 100;
+  // A fused piece: its fused base (융합, see fusion.ts), and never past ×3 with tags.
+  const own = (p: Piece) => {
+    const m = Math.round((p.fuse?.base ?? BASE_CLASH[p.type]) * tagMultiplier(p) * 100) / 100;
+    return p.fuse ? Math.min(3, m) : m;
+  };
   return Math.max(...stackOf(piece).map(own));
 }
 
 /** It (or someone riding it) wears clash gear: a tag with a multiplier, even ×1 (an exile's hood). */
-export const hasClashGear = (piece: Piece): boolean => stackOf(piece).some((p) => (p.tags ?? []).some((t) => t.clash !== undefined));
+export const hasClashGear = (piece: Piece): boolean => stackOf(piece).some((p) => !!p.fuse || (p.tags ?? []).some((t) => t.clash !== undefined));
 
 /** A capture of this piece becomes a clash: it (or its rider) wears clash gear, or it has a shield. */
 export function canResist(defender: Piece): boolean {

@@ -60,6 +60,8 @@ export const GM_EFFECT_JSON_SCHEMAS = [
     color: { type: 'string', enum: ['white', 'black', 'red', 'gray'], description: '(red는 3인 맵에서만, gray는 혼돈의 떠돌이 인물만) 새로 속할 편' },
   }),
   effect('swap', { a: sq('자리를 바꿀 기물 하나의 칸'), b: sq('자리를 바꿀 다른 기물의 칸') }),
+  effect('fuse', { body: sq('몸이 되는 기물(주체)의 칸'), material: sq('흡수되어 관이 될 바로 옆(1칸) 기물의 칸 (킹 불가)') }),
+  effect('split', { at: sq('융합한 기물의 칸'), to: sq('맨 위 관의 기물이 떨어져 나와 설 바로 옆(1칸)의 빈 칸') }),
   effect('revive', {
     at: sq('되살린 기물을 놓을 빈 칸'),
     color: { type: 'string', enum: ['white', 'black', 'red', 'gray'], description: '(red는 3인 맵에서만, gray는 혼돈의 떠돌이 인물만) 되살릴 잡힌 기물의 편' },

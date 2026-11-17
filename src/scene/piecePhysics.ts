@@ -5,7 +5,7 @@ import { loadPhysics } from '../dice3d/simulate';
 import { TRAY } from '../dice3d/simulate';
 import { TRAY_SCALE, trayCenterX } from '../dice3d/DiceTray';
 import { findImpacts } from '../audio/impacts';
-import { PIECE_HEIGHT, pieceParts } from './pieceGeometry';
+import { crownLayout, PIECE_HEIGHT, pieceParts } from './pieceGeometry';
 import { TABLE_TOP_Y } from './WoodTable';
 
 export interface BodyPose {
@@ -75,7 +75,8 @@ export const riderTypes = (p: Piece): PieceType[] => ridersOf(p).map((r) => r.ty
 
 /** How tall a piece stands with everyone riding it. */
 export function stackHeight(p: Piece): number {
-  let h = 0;
+  // A fused piece's crowns make it taller (riders sit on top of them).
+  let h = p.fuse ? crownLayout(p.type, p.fuse.crowns).height : 0;
   let below: Piece = p;
   for (const r of ridersOf(p)) {
     h += riderBase(below.type);

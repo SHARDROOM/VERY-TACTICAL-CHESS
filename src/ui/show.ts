@@ -242,6 +242,22 @@ export function directionsFor(show: Show, startedAt: number, from = 0): Map<stri
         if (id) get(id).swirl = true;
         break;
       }
+      case 'fuse': {
+        // 융합: the piece taken in swirls up from its square into its crown place.
+        const id = after[e.body]?.id;
+        if (id) get(id).fuseFrom = { at: e.material, duration, start: startedAt + (timeline.effectStarts[i] ?? 0) * 1000 };
+        break;
+      }
+      case 'split': {
+        // The crown let go hops down onto the square next to it.
+        const id = after[e.to]?.id;
+        if (id) {
+          const d = get(id);
+          d.appearFrom = e.at;
+          d.motions.push({ style: 'hop', duration });
+        }
+        break;
+      }
     }
   });
   // A piece taken by a trip waits for the attacker to arrive before it leaves.

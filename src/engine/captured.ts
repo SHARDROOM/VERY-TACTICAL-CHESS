@@ -1,6 +1,7 @@
 import type { Exit } from './staging';
 import type { CapturedPiece, Color, GameEvent, RemainsMark, Square } from './types';
 import { groundOf } from './squares';
+import { crownPieces } from './fusion';
 import { enPassantVictim } from './moves';
 
 /** How a piece that left in this event goes when the GM staged nothing: burnt up to ash, sunk into a pit. */
@@ -28,9 +29,12 @@ export function remainsAfter(remains: readonly RemainsMark[] | undefined, events
   for (const e of events) {
     const piece = e.type === 'moved' ? e.captured : e.type === 'removed' ? e.piece : null;
     if (piece && (e.type === 'moved' || e.type === 'removed')) {
-      if (piece.type === 'king') continue;
-      out = out.filter((r) => r.pieceId !== piece.id);
-      out.push({ pieceId: piece.id, color: piece.color, type: piece.type, at: groundOf(whereTaken(e)), turnsLeft: REMAINS_TURNS, appliedOnTurn: turnNumber });
+      // A fused piece falls with everyone it took in: each leaves remains (a king none).
+      for (const p of [piece, ...crownPieces(piece)]) {
+        if (p.type === 'king') continue;
+        out = out.filter((r) => r.pieceId !== p.id);
+        out.push({ pieceId: p.id, color: p.color, type: p.type, at: groundOf(whereTaken(e)), turnsLeft: REMAINS_TURNS, appliedOnTurn: turnNumber });
+      }
     } else if (e.type === 'revived') {
       out = out.filter((r) => r.pieceId !== e.piece.id);
     }
@@ -64,6 +68,8 @@ export function capturedAfter(captured: readonly CapturedPiece[] | undefined, ev
       // A piece that shatters leaves its shards where it stood (below it, if it was in the air).
       const at = exit === 'shatter' ? groundOf(whereTaken(e)) : undefined;
       out.push({ id: piece.id, color: piece.color, type: piece.type, ...(exit && { exit }), ...(at !== undefined && { at }) });
+      // Everyone a fused piece took in falls with it.
+      for (const c of crownPieces(piece)) out.push({ id: c.id, color: c.color, type: c.type, ...(exit && { exit }) });
     } else if (e.type === 'revived') {
       const i = out.map((p) => p.id).lastIndexOf(e.piece.id);
       if (i >= 0) out.splice(i, 1);

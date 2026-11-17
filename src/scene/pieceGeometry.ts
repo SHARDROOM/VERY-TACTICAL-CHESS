@@ -167,6 +167,36 @@ export const PIECE_HEIGHT: Record<PieceType, number> = {
 const FEATURE_CUT: Record<PieceType, number> = { pawn: 0.4, rook: 0.5, bishop: 0.58, queen: 0.74, king: 0.88, knight: 0.2 };
 const featureCache = new Map<PieceType, PiecePart[]>();
 
+/** How tall a piece's telling part is (from where featureParts cut it to the top). */
+export const featureHeight = (type: PieceType): number => Math.max(0.12, PIECE_HEIGHT[type] - stretch(FEATURE_CUT[type]));
+
+/** Crowns drawn as heads; past this many, the rest are gold rings. */
+export const MAX_CROWN_HEADS = 5;
+
+/**
+ * Where a fused piece's crowns sit (융합): each the head of a piece it took in, stacked on its own
+ * top, oldest lowest, each 0.8 the size of the one below (the first 0.85); past MAX_CROWN_HEADS,
+ * thin gold rings. `height`: how much taller the crowns make it.
+ */
+export function crownLayout(bodyType: PieceType, crowns: readonly { type: PieceType }[]): { heads: { y: number; scale: number }[]; rings: number[]; height: number } {
+  const top = PIECE_HEIGHT[bodyType] - 0.05;
+  let y = top;
+  let scale = 0.85;
+  const heads: { y: number; scale: number }[] = [];
+  const rings: number[] = [];
+  crowns.forEach((c, i) => {
+    if (i < MAX_CROWN_HEADS) {
+      heads.push({ y, scale });
+      y += featureHeight(c.type) * scale - 0.03;
+      scale *= 0.8;
+    } else {
+      rings.push(y + 0.02);
+      y += 0.045;
+    }
+  });
+  return { heads, rings, height: crowns.length ? y - top + 0.05 : 0 };
+}
+
 /**
  * The part of a piece you would recognise it by (king's cross, queen's crown, knight's head,
  * bishop's mitre, rook's battlements, pawn's ball), with its bottom at y = 0.

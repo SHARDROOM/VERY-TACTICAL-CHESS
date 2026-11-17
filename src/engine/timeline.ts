@@ -47,6 +47,8 @@ export const ACT_DURATION: Record<ActKind, number> = { hop: 0.7, stagger: 1, fal
 
 /** A plain swap: both pieces lift and cross over each other. */
 export const SWAP_DURATION = 1.1;
+/** 융합: the piece taken in swirls up into its crown place. */
+export const FUSE_DURATION = 1.4;
 /** A plain revival: the piece flies back from beside the board to its square. */
 export const REVIVE_DURATION = 1.3;
 
@@ -86,6 +88,11 @@ export function effectDuration(effect: Effect, beat: Beat | undefined, _board?: 
       return EXIT_DURATION[beat?.exit ?? 'default'];
     case 'board':
       return 0.6;
+    case 'fuse':
+      // The piece taken in spirals in and settles as a crown.
+      return FUSE_DURATION;
+    case 'split':
+      return 0.8;
     case 'transform':
       return 0.6;
     case 'convert':

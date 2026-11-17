@@ -21,6 +21,10 @@ export function targetsOf(e: Effect): Square[] {
       return [e.a, e.b];
     case 'board':
       return [e.rider, e.carrier];
+    case 'fuse':
+      return [e.body, e.material];
+    case 'split':
+      return [e.at];
     case 'remove':
     case 'tag':
     case 'untag':

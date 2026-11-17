@@ -426,6 +426,40 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
     };
   }
 
+  // 융합: "c3 나이트가 d4 비숍을 흡수한다" (the first square takes in the last).
+  if (squares.length >= 2 && /흡수|융합|합쳐|합체/.test(action) && !/분리|떼어|벗/.test(action)) {
+    if (!actor) return needsActor()!;
+    const kind = board?.[squares[squares.length - 1]]?.type;
+    const enemy = !!board && board[squares[squares.length - 1]]?.color !== color;
+    const dc = (kind === 'queen' ? 10 : kind === 'rook' ? 9 : kind === 'pawn' ? 6 : 8) + (enemy ? 2 : 0);
+    return {
+      interpretation: `${actor}의 기물이 ${last}의 기물을 흡수해 하나로 융합한다.`,
+      actor,
+      means: 'touch',
+      feasible: true,
+      dc: Math.min(12, dc),
+      cost: kind === 'pawn' ? 1 : kind === 'queen' || kind === 'rook' ? 3 : 2,
+      effects: [{ type: 'fuse', body: actor, material: last }],
+      look: look({ shake: 1, fx: [fx('arcane', 'burst', actor, { strength: 3, radius: 1, withEffect: 1 })] }),
+      narration: { success: `${last}의 기물이 소용돌이치며 ${actor}의 기물과 하나가 되었다!`, failure: '두 기물이 부딪혔다가 튕겨 나갔다.' },
+    };
+  }
+  // Splitting a fused piece: "c3 융합 기물이 관을 벗어 c4에 내려놓는다".
+  if (squares.length >= 2 && /분리|떼어|벗/.test(action)) {
+    if (!actor) return needsActor()!;
+    return {
+      interpretation: `${actor}의 융합한 기물이 맨 위 관을 떼어 ${last}에 내려놓는다.`,
+      actor,
+      means: 'touch',
+      feasible: true,
+      dc: 5,
+      cost: 1,
+      effects: [{ type: 'split', at: actor, to: last }],
+      look: look({ fx: [fx('light', 'burst', last, { strength: 2, withEffect: 1 })] }),
+      narration: { success: `관이 떨어져 나와 ${last}에 내려섰다.`, failure: '관이 단단히 붙어 떨어지지 않았다.' },
+    };
+  }
+
   // The four tags that change who moves or who falls: 혼란, 행동대장, 원호, 인질.
   const special = /혼란/.test(action) ? '혼란' : /행동대장|선봉/.test(action) ? '행동대장' : /원호|호위|대신 막/.test(action) ? '원호' : /인질/.test(action) ? '인질' : null;
   if (special && squares.length >= 1) {

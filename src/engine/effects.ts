@@ -33,6 +33,7 @@ import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, clashSkill, resolveCl
 import { cleanProp } from './props';
 import { MOD_EACH_MAX } from './modifiers';
 import { intercept, saverFor } from './guard';
+import { fused, split } from './fusion';
 import { startFalls } from './levitation';
 
 const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
@@ -415,6 +416,42 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         board[e.at as Square] = mapStack(piece, (p) => ({ ...p, color: e.color }));
         touched.push(e.at as Square);
         events.push({ type: 'converted', pieceId: piece.id, at: e.at as Square, to: e.color });
+        break;
+      }
+      case 'fuse': {
+        // 융합: the body (the actor, if the ruling names one) takes in a piece next to it.
+        if (!onBoard(e.body) || !onBoard(e.material)) return fail('보드 밖의 칸');
+        const body = board[e.body];
+        const material = board[e.material];
+        if (!body) return fail(`${squareName(e.body)}에 기물이 없음`);
+        if (!material) return fail(`${squareName(e.material)}에 기물이 없음`);
+        if (e.body === e.material) return fail('자기 자신은 흡수할 수 없음');
+        if (ctx.actor !== undefined && e.body !== ctx.actor) return fail(`몸이 되는 기물은 행동하는 기물(주체 ${squareName(ctx.actor)})이어야 함`);
+        if (ctx.color && body.color !== ctx.color) return fail('몸이 되는 기물은 선언자 쪽 기물이어야 함');
+        if (material.type === 'king') return fail('킹은 흡수할 수 없음');
+        if (material.rider) return fail(`${squareName(e.material)}의 기물은 누군가를 태우고 있어 흡수할 수 없음`);
+        if (distance(e.body, e.material) > 1) return fail('흡수할 기물은 몸이 되는 기물 바로 옆(1칸)에 있어야 함');
+        const merged = fused(body, material);
+        board[e.material] = null;
+        board[e.body] = merged;
+        touched.push(e.body, e.material);
+        events.push({ type: 'fused', bodyId: body.id, materialId: material.id, body: e.body, material: e.material, base: merged.fuse!.base });
+        break;
+      }
+      case 'split': {
+        if (!onBoard(e.at) || !onBoard(e.to)) return fail('보드 밖의 칸');
+        const body = board[e.at];
+        if (!body?.fuse?.crowns.length) return fail(`${squareName(e.at)}의 기물은 융합한 기물이 아님`);
+        if (board[e.to]) return fail(`${squareName(e.to)}이(가) 비어 있지 않음`);
+        if (!sameLayer(e.at, e.to) || distance(e.at, e.to) > 1) return fail('떨어져 나온 기물은 바로 옆(1칸)의 빈 칸에 서야 함');
+        const blocked = blockedLanding(e.to);
+        if (blocked) return fail(blocked);
+        const parted = split(body)!;
+        if (parted.freed.type === 'pawn' && pawnStuckAt(e.to, parted.freed.color)) return fail('폰은 그 편의 마지막 줄에 설 수 없음');
+        board[e.at] = parted.body;
+        board[e.to] = parted.freed;
+        touched.push(e.at, e.to);
+        events.push({ type: 'split', bodyId: body.id, pieceId: parted.freed.id, from: e.at, to: e.to });
         break;
       }
       case 'swap': {

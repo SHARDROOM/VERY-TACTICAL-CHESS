@@ -100,6 +100,19 @@ export interface Piece {
   tags?: Tag[];
   /** A friendly piece riding on this one (it is not on the board itself and moves with this piece). */
   rider?: Piece;
+  /** Fused (융합): the pieces it took in, worn as crowns on top, and what it fights with. See fusion.ts. */
+  fuse?: Fusion;
+}
+
+/**
+ * A fused piece (융합, docs/SPEC.md): it keeps its own kind, moves and side (the body) and wears
+ * the heads of the pieces it took in as stacked crowns, oldest at the bottom. Fusing alone makes it
+ * a fighter: `base` is its clash multiplier before tags (the body's base plus a quarter of each
+ * piece taken in, as it was then).
+ */
+export interface Fusion {
+  base: number;
+  crowns: { id: string; type: PieceType; color: Color }[];
 }
 
 /** What can stand on a square instead of a piece: nothing enters or passes it (knights jump over). */
@@ -168,6 +181,10 @@ export type Effect =
   | { type: 'convert'; at: Square; color: Color }
   /** The pieces on `a` and `b` trade squares (riders go with their carriers). */
   | { type: 'swap'; a: Square; b: Square }
+  /** 융합: the piece on `body` takes in the one on `material` (next to it), which becomes its newest crown. */
+  | { type: 'fuse'; body: Square; material: Square }
+  /** The fused piece on `at` lets its newest crown go: that piece stands again on the free square `to` next to it. */
+  | { type: 'split'; at: Square; to: Square }
   /** The most recently taken piece of that colour and kind comes back onto the empty square `at`. */
   | { type: 'revive'; at: Square; color: Color; piece: PieceType }
   /** A wall (empty square only) or a pit (swallows whatever stands there) on `at`; turns 0 = permanent. */
@@ -461,6 +478,10 @@ export type GameEvent =
   | { type: 'ownKingExposed'; color: Color }
   /** `ended`: whose turn it was (their 혼란 and 행동대장 pieces now move of their own accord). */
   | { type: 'turnPassed'; turn: Color; turnNumber: number; apGained: number; ended?: Color }
+  /** 융합: `bodyId` took in `materialId` (gone from `material`); `base` is its clash multiplier now. */
+  | { type: 'fused'; bodyId: string; materialId: string; body: Square; material: Square; base: number }
+  /** The newest crown of the fused piece on `from` stands again on `to`. */
+  | { type: 'split'; bodyId: string; pieceId: string; from: Square; to: Square }
   /** A piece moved of its own accord (혼란 / 행동대장); `to` null: it held its ground. The move itself follows as 'moved'. */
   | { type: 'impulse'; pieceId: string; kind: 'confused' | 'vanguard'; from: Square; to: Square | null }
   /**

@@ -27,13 +27,14 @@ function AuraMark({ tag }: { tag: Tag }) {
 
 /** Its clash multiplier (합 배율): the kind's base, times its weapon's if it has one. */
 function ClashLine({ piece }: { piece: Piece }) {
-  const base = BASE_CLASH[piece.type];
+  const base = piece.fuse?.base ?? BASE_CLASH[piece.type];
   const skill = clashSkill(piece);
   const total = clashMultiplier(piece);
   return (
     <span className="clash-base" title="합에서 주사위에 곱하는 수. 기물 점수가 높을수록 기본 배율이 높습니다.">
       합 ×{total}
-      {skill > 1 && total === Math.round(base * skill * 100) / 100 && (
+      {piece.fuse && <span className="muted"> (융합 ×{piece.fuse.base}{total < Math.round(base * skill * 100) / 100 ? ', 최대 ×3' : ''})</span>}
+      {!piece.fuse && skill > 1 && total === Math.round(base * skill * 100) / 100 && (
         <span className="muted">
           {' '}
           (기본 ×{base} × 태그 ×{skill})
@@ -51,6 +52,11 @@ function Line({ piece }: { piece: Piece }) {
         {COLOR_NAME[piece.color]} {PIECE_NAME[piece.type]}
       </strong>
       <ClashLine piece={piece} />
+      {piece.fuse && (
+        <span className="muted">
+          관: {piece.fuse.crowns.map((c) => `${PIECE_NAME[c.type]}(${COLOR_NAME[c.color]})`).join(' · ')}
+        </span>
+      )}
       {tags.length > 0 ? (
         <ul>
           {tags.map((t) => (

@@ -207,6 +207,12 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
       case 'wandered':
         add(`🚶 떠돌이가 제멋대로 움직입니다: ${squareName(e.from)} → ${squareName(e.to)}`);
         break;
+      case 'fused':
+        add(`🜲 ${squareName(e.body)}의 ${josa(name(e.bodyId), '이/가')} ${squareName(e.material)}의 ${josa(name(e.materialId), '을/를')} 흡수해 융합했습니다 (합 ×${e.base}).`, 'warn');
+        break;
+      case 'split':
+        add(`${squareName(e.from)}의 융합에서 ${josa(name(e.pieceId), '이/가')} 떨어져 나와 ${squareName(e.to)}에 섭니다.`);
+        break;
       case 'impulse': {
         const who = `${squareName(e.from)}의 ${name(e.pieceId)}`;
         if (e.to === null) add(`🚩 ${josa(who, '이/가')} 판세를 읽고 자리를 지킵니다.`);

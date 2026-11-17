@@ -73,6 +73,8 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - {"type": "spawn", "at": "e4", "color": "white", "piece": "pawn"}: 빈 칸에 새 기물을 만든다.
 - {"type": "convert", "at": "e2", "color": "black"}: 기물(과 그 기물에 탄 기물)이 상대 편으로 넘어간다. 매수, 배신, 정체는 스파이 같은 행동에 쓴다.
 - {"type": "swap", "a": "b1", "b": "g8"}: 두 칸의 기물이 자리를 맞바꾼다. 편은 상관없고, 탄 기물은 태운 기물과 함께 간다.
+- {"type": "fuse", "body": "c3", "material": "d4"}: 융합. 주체(body)가 바로 옆 기물(material)을 흡수한다. 아래 "융합" 참고.
+- {"type": "split", "at": "c3", "to": "c4"}: 융합한 기물의 맨 위 관이 떨어져 나와 바로 옆 빈 칸 to에 선다.
 - {"type": "revive", "at": "c3", "color": "white", "piece": "knight"}: 잡혀서 보드 옆에 있는 그 편, 그 종류의 기물(가장 최근에 잡힌 것)을 빈 칸 at으로 되살린다. 보드 상태의 "잡힌 기물" 목록에 있어야 한다.
 - {"type": "terrain", "at": "d4", "kind": "wall", "turns": 2}: 칸에 벽(wall)이나 구덩이(pit)를 만든다. turns는 만든 쪽(지금 차례인 편)의 턴 기준이고 0이면 영구다. 벽은 빈 칸에만 세운다. 구덩이를 기물이 있는 칸에 파면 그 기물이 빠져서 없어진다. prop으로 모양(바리케이드, 동상, 나무 등)을 줄 수 있다.
 - {"type": "clearTerrain", "at": "d4"}: 그 칸의 벽이나 구덩이를 없앤다.
@@ -158,6 +160,13 @@ ${hexRules(rules)}
 - 벽과 구덩이는 1~3턴이 보통입니다. 오래가거나 영구인 지형, 여러 칸, 킹을 가두는 지형은 어렵게 하세요. 기물을 삼키는 구덩이는 제거와 같은 무게입니다.
 - 선언이 체스판의 상황과 맞아떨어질수록(예: 실제로 인접한 기물끼리의 협동) DC를 낮추고, 억지스러울수록 높이세요.
 - 한 번의 특수 행동이 게임을 사실상 끝내지 않도록 효과를 선언에 꼭 필요한 만큼만 넣으세요.
+
+## 융합 (fuse, split)
+"c3 나이트가 d4 비숍을 흡수한다", "두 기물이 하나로 합쳐진다"처럼 기물을 합치는 선언은 fuse로 하세요(탑승 board와 다릅니다: 탑승은 위에 올라탈 뿐 따로 남고, 융합은 하나가 됩니다).
+- 몸(body)은 행동하는 기물(주체)이고 그 칸에 남습니다. 재료(material)는 바로 옆(1칸)의 기물로, 판에서 사라지고 그 머리가 몸 위에 관으로 겹쳐 얹힙니다. 킹은 재료가 될 수 없고(몸은 됨), 누군가를 태운 기물도 흡수할 수 없습니다. 상대 기물이나 회색 떠돌이도 흡수할 수 있습니다(관은 원래 편 색).
+- 움직임은 몸의 것 그대로입니다. 대신 융합만으로 합 능력이 생깁니다: 합 배율은 몸의 기본 배율에 흡수한 기물 배율의 1/4을 더한 값(이미 융합한 기물을 흡수하면 그 기물의 지금 배율의 1/4), 태그까지 곱해 최대 ×3.0. 시스템이 계산합니다. 두 기물의 태그는 합쳐집니다. 횟수 제한은 없습니다.
+- 융합 기물이 잡히면 안에 든 기물이 모두 함께 잡힙니다. split은 맨 위 관 하나를 떼어 바로 옆 빈 칸에 다시 세웁니다.
+- 기준(재료 기준): 폰 DC 6·AP 1, 나이트·비숍 DC 8·AP 2, 룩 DC 9·AP 3, 퀸 DC 10·AP 3. 상대나 회색 기물을 흡수하면 DC +2. 분리는 DC 5~6·AP 1. 융합한 기물의 이름(예: "주교관을 쓴 기마")을 서사용 태그로 함께 붙여도 좋습니다.
 
 ## 판정 보정: 특기와 정신력
 주사위 합에 시스템이 보정을 더합니다. 보정은 화면에 출처와 함께 보입니다(예: 🎲 5+3 +2 지휘의 깃발 = 10). 보정 하나는 ±1~3, 다 더해도 ±4까지이고, 1·1은 보정과 상관없이 대실패입니다.
@@ -274,7 +283,8 @@ function pieceList(state: GameState, color: Color): string {
     if (p?.color !== color) return;
     const riders = ridersOf(p);
     const rider = riders.length ? ` (탑승: ${riders.map((r, i) => `${i ? '그 위에 ' : ''}${PIECE[r.type]}${describeTags(r)}`).join(', ')})` : '';
-    items.push(`${PIECE[p.type]} ${squareName(sq)}${describeTags(p)}${rider}`);
+    const crowns = p.fuse ? ` {융합: 관 ${p.fuse.crowns.map((c) => `${PIECE[c.type]}(${COLOR[c.color]})`).join('·')}, 합 ×${p.fuse.base}}` : '';
+    items.push(`${PIECE[p.type]} ${squareName(sq)}${crowns}${describeTags(p)}${rider}`);
   });
   return items.join(', ') || '(없음)';
 }

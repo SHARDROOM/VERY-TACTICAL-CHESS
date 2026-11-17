@@ -73,6 +73,8 @@ function effectSchema<
       color: z.enum(['white', 'black', 'red', 'gray']).describe('(red는 3인 맵에서만, gray는 혼돈의 떠돌이 인물만) 새로 속할 편'),
     }),
     z.object({ type: z.literal('swap'), a: square('자리를 바꿀 기물 하나의 칸'), b: square('자리를 바꿀 다른 기물의 칸') }),
+    z.object({ type: z.literal('fuse'), body: square('몸이 되는 기물(주체)의 칸'), material: square('흡수되어 관이 될 바로 옆(1칸) 기물의 칸 (킹 불가)') }),
+    z.object({ type: z.literal('split'), at: square('융합한 기물의 칸'), to: square('맨 위 관의 기물이 떨어져 나와 설 바로 옆(1칸)의 빈 칸') }),
     z.object({
       type: z.literal('revive'),
       at: square('되살린 기물을 놓을 빈 칸'),

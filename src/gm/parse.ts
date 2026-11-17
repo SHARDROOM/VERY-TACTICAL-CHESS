@@ -81,6 +81,8 @@ function convert(e: GmEffectReplyJson, clashMax = CLASH_MAX): Effect | string {
     spawn: ['at'],
     convert: ['at'],
     swap: ['a', 'b'],
+    fuse: ['body', 'material'],
+    split: ['at', 'to'],
     revive: ['at'],
     terrain: ['at'],
     clearTerrain: ['at'],

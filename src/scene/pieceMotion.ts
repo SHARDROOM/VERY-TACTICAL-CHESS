@@ -34,6 +34,8 @@ export interface PieceDirection {
   fallInto?: { at: Square; duration: number };
   /** Taken in another's place (원호, 인질): it throws itself toward the attacker on `at`, then goes down. */
   lunge?: { at: Square; duration: number };
+  /** 융합: its newest crown comes swirling in from the piece it took in, on `at`. */
+  fuseFrom?: { at: Square; duration: number; start: number };
   /**
    * Played from a recording (a clash's duel, or a move as a romp that shoves pieces about): its
    * poses, 7 numbers per step, from `start` (performance.now() ms). Afterwards it eases back to
