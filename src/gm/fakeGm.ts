@@ -93,7 +93,7 @@ const tag = (
   at: string,
   name: string,
   turns: number,
-  extra: { aura?: string; auraStrength?: number; clash?: number; prop?: PropJson; moveAs?: PieceType[]; moveTimes?: number } = {},
+  extra: { aura?: string; auraStrength?: number; clash?: number; prop?: PropJson; moveAs?: PieceType[]; moveTimes?: number; skill?: { about: string; bonus: number }; mind?: number } = {},
 ) => ({
   type: 'tag' as const,
   at,
@@ -105,7 +105,12 @@ const tag = (
   prop: extra.prop ?? look3d(),
   moveAs: extra.moveAs ?? [],
   moveTimes: extra.moveTimes ?? 1,
+  skill: extra.skill ?? { about: '', bonus: 0 },
+  mind: extra.mind ?? 0,
 });
+
+/** Mental actions (정신 계열): the target's will counts. */
+const MENTAL = /회유|매혹|유혹|현혹|설득|세뇌|겁을|공포|위협해|꾀어/;
 
 const MOVE_LIKE: [RegExp, PieceType][] = [[/퀸|여왕/, 'queen'], [/룩|성탑/, 'rook'], [/비숍|주교/, 'bishop'], [/나이트|기사/, 'knight'], [/킹/, 'king'], [/폰|병사/, 'pawn']];
 const MOVE_KIND_KO: Record<PieceType, string> = { king: '킹', ...PIECE_KO };
@@ -119,10 +124,23 @@ export function fakeRuling(action: string, color: Color = 'white', board?: Board
   // The fake GM keeps the backfire simple: snake eyes stun the acting piece for a turn.
   const actorSquare = base.feasible && base.actor ? base.actor : null;
   const success = base.look ?? look();
-  const { look: _look, ...rest } = base;
+  const { look: _look, target: baseTarget, skills: baseSkills, mental: baseMental, ...rest } = base;
   void _look;
+  // Like a real GM: the main piece acted on, a mental action, and the actor's skills that fit it.
+  const names = [...action.toLowerCase().matchAll(new RegExp(SQUARE_PATTERN().replace('\\^?', ''), 'g'))].map((m) => m[0].replace(/\s/g, ''));
+  const target = baseTarget ?? (names.length >= 2 ? names[names.length - 1] : '');
+  const actorPiece = board && base.actor ? board[parseSquare(base.actor)!] : null;
+  const skills =
+    baseSkills ??
+    (actorPiece ? [actorPiece, ...(actorPiece.rider ? [actorPiece.rider] : [])] : [])
+      .flatMap((p) => p.tags ?? [])
+      .filter((t) => t.skill && (action.includes(t.name) || t.skill.about.split(/\s+/).some((w) => w.length >= 2 && action.includes(w.replace(/하는|행동|만들기$/g, '')))))
+      .map((t) => t.name);
   return {
     ...rest,
+    target,
+    skills,
+    mental: baseMental ?? MENTAL.test(action),
     critFailureEffects: actorSquare ? [tag(actorSquare, '기절', 1)] : [],
     narration: {
       ...base.narration,
@@ -143,9 +161,12 @@ export function fakeRuling(action: string, color: Color = 'white', board?: Board
   };
 }
 
-type BaseRuling = Omit<GmRulingJson, 'critFailureEffects' | 'narration' | 'staging'> & {
+type BaseRuling = Omit<GmRulingJson, 'critFailureEffects' | 'narration' | 'staging' | 'target' | 'skills' | 'mental'> & {
   narration: { success: string; failure: string };
   look?: StagingJson;
+  target?: string;
+  skills?: string[];
+  mental?: boolean;
 };
 
 const HINT = '예: "e6 폰이 e7 폰에 불을 붙인다", "d1 퀸이 불화살을 쏘아 d7 폰을 맞힌다", "b1 나이트를 투석기로 e5까지 날린다"';
@@ -186,6 +207,47 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
     return refuse(`${first}에서 ${last}까지 ${far}칸: 손이 닿기엔 너무 멉니다. 불화살을 쏘거나 다가가는 행동으로 선언해 보세요.`);
   };
   const isRefusal = (r: { means: Means } | BaseRuling): r is BaseRuling => 'feasible' in r;
+
+  // A skill (특기) or a will (정신력) given to a piece: "e2 폰에게 건축가 특기를 준다", "d1 퀸이 e2 폰에게 강철 같은 정신력을 불어넣는다".
+  const skillName = action.match(/([가-힣]{2,10})\s*(?:특기|직업)/)?.[1];
+  if (squares.length >= 1 && (skillName || /정신력|의지/.test(action)) && /준다|주어|얻|부여|익힌|익혀|가르|불어넣/.test(action)) {
+    if (!actor) return needsActor()!;
+    const will = !skillName;
+    const name = will ? '강철 의지' : skillName!;
+    return {
+      interpretation: will ? `${last}의 기물이 세 턴 동안 강철 같은 정신력(+2)을 얻는다.` : `${last}의 기물이 세 턴 동안 ${name} 특기를 얻어 ${name}다운 행동에 +2를 받는다.`,
+      actor,
+      means: far <= 1 ? 'touch' : 'magic',
+      feasible: true,
+      dc: 8,
+      cost: 2,
+      effects: [tag(last, name, 3, will ? { mind: 2, aura: 'light', auraStrength: 1 } : { skill: { about: `${name}다운 행동`, bonus: 2 } })],
+      look: look({ fx: [fx('light', 'burst', last, { strength: 2, withEffect: 1 })], acts: [{ at: last, act: 'hop', delay: 0.1 }] }),
+      narration: { success: will ? `${last}의 기물의 눈빛이 단단해졌다.` : `${last}의 기물이 ${name}의 요령을 깨쳤다!`, failure: '가르침이 귀에 들어오지 않았다.' },
+    };
+  }
+
+  // Winning over an enemy piece (a mental action): it changes sides.
+  if (squares.length >= 2 && MENTAL.test(action) && board && board[squares[squares.length - 1]] && board[squares[squares.length - 1]]!.color !== color) {
+    if (!actor) return needsActor()!;
+    const r = reach(true);
+    if (isRefusal(r)) return r;
+    const kingThere = board[squares[squares.length - 1]]!.type === 'king';
+    if (kingThere) return refuse('킹은 회유할 수 없습니다.');
+    return {
+      interpretation: `${who} ${last}의 상대 기물을 꾀어 내 편으로 만든다.`,
+      actor,
+      means: r.means,
+      target: last,
+      mental: true,
+      feasible: true,
+      dc: 9,
+      cost: 3,
+      effects: [{ type: 'convert', at: last, color }],
+      look: look({ fx: [fx('arcane', 'beam', actor, { to: last, strength: 2, withEffect: 0 })] }),
+      narration: { success: `${last}의 기물이 마음을 돌렸다!`, failure: '상대 기물은 흔들리지 않았다.' },
+    };
+  }
 
   if (squares.length >= 2 && /태워|태운|탑승|올라타/.test(action)) {
     const [rider, carrier] = names;

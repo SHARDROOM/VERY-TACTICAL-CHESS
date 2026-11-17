@@ -153,6 +153,14 @@ ${hexRules(rules)}
 - 선언이 체스판의 상황과 맞아떨어질수록(예: 실제로 인접한 기물끼리의 협동) DC를 낮추고, 억지스러울수록 높이세요.
 - 한 번의 특수 행동이 게임을 사실상 끝내지 않도록 효과를 선언에 꼭 필요한 만큼만 넣으세요.
 
+## 판정 보정: 특기와 정신력
+주사위 합에 시스템이 보정을 더합니다. 보정은 화면에 출처와 함께 보입니다(예: 🎲 5+3 +2 지휘의 깃발 = 10). 보정 하나는 ±1~3, 다 더해도 ±4까지이고, 1·1은 보정과 상관없이 대실패입니다.
+- 특기(skill): 태그에 붙는 능력. 그 태그를 가진 기물이 하는 특정 종류의 행동에 보정을 줍니다(예: "지휘의 깃발" 특기 about "함께 전진하는 행동" bonus 2, "건축가" about "지형이나 다리 만들기" bonus 2). 직업, 칭호, 장비처럼 "이 기물은 이런 일을 잘한다"는 선언에 쓰세요. 서툴게 만드는 저주는 음수로.
+- 정신력(mind): 태그에 붙는 값 -3~+3. 다른 편이 그 기물에 거는 정신 계열 행동(회유, 매혹, 공포, 설득, 세뇌)의 주사위에서 그만큼 뺍니다(예: "강철 의지" +2, "겁에 질림" -2).
+- 판정할 때: 주체(와 그 위에 탄 기물)의 태그 가운데 이번 행동에 맞는 특기 태그의 이름을 skills에 넣으세요. 회유·매혹 같은 정신 계열 행동이면 mental을 true로 하고 대상 기물의 칸을 target에 쓰세요(정신 계열이 아니어도 대상이 있으면 target을 씁니다).
+- 중요: DC는 특기와 정신력을 빼고 정하세요. 숫자는 시스템이 태그에서 더하니, DC에 또 반영하면 두 번 셉니다.
+- 특기나 정신력을 붙이는 값: +1은 DC 6~7·AP 1, +2는 DC 8·AP 2, +3은 DC 9~10·AP 3, 영구(turns 0)면 DC +2. 상대 기물에 약화(겁에 질림 -2 등)를 거는 것도 같은 기준입니다.
+
 ## 연출 (staging, 보기용)
 판정과 함께 결과 셋(success, failure, critFailure)이 화면에서 어떻게 보일지 정합니다. 규칙에는 영향이 없고, 서술을 눈으로 보여 주는 도구입니다. 서술과 맞게, 결과의 크기에 맞게 쓰세요. 성공은 화려하게, 실패는 짧게, 대실패는 행동한 쪽에 역효과처럼. 무엇을 어떻게 보여 줄지는 당신이 정합니다.
 - fx: 이펙트 (최대 6개). element는 fire, light, water, nature, darkness, lightning, ice, wind, poison, arcane, earth, impact. shape는 burst(at 칸 중심, radius 0.5~3), beam(at에서 to까지), area(at과 to를 모서리로 하는 직사각형, 둘 다 ""이면 보드 전체), trail(withEffect 번호의 효과로 움직이는 기물을 따라감). strength 1~5, duration 0.5~5초. withEffect(1부터, 0이면 연출 시작 기준)와 delay(초)로 시점을 정합니다.
@@ -233,6 +241,8 @@ function describeTags(p: Piece): string {
     if (t.clash) notes.push(`합 ×${t.clash}`);
     if (t.moveAs?.length) notes.push(`원래 대신 ${t.moveAs.map((k) => PIECE[k]).join('·')}처럼 이동`);
     if (t.moveTimes && t.moveTimes > 1) notes.push(`한 턴에 ${t.moveTimes}번 연속 이동`);
+    if (t.skill) notes.push(`특기: ${t.skill.about} ${t.skill.bonus > 0 ? '+' : ''}${t.skill.bonus}`);
+    if (t.mind) notes.push(`정신력 ${t.mind > 0 ? '+' : ''}${t.mind}`);
     if (t.prop) notes.push(t.prop.preset ? PROP_PRESET_NAME[t.prop.preset] : '조형물');
     return `${t.name}(${notes.join(', ')})`;
   };
@@ -286,7 +296,7 @@ function precedentList(state: GameState): string {
   return recent
     .map(
       (p) =>
-        `- 턴 ${p.turnNumber} ${COLOR[p.color]}: "${sanitizeDeclaration(p.action)}" → ${p.interpretation} / DC ${p.dc}, AP ${p.cost}, 주사위 ${p.roll} (${OUTCOME[p.outcome]}${p.rerolls ? `, 실패 후 ${p.rerolls}번 다시 굴림` : ''})`,
+        `- 턴 ${p.turnNumber} ${COLOR[p.color]}: "${sanitizeDeclaration(p.action)}" → ${p.interpretation} / DC ${p.dc}, AP ${p.cost}, 주사위 ${p.roll}${p.bonus ? ` ${p.bonus > 0 ? '+' : ''}${p.bonus} 보정` : ''} (${OUTCOME[p.outcome]}${p.rerolls ? `, 실패 후 ${p.rerolls}번 다시 굴림` : ''})`,
     )
     .join('\n');
 }

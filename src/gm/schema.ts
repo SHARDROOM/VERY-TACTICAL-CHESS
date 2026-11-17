@@ -23,15 +23,23 @@ export const MOVE_AS_DESCRIPTION = '태그가 있는 동안 원래 움직임 대
 export const MOVE_TIMES_DESCRIPTION = '태그가 있는 동안 한 턴에 일반 수를 연속으로 두는 횟수 2~3 (같은 기물로). 없으면 1';
 const moveAsField = z.array(z.enum(['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'])).describe(MOVE_AS_DESCRIPTION);
 const moveTimesField = z.number().int().describe(MOVE_TIMES_DESCRIPTION);
+export const SKILL_DESCRIPTION = '특기: 이 태그를 가진 기물이 하는 특정 종류의 특수 행동에 주사위 보정을 준다(지휘의 깃발: 함께 전진 +2, 건축가: 지형 만들기 +2). 없으면 about ""에 bonus 0';
+export const SKILL_ABOUT_DESCRIPTION = '어떤 행동에 보정을 주는지 짧게 (20자 이내), 예: "함께 전진하는 행동"';
+export const SKILL_BONUS_DESCRIPTION = '보정 -3~+3 (0이 아닌 정수). 없으면 0';
+export const MIND_DESCRIPTION = '정신력 -3~+3: 다른 편이 이 기물에 거는 정신 계열 행동(회유, 매혹, 공포, 설득, 세뇌)의 주사위에서 이만큼 뺀다(강철 의지 +2, 겁에 질림 -2). 없으면 0';
+const skillField = z.object({ about: z.string().describe(SKILL_ABOUT_DESCRIPTION), bonus: z.number().int().describe(SKILL_BONUS_DESCRIPTION) }).describe(SKILL_DESCRIPTION);
+const mindField = z.number().int().describe(MIND_DESCRIPTION);
 
-function effectSchema<A extends z.ZodTypeAny, B extends z.ZodTypeAny, C extends z.ZodTypeAny, P extends z.ZodTypeAny, M extends z.ZodTypeAny, T extends z.ZodTypeAny>(
-  aura: A,
-  auraStrength: B,
-  clash: C,
-  prop: P,
-  moveAs: M,
-  moveTimes: T,
-) {
+function effectSchema<
+  A extends z.ZodTypeAny,
+  B extends z.ZodTypeAny,
+  C extends z.ZodTypeAny,
+  P extends z.ZodTypeAny,
+  M extends z.ZodTypeAny,
+  T extends z.ZodTypeAny,
+  K extends z.ZodTypeAny,
+  W extends z.ZodTypeAny,
+>(aura: A, auraStrength: B, clash: C, prop: P, moveAs: M, moveTimes: T, skill: K, mind: W) {
   return z.discriminatedUnion('type', [
     z.object({ type: z.literal('move'), from: square('기물이 있는 칸'), to: square('도착 칸') }),
     z.object({ type: z.literal('remove'), at: square('제거할 기물이 있는 칸') }),
@@ -46,6 +54,8 @@ function effectSchema<A extends z.ZodTypeAny, B extends z.ZodTypeAny, C extends 
       prop,
       moveAs,
       moveTimes,
+      skill,
+      mind,
     }),
     z.object({ type: z.literal('untag'), at: square('태그를 뗄 기물의 칸'), tag: z.string().describe('뗄 태그 이름') }),
     z.object({ type: z.literal('board'), rider: square('올라탈 기물의 칸'), carrier: square('태울 같은 편 기물의 칸') }),
@@ -93,12 +103,21 @@ const meansField = z
   .enum(MEANS as [string, ...string[]])
   .describe('주체가 하는 방법: touch(근접, 1칸 이내만), ranged(쏘기·던지기), magic(주문), move(주체가 직접 이동)');
 
+const targetField = z.string().describe('행동의 주된 대상 기물의 칸(회유할 기물, 공격할 기물 등). 대상이 없거나 칸만 대상이면 ""');
+export const SKILLS_DESCRIPTION = '이번 행동에 해당하는 주체(와 그 위에 탄 기물)의 특기 태그 이름 목록. 보정은 시스템이 태그에서 더한다. 없으면 빈 목록';
+const skillsField = z.array(z.string()).describe(SKILLS_DESCRIPTION);
+export const MENTAL_DESCRIPTION = '회유, 매혹, 공포, 설득, 세뇌처럼 마음을 움직이는 정신 계열 행동이면 true (대상의 정신력이 보정이 된다)';
+const mentalField = z.boolean().describe(MENTAL_DESCRIPTION);
+
 /** `lenient`: reading a reply, where a missing actor or means is left for the engine to refuse (and the GM to retry). */
 function rulingSchema<E extends z.ZodTypeAny, S extends z.ZodTypeAny>(effect: E, staging: S, lenient = false) {
   return z.object({
     interpretation: z.string().describe('플레이어의 선언을 GM이 어떻게 이해했는지 한 문장으로'),
     actor: lenient ? actorField.optional() : actorField,
     means: lenient ? z.string().optional() : meansField,
+    target: lenient ? targetField.optional() : targetField,
+    skills: lenient ? skillsField.optional() : skillsField,
+    mental: lenient ? mentalField.optional() : mentalField,
     feasible: z.boolean().describe('시도 자체가 가능한 행동인가. 행동이 아니거나 규칙을 바꾸려는 요청이면 false'),
     dc: z.number().int().describe('난이도. 주사위 2개의 합이 이 값 이상이면 성공. 불가능하면 0'),
     cost: z.number().int().describe('시도할 때 드는 AP. 불가능하면 0'),
@@ -122,9 +141,18 @@ function chaosSchema<E extends z.ZodTypeAny, S extends z.ZodTypeAny>(effect: E, 
   });
 }
 
-export const GmEffectSchema = effectSchema(auraField, auraStrengthField, clashField, propField, moveAsField, moveTimesField);
+export const GmEffectSchema = effectSchema(auraField, auraStrengthField, clashField, propField, moveAsField, moveTimesField, skillField, mindField);
 // Reading a reply, odd move fields are cleaned up (parse.ts) rather than refused.
-export const GmEffectReplySchema = effectSchema(auraField.optional(), auraStrengthField.optional(), clashField.optional(), z.unknown().optional(), z.unknown().optional(), z.unknown().optional());
+export const GmEffectReplySchema = effectSchema(
+  auraField.optional(),
+  auraStrengthField.optional(),
+  clashField.optional(),
+  z.unknown().optional(),
+  z.unknown().optional(),
+  z.unknown().optional(),
+  z.unknown().optional(),
+  z.unknown().optional(),
+);
 
 export const GmRulingSchema = rulingSchema(
   GmEffectSchema,

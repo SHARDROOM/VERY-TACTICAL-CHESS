@@ -27,9 +27,12 @@ import {
   stackOf,
   type PromotionType,
   type Square,
+  rollModifiers,
+  modifierTotal,
+  MOD_TOTAL_MAX,
 } from '../engine';
 import { BoardScene, type CameraRequest } from '../scene/BoardScene';
-import { COLOR_NAME, OUTCOME_LABEL, PIECE_NAME, REJECT_MESSAGE, describeEvents, type LogEntry, type LogTone } from './messages';
+import { COLOR_NAME, MOD_KIND_NAME, OUTCOME_LABEL, PIECE_NAME, REJECT_MESSAGE, describeEvents, signed, type LogEntry, type LogTone } from './messages';
 import { PrecedentList } from './PrecedentList';
 import { josa } from './josa';
 import { GmSettings, type GmConfig } from './GmSettings';
@@ -325,7 +328,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
    * until the die lands). `landed` flips when the die stops; `done` reveals the result.
    */
   /** The roll on screen. A clash's dice go one after another: `firstLanded` once the attacker's is down. */
-  const [dice, setDice] = useState<{ roll: number; faces: [number, number]; outcome: Outcome | null; done: () => void; landed: boolean; firstLanded?: boolean; clash?: ClashEvent } | null>(null);
+  const [dice, setDice] = useState<{ roll: number; faces: [number, number]; bonus?: number; outcome: Outcome | null; done: () => void; landed: boolean; firstLanded?: boolean; clash?: ClashEvent } | null>(null);
   const [diceRoll, setDiceRoll] = useState<ActiveRoll | null>(null);
   const [frozen, setFrozen] = useState<GameState | null>(null);
   const queueRef = useRef<Batch[]>([]);
@@ -542,8 +545,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     };
 
     /** Rolls the pair on the table: simulate, look at the tray, then reveal via `done`. */
-    const startRoll = (roll: number, faces: [number, number], outcome: Outcome, done: () => void) => {
-      setDice({ roll, faces, outcome, done, landed: false });
+    const startRoll = (roll: number, faces: [number, number], outcome: Outcome, done: () => void, bonus = 0) => {
+      setDice({ roll, faces, outcome, done, landed: false, ...(bonus && { bonus }) });
       setDiceRoll({ runs: null, skins: [], outcome, skipped: false });
       lookAtDice();
       simulateRolls(2)
@@ -593,10 +596,16 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         if (resolved && !head.rolled) {
           head.rolled = true;
           setFrozen(head.before);
-          startRoll(resolved.roll, resolved.dice ?? splitRoll(resolved.roll), resolved.outcome, () => {
-            setDice(null);
-            pump();
-          });
+          startRoll(
+            resolved.roll,
+            resolved.dice ?? splitRoll(resolved.roll),
+            resolved.outcome,
+            () => {
+              setDice(null);
+              pump();
+            },
+            resolved.bonus,
+          );
           return;
         }
         // A clash (합) in a normal move: its dice, then the duel, before anything moves. (A special
@@ -938,6 +947,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   // After a failed roll the same ruling can be rolled again, for the room's reroll price.
   const retry = pending?.retry;
   const rollCost = pending ? (retry ? game.rules.rerollCost : pending.ruling.cost) : 0;
+  // What the system adds to the dice for this ruling (skills, will, ...), as the engine will count it.
+  const pendingMods = pending ? rollModifiers(game.board, pending.ruling, pending.color) : [];
+  const pendingBonus = modifierTotal(pendingMods);
   const canAfford = pending ? game.ap[pending.color] >= rollCost : false;
   const canActOnPending = !!pending && (seat === 'both' || seat === pending.color) && connected;
   const nameOf = (color: Color) => view.members.find((m) => m.role === color)?.name;
@@ -1222,7 +1234,17 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             </div>
             {pending.ruling.feasible ? (
               <>
-                <DieOdds dc={pending.ruling.dc} />
+                <DieOdds dc={pending.ruling.dc} bonus={pendingBonus} />
+                {pendingMods.length > 0 && (
+                  <ul className="mod-list" aria-label="판정 보정">
+                    {pendingMods.map((m, i) => (
+                      <li key={i} className={m.value >= 0 ? 'up' : 'down'}>
+                        <span className="mod-value">{signed(m.value)}</span> {m.label} <span className="mod-kind">{MOD_KIND_NAME[m.kind]}</span>
+                      </li>
+                    ))}
+                    {pendingMods.reduce((s, m) => s + m.value, 0) !== pendingBonus && <li className="mod-cap">보정 합계는 ±{MOD_TOTAL_MAX}까지: {signed(pendingBonus)}</li>}
+                  </ul>
+                )}
                 <dl className="ruling-facts">
                   <div>
                     <dt>{retry ? '다시 굴리는 비용' : '비용'}</dt>
@@ -1235,7 +1257,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
                   </div>
                   <div>
                     <dt>성공 확률</dt>
-                    <dd>{Math.round(successChance(pending.ruling.dc) * 100)}%</dd>
+                    <dd>{Math.round(successChance(pending.ruling.dc, pendingBonus) * 100)}%</dd>
                   </div>
                 </dl>
                 <ul className="crit-notes">
@@ -1370,8 +1392,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             <ClashResult clash={dice.clash} name={(id) => pieceName(game, id)} defenderRolling={!dice.landed} />
           ) : dice.landed && dice.outcome ? (
             <div className={`dice-result ${dice.outcome}`}>
-              <span className="dice-faces">{dice.faces[0]} + {dice.faces[1]} =</span>
-              <span className="dice-number">{dice.roll}</span>
+              <span className="dice-faces">
+                {dice.faces[0]} + {dice.faces[1]}
+                {dice.bonus ? <span className="dice-bonus"> {signed(dice.bonus)}</span> : null} =
+              </span>
+              <span className="dice-number">{dice.roll + (dice.bonus ?? 0)}</span>
               <span className="dice-label">{OUTCOME_LABEL[dice.outcome]}</span>
             </div>
           ) : (
@@ -1435,10 +1460,10 @@ function TimerBadge({ timer, mine }: { timer: TurnTimer; mine: boolean }) {
 }
 
 /** Every total two dice can make (2..12), how often, and which of them succeed against this DC. */
-function DieOdds({ dc }: { dc: number }) {
+function DieOdds({ dc, bonus = 0 }: { dc: number; bonus?: number }) {
   const totals = Array.from({ length: 11 }, (_, i) => i + 2);
   const ways = (n: number) => 6 - Math.abs(n - 7);
-  const kind = (n: number) => (n === 2 ? 'fumble' : n >= dc ? 'win' : '');
+  const kind = (n: number) => (n === 2 ? 'fumble' : n + bonus >= dc ? 'win' : '');
   return (
     <div className="odds">
       <div className="odds-faces" aria-hidden>
@@ -1449,7 +1474,13 @@ function DieOdds({ dc }: { dc: number }) {
           </span>
         ))}
       </div>
-      <div className="odds-caption">{dc >= 12 ? '주사위 2개가 6·6이 나와야만 성공' : `주사위 2개의 합이 ${dc} 이상이면 성공`}</div>
+      <div className="odds-caption">
+        {bonus
+          ? `주사위 2개의 합 ${signed(bonus)}이 ${dc} 이상이면 성공${dc - bonus > 12 ? ' (닿을 수 없음)' : ''}`
+          : dc >= 12
+            ? '주사위 2개가 6·6이 나와야만 성공'
+            : `주사위 2개의 합이 ${dc} 이상이면 성공`}
+      </div>
     </div>
   );
 }

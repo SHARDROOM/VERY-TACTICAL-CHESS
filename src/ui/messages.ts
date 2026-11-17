@@ -1,5 +1,5 @@
 import { josa } from './josa';
-import { BURN, COVER_NAME, TERRAIN_NAME, clashScore, squareName, type Color, type GameEvent, type Outcome, type PieceType, type RejectReason } from '../engine';
+import { BURN, COVER_NAME, TERRAIN_NAME, clashScore, squareName, type Color, type GameEvent, type Outcome, type PieceType, type RejectReason, type RollModifier, type Tag } from '../engine';
 
 export const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
 
@@ -224,11 +224,28 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
       case 'specialCancelled':
         add(e.afterFailure ? `${josa(COLOR_NAME[e.color], '은/는')} 다시 굴리지 않았습니다.` : `${josa(COLOR_NAME[e.color], '이/가')} 행동을 취소했습니다.`);
         break;
-      case 'specialResolved':
-        add(`🎲 ${e.reroll ? `다시 굴림${e.reroll > 1 ? ` ${e.reroll}` : ''}: ` : ''}주사위 ${e.dice ? `${e.dice[0]}+${e.dice[1]}=` : ''}${e.roll} (DC ${e.dc}) → ${OUTCOME_LABEL[e.outcome]} · AP -${e.cost}`, 'roll');
+      case 'specialResolved': {
+        // The modifiers, each with where it came from: "+2 지휘의 깃발 −1 강철 의지 = 9".
+        const mods = e.mods?.length ? ` ${e.mods.map((m) => `${signed(m.value)} ${m.label}`).join(' ')} = ${e.roll + (e.bonus ?? 0)}` : '';
+        add(`🎲 ${e.reroll ? `다시 굴림${e.reroll > 1 ? ` ${e.reroll}` : ''}: ` : ''}주사위 ${e.dice ? `${e.dice[0]}+${e.dice[1]}=` : ''}${e.roll}${mods} (DC ${e.dc}) → ${OUTCOME_LABEL[e.outcome]} · AP -${e.cost}`, 'roll');
         if (e.narration) add(e.narration, 'gm');
         break;
+      }
     }
   }
   return out;
+}
+
+/** "+2", "−1" (a real minus sign). */
+export const signed = (n: number): string => (n >= 0 ? `+${n}` : `−${-n}`);
+
+/** Where a roll modifier comes from, in words. */
+export const MOD_KIND_NAME: Record<RollModifier['kind'], string> = { skill: '특기', mind: '정신력', sacrifice: '희생', remains: '유해' };
+
+/** A tag's skill and will in words, e.g. "특기: 함께 전진하는 행동 +2", "정신력 +2". */
+export function mindAndSkill(t: Tag): string {
+  const out: string[] = [];
+  if (t.skill) out.push(`특기: ${t.skill.about} ${signed(t.skill.bonus)}`);
+  if (t.mind) out.push(`정신력 ${signed(t.mind)}`);
+  return out.join(', ');
 }

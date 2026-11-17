@@ -1,3 +1,4 @@
+import type { RollModifier } from './modifiers';
 import type { RuleConfig } from './config';
 import type { Aura, Exit, Staging } from './staging';
 import type { Prop } from './props';
@@ -53,6 +54,10 @@ export interface Tag {
   moveAs?: PieceType[];
   /** Normal moves this piece makes in a row in one turn (2..MAX_MOVE_TIMES), see GameState.chain. */
   moveTimes?: number;
+  /** A skill (특기): `bonus` (±1..3) on the roll of special actions it does that are `about` this. See modifiers.ts. */
+  skill?: { about: string; bonus: number };
+  /** Will (정신력, ±1..3): mental actions by another side against this piece get minus this. See modifiers.ts. */
+  mind?: number;
 }
 
 /** A piece beside the board, and how it left (as the GM staged it; missing = knocked off). */
@@ -125,7 +130,7 @@ export type Effect =
    * turns: 0 = permanent. Not for 탑승 (use 'board'). `clash`: a clash multiplier; `prop`: its look
    * on the piece; `moveAs`: kinds it also moves like; `moveTimes`: moves in a row in one turn.
    */
-  | { type: 'tag'; at: Square; tag: string; turns: number; aura?: Aura; clash?: number; prop?: Prop; moveAs?: PieceType[]; moveTimes?: number }
+  | { type: 'tag'; at: Square; tag: string; turns: number; aura?: Aura; clash?: number; prop?: Prop; moveAs?: PieceType[]; moveTimes?: number; skill?: { about: string; bonus: number }; mind?: number }
   | { type: 'untag'; at: Square; tag: string }
   /** The piece on `rider` climbs onto the friendly piece on `carrier`. */
   | { type: 'board'; rider: Square; carrier: Square }
@@ -168,6 +173,12 @@ export interface Ruling {
   actor?: Square | null;
   /** How it does it; touch means everything it acts on is within 1 square. */
   means?: Means;
+  /** The actor's (or its riders') skill tags that apply to this action, by name (see modifiers.ts). */
+  skills?: string[];
+  /** A mental action (회유, 매혹, 공포, 설득, 세뇌): the target's will (정신력) counts. */
+  mental?: boolean;
+  /** The piece mainly acted on, if any (whose will counts for a mental action). */
+  target?: Square | null;
   /** False when the action cannot be attempted at all. */
   feasible: boolean;
   /** Difficulty: the d6 roll must be at least this. */
@@ -198,6 +209,8 @@ export interface Precedent {
   outcome: Outcome;
   /** How many times the dice were rolled again after a failure (roll and outcome are the last). */
   rerolls?: number;
+  /** What the modifiers added to the roll (see modifiers.ts), if anything. */
+  bonus?: number;
 }
 
 /** Something chaotic the GM made happen at the start of a turn (the 혼돈 rule). */
@@ -420,6 +433,9 @@ export type GameEvent =
       /** The two dice added up (2..12); `dice` are the faces, when the roll came with them. */
       roll: number;
       dice?: [number, number];
+      /** What was added to the dice (see modifiers.ts); `bonus` is their total, held within ±4. */
+      mods?: RollModifier[];
+      bonus?: number;
       dc: number;
       cost: number;
       success: boolean;

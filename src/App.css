@@ -214,6 +214,17 @@ select option { background: var(--walnut); }
 .ruling-facts dt { font-size: 0.8125rem; color: #6b5843; }
 .ruling-facts dd { margin: 2px 0 0; font-family: var(--font-voice); font-weight: 700; font-size: 1.125rem; display: flex; align-items: center; gap: 6px; }
 .coin { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffe7a6, #c8963e 60%, #8a611d); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3); }
+/* Roll modifiers (판정 보정) on the ruling card, each with where it comes from. */
+.mod-list { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.875rem; color: #3b2d20; }
+.mod-list li { border: 1px solid rgba(74, 59, 45, 0.3); border-radius: 999px; padding: 1px 10px; background: rgba(255, 250, 235, 0.5); }
+.mod-list li.up { border-color: rgba(60, 120, 80, 0.55); }
+.mod-list li.down { border-color: rgba(150, 50, 40, 0.55); }
+.mod-list .mod-value { font-weight: 700; font-variant-numeric: tabular-nums; }
+.mod-list li.up .mod-value { color: #2f6b45; }
+.mod-list li.down .mod-value { color: #8c2b23; }
+.mod-list .mod-kind { color: #6a5a48; font-size: 0.75rem; }
+.mod-list li.mod-cap { border-style: dashed; }
+.dice-bonus { color: var(--accent-bright); }
 .crit-notes { margin: 12px 0 0; padding: 0; list-style: none; font-size: 0.875rem; color: #4a3b2d; display: flex; flex-direction: column; gap: 3px; }
 .ruling-sheet .infeasible { color: var(--wax); font-weight: 700; }
 .ruling-sheet .choice-row { margin-top: 18px; }

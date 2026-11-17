@@ -15,3 +15,4 @@ export { DEFAULT_RULES, DIE_SIDES, DICE_PER_ROLL, ROLL_MAX, ROLL_MIN, withDefaul
 export * from './staging';
 export { buildTimeline, effectDuration, moveDuration, ACT_DURATION, EXIT_DURATION, REVIVE_DURATION, SWAP_DURATION, type Timeline } from './timeline';
 export * from './props';
+export { rollModifiers, modifierTotal, MOD_EACH_MAX, MOD_TOTAL_MAX, type RollModifier, type ModifierKind } from './modifiers';

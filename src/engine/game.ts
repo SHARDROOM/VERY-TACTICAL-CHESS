@@ -1,3 +1,4 @@
+import { modifierTotal, rollModifiers } from './modifiers';
 import {
   PROMOTION_TYPES,
   type Board,
@@ -504,9 +505,12 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
   const face = (n: unknown) => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= DIE_SIDES;
   if (dice && (!Array.isArray(dice) || dice.length !== 2 || !dice.every(face) || dice[0] + dice[1] !== roll)) return { ok: false, reason: 'invalidRoll' };
 
-  // Two dice added up. Snake eyes (1 and 1) always fails, and backfires, whatever the DC;
+  // Two dice added up, plus what the actor's skills and the target's will add (modifiers.ts).
+  // Snake eyes (1 and 1) always fails, and backfires, whatever the DC and the modifiers;
   // otherwise the DC decides (there is no critical success).
-  const outcome: Outcome = roll === ROLL_MIN ? 'critFailure' : roll >= ruling.dc ? 'success' : 'failure';
+  const mods = rollModifiers(state.board, ruling, color);
+  const bonus = modifierTotal(mods);
+  const outcome: Outcome = roll === ROLL_MIN ? 'critFailure' : roll + bonus >= ruling.dc ? 'success' : 'failure';
   const success = outcome === 'success';
   let toApply = outcome === 'success' ? ruling.effects : outcome === 'critFailure' ? ruling.critFailureEffects ?? [] : [];
 
@@ -541,7 +545,7 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
 
   const staging = ruling.staging?.[outcome];
   const events: GameEvent[] = [
-    { type: 'specialResolved', color, action, roll, ...(dice && { dice }), dc: ruling.dc, cost, success, outcome, narration, ...(reroll && { reroll }), effects: toApply, ...(staging && { staging }) },
+    { type: 'specialResolved', color, action, roll, ...(dice && { dice }), ...(mods.length && { mods, bonus }), dc: ruling.dc, cost, success, outcome, narration, ...(reroll && { reroll }), effects: toApply, ...(staging && { staging }) },
     ...effectEvents,
   ];
   const precedent: Precedent = {
@@ -554,6 +558,7 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
     roll,
     outcome,
     ...(reroll && { rerolls: reroll }),
+    ...(bonus && { bonus }),
   };
   const apLeft = state.ap[color] - cost;
   // A plain failure may be rolled again (same ruling) while the AP lasts; a natural 1 stands.

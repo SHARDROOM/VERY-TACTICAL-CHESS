@@ -1,10 +1,10 @@
 import { BASE_CLASH, BURN, ELEMENT_NAME, RIDE, clashMultiplier, clashSkill, ridersOf, squareName, type Piece, type Square, type Tag } from '../engine';
 import { ELEMENT_LOOK } from '../scene/fxLooks';
-import { COLOR_NAME, PIECE_NAME, movePowers } from './messages';
+import { COLOR_NAME, PIECE_NAME, mindAndSkill, movePowers } from './messages';
 
 function tagText(t: Tag) {
   if (t.name === BURN && t.turnsLeft !== null) return `${t.name} (${t.turnsLeft}턴 안에 움직이지 않으면 타 버림)`;
-  const powers = [movePowers(t), t.clash ? `합 ×${t.clash}` : ''].filter(Boolean).join(', ');
+  const powers = [movePowers(t), t.clash ? `합 ×${t.clash}` : '', mindAndSkill(t)].filter(Boolean).join(', ');
   const time = t.turnsLeft === null ? '영구' : `${t.turnsLeft}턴 남음`;
   return `${t.name} (${time})${powers ? `: ${powers}` : ''}`;
 }

@@ -18,10 +18,13 @@ export function parseGmRuling(raw: unknown): ParseResult {
     const issue = checked.error.issues[0];
     return { ok: false, error: `${issue.path.join('.') || '판정'}: ${issue.message}` };
   }
-  const { effects, critFailureEffects, staging, actor: actorName, means, ...rest } = checked.data;
+  const { effects, critFailureEffects, staging, actor: actorName, means, target: targetName, skills, mental, ...rest } = checked.data;
   const actorText = (actorName ?? '').trim();
   const actor = actorText ? parseSquare(actorText) : null;
   if (actorText && actor === null) return { ok: false, error: `주체 칸 이름 "${actorText}"이(가) 올바르지 않음` };
+  // The target only matters for a mental action's will; a name that is not a square is no target.
+  const target = parseSquare((targetName ?? '').trim());
+  const skillNames = [...new Set((skills ?? []).map((n) => n.trim()).filter(Boolean))];
 
   const lists: Record<string, Effect[]> = {};
   for (const [key, label, list] of [
@@ -44,6 +47,9 @@ export function parseGmRuling(raw: unknown): ParseResult {
       ...rest,
       actor,
       ...(means !== undefined && { means: means as Means }),
+      ...(target !== null && { target }),
+      ...(skillNames.length > 0 && { skills: skillNames }),
+      ...(mental && { mental: true }),
       effects: lists.effects,
       critFailureEffects: lists.critFailureEffects,
       staging: cleanRulingStaging(staging, counts),
@@ -78,7 +84,7 @@ function convert(e: GmEffectReplyJson): Effect | string {
     squares[f] = s;
   }
   if (e.type === 'tag') {
-    const { aura, auraStrength, clash, prop, moveAs, moveTimes, ...tag } = e;
+    const { aura, auraStrength, clash, prop, moveAs, moveTimes, skill, mind, ...tag } = e;
     const clean = cleanAura(aura, auraStrength);
     const look = propFromGm(prop);
     // A multiplier of 1 or less is none; past the range it is pulled in (it is a judgment, not a typo).
@@ -86,6 +92,10 @@ function convert(e: GmEffectReplyJson): Effect | string {
     // Likewise the move powers: unknown kinds are dropped, too many moves in a row pulled in.
     const kinds = Array.isArray(moveAs) ? [...new Set(moveAs.filter((k): k is PieceType => typeof k === 'string' && MOVE_KINDS.includes(k as PieceType)))] : [];
     const times = typeof moveTimes === 'number' && moveTimes >= 2 ? Math.min(MAX_MOVE_TIMES, Math.round(moveTimes)) : undefined;
+    // A skill or a will: 0 (or nothing to be about) is none. The engine checks the size.
+    const sk = skill as { about?: unknown; bonus?: unknown } | undefined;
+    const skillOk = sk && typeof sk.about === 'string' && sk.about.trim() && typeof sk.bonus === 'number' && Math.round(sk.bonus) !== 0;
+    const will = typeof mind === 'number' && Math.round(mind) !== 0 ? Math.round(mind) : undefined;
     return {
       ...tag,
       ...squares,
@@ -94,6 +104,8 @@ function convert(e: GmEffectReplyJson): Effect | string {
       ...(look && { prop: look }),
       ...(kinds.length > 0 && { moveAs: kinds }),
       ...(times && { moveTimes: times }),
+      ...(skillOk && { skill: { about: (sk.about as string).trim().slice(0, 30), bonus: Math.round(sk.bonus as number) } }),
+      ...(will && { mind: will }),
     } as unknown as Effect;
   }
   if (e.type === 'terrain' || e.type === 'cover') {

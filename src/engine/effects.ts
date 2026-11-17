@@ -28,6 +28,7 @@ import { capturedAfter } from './captured';
 import { checkActor } from './actor';
 import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, clashSkill, resolveClash } from './clash';
 import { cleanProp } from './props';
+import { MOD_EACH_MAX } from './modifiers';
 import { startFalls } from './levitation';
 
 const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
@@ -52,6 +53,8 @@ export interface EffectContext {
   clash?: { mode: 'check' } | { mode: 'play'; rolls: readonly number[] };
   /** A chaos event: only it may bring a gray wanderer onto the board (or make anything gray). */
   chaos?: boolean;
+  /** Most a skill or will a tag gets may be worth (raised by a sacrifice, see modifiers.ts). */
+  modMax?: number;
 }
 
 export type EffectResult =
@@ -239,6 +242,13 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (e.moveTimes !== undefined && (!isInt(e.moveTimes) || e.moveTimes < 1 || e.moveTimes > MAX_MOVE_TIMES)) {
           return fail(`연속 이동 횟수는 1~${MAX_MOVE_TIMES}`);
         }
+        const eachMax = ctx.modMax ?? MOD_EACH_MAX;
+        if (e.skill !== undefined) {
+          const { about, bonus } = e.skill;
+          if (typeof about !== 'string' || !about.trim() || about.length > 30) return fail('특기(skill)의 about은 30자 이내의 설명이어야 함');
+          if (!isInt(bonus) || bonus === 0 || Math.abs(bonus) > eachMax) return fail(`특기 보정은 ±1~${eachMax}의 정수`);
+        }
+        if (e.mind !== undefined && (!isInt(e.mind) || e.mind === 0 || Math.abs(e.mind) > eachMax)) return fail(`정신력은 ±1~${eachMax}의 정수`);
         // The kinds it moves like instead of itself (its own kind among them keeps its own moves too).
         const moveAs = [...new Set(e.moveAs ?? [])];
         const prop = e.prop ? cleanProp(e.prop) : null;
@@ -262,6 +272,8 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           ...(prop && { prop }),
           ...(moveAs.length > 0 && { moveAs }),
           ...(e.moveTimes !== undefined && e.moveTimes > 1 && { moveTimes: e.moveTimes }),
+          ...(e.skill && { skill: { about: e.skill.about.trim(), bonus: e.skill.bonus } }),
+          ...(e.mind && { mind: e.mind }),
         });
         const moveTimes = e.moveTimes !== undefined && e.moveTimes > 1 ? e.moveTimes : undefined;
         events.push({ type: 'tagged', pieceId: piece.id, at, tag: name, turns: turnsLeft, ...(moveAs.length > 0 && { moveAs }), ...(moveTimes && { moveTimes }) });

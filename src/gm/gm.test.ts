@@ -342,3 +342,38 @@ describe('fake GM: levitation', () => {
     expect(down).toMatchObject({ feasible: true, effects: [{ type: 'untag', at: 'd1^', tag: '공중부양' }] });
   });
 });
+
+describe('skills, wills and mental actions through the GM boundary', () => {
+  it('reads skills, the target and the mental flag; a skill and a will on a tag', () => {
+    const r = parseGmRuling({
+      interpretation: 'x',
+      actor: 'd4',
+      means: 'magic',
+      target: 'd6',
+      skills: ['지휘의 깃발', ' '],
+      mental: true,
+      feasible: true,
+      dc: 8,
+      cost: 2,
+      effects: [{ type: 'tag', at: 'd4', tag: '건축가', turns: 3, skill: { about: '지형 만들기', bonus: 2 }, mind: 0 }],
+      critFailureEffects: [{ type: 'tag', at: 'd4', tag: '겁에 질림', turns: 1, skill: { about: '', bonus: 0 }, mind: -2 }],
+      narration: { success: 's', failure: 'f', critFailure: 'c' },
+    });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.ruling).toMatchObject({ target: parseSquare('d6'), skills: ['지휘의 깃발'], mental: true });
+    expect(r.ruling.effects[0]).toMatchObject({ skill: { about: '지형 만들기', bonus: 2 } });
+    expect(r.ruling.effects[0]).not.toHaveProperty('mind');
+    expect(r.ruling.critFailureEffects?.[0]).toMatchObject({ mind: -2 });
+    expect(r.ruling.critFailureEffects?.[0]).not.toHaveProperty('skill');
+  });
+
+  it('the fake GM gives skills and wills, and marks winning over as mental', () => {
+    const state = createInitialState();
+    expect(fakeRuling('d1 퀸이 e2 폰에게 건축가 특기를 준다', 'white', state.board)).toMatchObject({ feasible: true, effects: [{ type: 'tag', tag: '건축가', skill: { bonus: 2 } }] });
+    expect(fakeRuling('d1 퀸이 e2 폰에게 강철 같은 정신력을 불어넣는다', 'white', state.board)).toMatchObject({ feasible: true, effects: [{ type: 'tag', mind: 2 }] });
+    const board = [...state.board];
+    board[parseSquare('d3')!] = board[parseSquare('d7')!];
+    board[parseSquare('d7')!] = null;
+    expect(fakeRuling('d2 폰이 d3 폰을 회유한다', 'white', board)).toMatchObject({ feasible: true, mental: true, target: 'd3', effects: [{ type: 'convert', at: 'd3', color: 'white' }] });
+  });
+});
