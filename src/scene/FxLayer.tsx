@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { keepAmbient, keepAwake } from './renderPace';
 import { useFrame, useThree } from '@react-three/fiber';
 import {
   AdditiveBlending,
@@ -536,6 +537,10 @@ export function FxLayer({ show, pieceAt, auras = [], light = false }: { show: Fx
     for (const id of auraCarry.current.keys()) if (!seen.has(id)) auraCarry.current.delete(id);
 
     for (const pool of Object.values(pools)) pool.update(step);
+    // Particles change no object's place: say so (see renderPace). An effect playing is full
+    // speed; sparks left over and the steady trickle of auras are ambient.
+    if (emitters.current.some((e) => now <= e.end) || lightLevel.current.some((v) => v >= 0.05)) keepAwake();
+    else if (auras.length > 0 || Object.values(pools).some((p) => p.count > 0)) keepAmbient();
     lights.current.forEach((l, i) => {
       if (!l) return;
       lightLevel.current[i] *= Math.exp(-step * 7);

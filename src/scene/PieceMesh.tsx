@@ -16,6 +16,7 @@ import { seedOf, seeded } from './boardPhysics';
 import { Grip, holdingSomething, onDepth, tableObstacles, useTable } from './tableDrag';
 import { LiveDrag } from './liveDrag';
 import { onPushed, onToy, poseOf, readPose, tellToy } from './toys';
+import { keepAmbient, keepAwake } from './renderPace';
 import { PropOnPiece } from './PropMesh';
 
 /** What the pieces share for physics: which side the dice are on, and where taken pieces lie. */
@@ -821,6 +822,8 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     const g = group.current;
     if (!g) return;
     const now = performance.now();
+    // Only an endless bob (floating, a ghost beside the board) is ambient motion (see renderPace).
+    g.userData.vtcAmbient = false;
     // In the player's hand: where the live simulation has it.
     const hand = live.current;
     if (hand) {
@@ -988,9 +991,13 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       const w = now / 1000 + bobPhase.current;
       g.position.y += k * 0.05 * Math.sin(w * 1.7);
       g.quaternion.multiply(TMP_Q.setFromEuler(TMP_E.set(k * 0.1 * Math.sin(w * 1.3), k * w * 0.45, k * 0.1 * Math.sin(w * 1.05 + 1))));
+      if (k > 0) g.userData.vtcAmbient = true;
     }
     // A ghost beside the board floats, slowly rising and falling.
-    if (captured && exit === 'vanish' && !exiting && !m && !pm) g.position.y += 0.2 + 0.05 * Math.sin(now / 650 + bobPhase.current);
+    if (captured && exit === 'vanish' && !exiting && !m && !pm) {
+      g.position.y += 0.2 + 0.05 * Math.sin(now / 650 + bobPhase.current);
+      g.userData.vtcAmbient = true;
+    }
 
     // Acting in place, on top of wherever the piece stands.
     for (const act of direction?.acts ?? []) {
@@ -1037,6 +1044,9 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       // A burnt piece has burnt out: now it is left scorched.
       if (exitingRef.current?.kind === 'burn') setExiting(null);
     }
+    // A glow changes no place: say so (a burning flicker goes on and on, a glow passes).
+    if (gl?.flicker) keepAmbient();
+    else if (gl) keepAwake();
     if (level > 0.01 || glowOn.current) {
       g.traverse((o) => {
         const mat = (o as Mesh).material as MeshPhysicalMaterial | undefined;

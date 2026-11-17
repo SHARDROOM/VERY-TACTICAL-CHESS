@@ -2,6 +2,9 @@ import { useMemo, useRef, useState } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { CanvasTexture, SRGBColorSpace, type Group, type Mesh } from 'three';
 
+/** Endless little loops: drawn at the ambient rate (see renderPace). */
+const AMBIENT = { vtcAmbient: true };
+
 /** Little stars circling above a stunned piece. */
 export function StunStars({ y }: { y: number }) {
   const ring = useRef<Group>(null);
@@ -9,7 +12,7 @@ export function StunStars({ y }: { y: number }) {
     if (ring.current) ring.current.rotation.y += dt * 2.2;
   });
   return (
-    <group ref={ring} position={[0, y, 0]}>
+    <group ref={ring} position={[0, y, 0]} userData={AMBIENT}>
       {[0, 1, 2].map((i) => {
         const a = (i / 3) * Math.PI * 2;
         return (
@@ -33,7 +36,7 @@ export function ShieldBubble({ height }: { height: number }) {
     }
   });
   return (
-    <mesh ref={mesh} position={[0, height / 2, 0]}>
+    <mesh ref={mesh} position={[0, height / 2, 0]} userData={AMBIENT}>
       <sphereGeometry args={[1, 32, 20]} />
       <meshPhysicalMaterial color="#7fc8ff" transparent opacity={0.22} roughness={0.1} depthWrite={false} emissive="#3d8bd6" emissiveIntensity={0.25} />
     </mesh>

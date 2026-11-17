@@ -16,6 +16,7 @@ import { TABLE_TOP_Y, WoodTable } from './WoodTable';
 import { CoinTable } from '../coins/CoinTable';
 import { DiceTray, trayCenterX, type ActiveRoll } from '../dice3d/DiceTray';
 import { TourCamera, type TourInset, type TourPhase } from './TourCamera';
+import { RenderPace, keepAwake } from './renderPace';
 import { DoodleLayer, type DoodleTool } from './DoodleLayer';
 import type { Doodle, DoodleOp } from '../session/doodle';
 import { FxLayer, type FxShow } from './FxLayer';
@@ -23,6 +24,12 @@ import { aurasOn } from './auras';
 import { TerrainLayer } from './Terrain';
 import { PIECE_HEIGHT } from './pieceGeometry';
 import type { PieceDirection } from './pieceMotion';
+
+/**
+ * Pixel density: phones (touch screens, often 3× displays) draw at most 1.5× — the picture stays
+ * sharp enough and there are far fewer pixels to fill (battery). Others up to 2×.
+ */
+const DPR: [number, number] = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? [1, 1.5] : [1, 2];
 
 /** 'dice' looks at the dice tray beside the board while a roll plays. */
 export type ViewMode = 'side' | 'top' | 'dice';
@@ -462,6 +469,8 @@ export function BoardScene({
   );
   // Leaving the table (a new game, the menu): the chunks lying about go with it.
   useEffect(() => () => clearChunks(), []);
+  // Something about the game changed (a move, a roll, the camera): draw for a while (see RenderPace).
+  useEffect(() => keepAwake(2000));
   // Where the taken pieces lie, for pieces moving past to push them about.
   useEffect(() => {
     setTakenSource(() => [...resting.current.entries()].map(([id, o]) => ({ ...o, id })));
@@ -470,7 +479,8 @@ export function BoardScene({
 
   return (
     // No long-press menu on the table (it would open while drawing or dragging).
-    <Canvas shadows camera={{ position: [0, 8.5, 8], fov: 45 }} onContextMenu={(e) => e.preventDefault()}>
+    <Canvas shadows frameloop="demand" dpr={DPR} camera={{ position: [0, 8.5, 8], fov: 45 }} onContextMenu={(e) => e.preventDefault()}>
+      <RenderPace maxFps={tour ? 30 : 60} />
       <color attach="background" args={['#15161b']} />
       <ambientLight intensity={0.35} />
       {/* Procedural studio reflections: no downloaded HDR files. */}

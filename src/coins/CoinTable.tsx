@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { keepAwake } from '../scene/renderPace';
 import { useFrame } from '@react-three/fiber';
 import { CanvasTexture, CylinderGeometry, Quaternion, SRGBColorSpace, Vector3, type Group, type Mesh, type MeshStandardMaterial } from 'three';
 import { isHex, playersOf, type Color } from '../engine';
@@ -199,7 +200,8 @@ function Tally({ count, x, z, flip }: { count: number; x: number; z: number; fli
   }, [count]);
 
   useFrame((_, dt) => {
-    clock.current += dt;
+    // Frames can be far apart while the table is still (see renderPace).
+    clock.current += Math.min(dt, 0.1);
     const now = clock.current;
     let carving: { m: MarkState; p: number } | null = null;
     marks.forEach((m, idx) => {
@@ -215,6 +217,7 @@ function Tally({ count, x, z, flip }: { count: number; x: number; z: number; fli
       mesh.position.set(place.x - dirX * off, 0.003, place.z - dirZ * off);
       const mat = mesh.material as MeshStandardMaterial;
       mat.opacity = m.dying === null ? 1 : Math.max(0, 1 - (now - m.dying) / 0.6);
+      if (m.dying !== null && now - m.dying < 0.6) keepAwake();
       if (m.born >= 0 && p > 0 && p < 1) {
         carving = { m, p };
         if (!m.sounded) {
