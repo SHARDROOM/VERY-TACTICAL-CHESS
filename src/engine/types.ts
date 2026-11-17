@@ -179,6 +179,8 @@ export interface Ruling {
   mental?: boolean;
   /** The piece mainly acted on, if any (whose will counts for a mental action). */
   target?: Square | null;
+  /** Pieces of the declarer's next to the actor, given up when the dice are thrown (희생, see modifiers.ts). */
+  sacrifice?: Square[];
   /** False when the action cannot be attempted at all. */
   feasible: boolean;
   /** Difficulty: the d6 roll must be at least this. */
@@ -238,6 +240,8 @@ export interface PendingAction {
    * `rules.rerollCost` AP, or let go. `rerolls`: second tries made so far.
    */
   retry?: { roll: number; narration: string; rerolls: number };
+  /** After the first throw: what the sacrifice was worth (the pieces are gone; a second try keeps it). */
+  offered?: RollModifier[];
 }
 
 /**
@@ -365,7 +369,7 @@ export type GameEvent =
       exchanges: number;
     }
   /** `cause`: burnt up by 화상, fell into a pit, or lost a clash it started. `exit`: how it goes, if the rules say. */
-  | { type: 'removed'; piece: Piece; at: Square; cause?: 'burn' | 'pit' | 'clash' | 'fall'; exit?: Exit }
+  | { type: 'removed'; piece: Piece; at: Square; cause?: 'burn' | 'pit' | 'clash' | 'fall' | 'sacrifice'; exit?: Exit }
   /** The piece that just moved may move again this turn (`left` more times), or the turn may be ended. */
   | { type: 'moveAgain'; pieceId: string; at: Square; left: number }
   /** A piece given 공중부양 rises from its square to the air above it. */

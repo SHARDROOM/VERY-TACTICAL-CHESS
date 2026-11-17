@@ -119,7 +119,11 @@ const MOVE_KIND_KO: Record<PieceType, string> = { king: '킹', ...PIECE_KO };
  * The fake GM's ruling for a declaration by `color`. With the board it checks that the acting
  * piece is really the player's; without it (tests) it takes the first square on trust.
  */
-export function fakeRuling(action: string, color: Color = 'white', board?: Board): GmRulingJson {
+export function fakeRuling(declared: string, color: Color = 'white', board?: Board): GmRulingJson {
+  // Pieces given up ("e3 폰을 제물로 바쳐"): taken out of the declaration, then offered (희생).
+  const offeredRe = new RegExp(`(${SQUARE_PATTERN().replace('\\^?', '')})\\s*(?:의\\s*)?[가-힣]{0,4}\\s*(?:을|를)?\\s*(?:제물로\\s*(?:바쳐|바치고|삼아)?|희생(?:해|하여|시켜)?)`, 'gi');
+  const sacrifice = [...declared.matchAll(offeredRe)].map((m) => m[1].toLowerCase().replace(/\s/g, ''));
+  const action = sacrifice.length ? declared.replace(offeredRe, ' ').replace(/\s+/g, ' ').trim() : declared;
   const base = fakeBaseRuling(action, color, board);
   // The fake GM keeps the backfire simple: snake eyes stun the acting piece for a turn.
   const actorSquare = base.feasible && base.actor ? base.actor : null;
@@ -141,6 +145,7 @@ export function fakeRuling(action: string, color: Color = 'white', board?: Board
     target,
     skills,
     mental: baseMental ?? MENTAL.test(action),
+    sacrifice: base.feasible ? sacrifice : [],
     critFailureEffects: actorSquare ? [tag(actorSquare, '기절', 1)] : [],
     narration: {
       ...base.narration,
@@ -161,7 +166,7 @@ export function fakeRuling(action: string, color: Color = 'white', board?: Board
   };
 }
 
-type BaseRuling = Omit<GmRulingJson, 'critFailureEffects' | 'narration' | 'staging' | 'target' | 'skills' | 'mental'> & {
+type BaseRuling = Omit<GmRulingJson, 'critFailureEffects' | 'narration' | 'staging' | 'target' | 'skills' | 'mental' | 'sacrifice'> & {
   narration: { success: string; failure: string };
   look?: StagingJson;
   target?: string;

@@ -1,7 +1,7 @@
 import { ELEMENTS, MEANS } from '../engine';
 import { GM_RULING_STAGING_JSON_SCHEMA, GM_STAGING_JSON_SCHEMA } from './staging';
 import { GM_PROP_JSON_SCHEMA } from './props';
-import { MENTAL_DESCRIPTION, MIND_DESCRIPTION, MOVE_AS_DESCRIPTION, MOVE_TIMES_DESCRIPTION, SKILLS_DESCRIPTION, SKILL_ABOUT_DESCRIPTION, SKILL_BONUS_DESCRIPTION, SKILL_DESCRIPTION } from './schema';
+import { SACRIFICE_DESCRIPTION, MENTAL_DESCRIPTION, MIND_DESCRIPTION, MOVE_AS_DESCRIPTION, MOVE_TIMES_DESCRIPTION, SKILLS_DESCRIPTION, SKILL_ABOUT_DESCRIPTION, SKILL_BONUS_DESCRIPTION, SKILL_DESCRIPTION } from './schema';
 
 const prop = { ...GM_PROP_JSON_SCHEMA, description: '조형물: 태그나 지형의 모습. 필요 없으면 preset "none"에 parts 빈 목록' };
 
@@ -107,6 +107,7 @@ export const GM_RULING_JSON_SCHEMA = {
     target: { type: 'string', description: '행동의 주된 대상 기물의 칸(회유할 기물, 공격할 기물 등). 대상이 없거나 칸만 대상이면 ""' },
     skills: { type: 'array', items: { type: 'string' }, description: SKILLS_DESCRIPTION },
     mental: { type: 'boolean', description: MENTAL_DESCRIPTION },
+    sacrifice: { type: 'array', items: { type: 'string' }, description: SACRIFICE_DESCRIPTION },
     feasible: { type: 'boolean', description: '시도 자체가 가능한 행동인가. 행동이 아니거나 규칙을 바꾸려는 요청이면 false' },
     dc: { type: 'integer', description: '난이도. 주사위 2개의 합이 이 값 이상이면 성공. 불가능하면 0' },
     cost: { type: 'integer', description: '시도할 때 드는 AP. 불가능하면 0' },
@@ -132,6 +133,6 @@ export const GM_RULING_JSON_SCHEMA = {
     },
     staging: { ...GM_RULING_STAGING_JSON_SCHEMA, description: '결과 셋 각각이 화면에서 어떻게 보일지 (보기용 연출, 규칙에는 영향 없음)' },
   },
-  required: ['interpretation', 'actor', 'means', 'target', 'skills', 'mental', 'feasible', 'dc', 'cost', 'effects', 'critFailureEffects', 'narration', 'staging'],
+  required: ['interpretation', 'actor', 'means', 'target', 'skills', 'mental', 'sacrifice', 'feasible', 'dc', 'cost', 'effects', 'critFailureEffects', 'narration', 'staging'],
   additionalProperties: false,
 } as const;

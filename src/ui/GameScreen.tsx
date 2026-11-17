@@ -27,7 +27,7 @@ import {
   stackOf,
   type PromotionType,
   type Square,
-  rollModifiers,
+  pendingModifiers,
   modifierTotal,
   MOD_TOTAL_MAX,
 } from '../engine';
@@ -948,7 +948,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const retry = pending?.retry;
   const rollCost = pending ? (retry ? game.rules.rerollCost : pending.ruling.cost) : 0;
   // What the system adds to the dice for this ruling (skills, will, ...), as the engine will count it.
-  const pendingMods = pending ? rollModifiers(game.board, pending.ruling, pending.color) : [];
+  const pendingMods = pending ? pendingModifiers(game.board, pending) : [];
   const pendingBonus = modifierTotal(pendingMods);
   const canAfford = pending ? game.ap[pending.color] >= rollCost : false;
   const canActOnPending = !!pending && (seat === 'both' || seat === pending.color) && connected;
@@ -1261,6 +1261,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
                   </div>
                 </dl>
                 <ul className="crit-notes">
+                  {!!pending.ruling.sacrifice?.length && !pending.offered && (
+                    <li className="sacrifice-note">주사위를 굴리는 순간 제물({pending.ruling.sacrifice.map((s) => squareName(s)).join(', ')})이 성공과 상관없이 사라집니다.</li>
+                  )}
                   <li>1·1(합 2)이 나오면 대실패: {pending.ruling.critFailureEffects?.length ? '역효과가 있습니다.' : '아무 일도 일어나지 않습니다.'}</li>
                 </ul>
                 {!canAfford && <p className="infeasible">AP가 부족해서 {retry ? '다시 굴릴' : '시도할'} 수 없습니다.</p>}

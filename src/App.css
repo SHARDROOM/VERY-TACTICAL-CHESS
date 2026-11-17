@@ -224,6 +224,7 @@ select option { background: var(--walnut); }
 .mod-list li.down .mod-value { color: #8c2b23; }
 .mod-list .mod-kind { color: #6a5a48; font-size: 0.75rem; }
 .mod-list li.mod-cap { border-style: dashed; }
+.crit-notes .sacrifice-note { color: #8c2b23; font-weight: 700; }
 .dice-bonus { color: var(--accent-bright); }
 .crit-notes { margin: 12px 0 0; padding: 0; list-style: none; font-size: 0.875rem; color: #4a3b2d; display: flex; flex-direction: column; gap: 3px; }
 .ruling-sheet .infeasible { color: var(--wax); font-weight: 700; }

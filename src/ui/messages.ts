@@ -89,6 +89,7 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         if (e.cause === 'burn') add(`🔥 ${squareName(e.at)}의 ${COLOR_NAME[e.piece.color]} ${josa(PIECE_NAME[e.piece.type], '이/가')} 끝내 불타 재가 됨`, 'warn');
         else if (e.cause === 'pit') add(`🕳 ${COLOR_NAME[e.piece.color]} ${josa(PIECE_NAME[e.piece.type], '이/가')} ${squareName(e.at)}의 구덩이에 빠짐`);
         else if (e.cause === 'clash') break; // told with the clash
+        else if (e.cause === 'sacrifice') add(`🕯 ${squareName(e.at)}의 ${COLOR_NAME[e.piece.color]} ${josa(PIECE_NAME[e.piece.type], '이/가')} 제물로 바쳐졌습니다`, 'warn');
         else if (e.cause === 'fall') add(`💥 ${COLOR_NAME[e.piece.color]} ${josa(PIECE_NAME[e.piece.type], '이/가')} 떨어져 산산조각 남`, 'warn');
         else add(`${COLOR_NAME[e.piece.color]} ${PIECE_NAME[e.piece.type]}(${squareName(e.at)}) 제거됨`);
         break;

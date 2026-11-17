@@ -55,6 +55,8 @@ export interface EffectContext {
   chaos?: boolean;
   /** Most a skill or will a tag gets may be worth (raised by a sacrifice, see modifiers.ts). */
   modMax?: number;
+  /** Strongest clash multiplier a tag may get (raised by a sacrifice). */
+  clashMax?: number;
 }
 
 export type EffectResult =
@@ -232,8 +234,9 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (name === BURN && piece.type === 'king') return fail('킹에는 화상을 입힐 수 없음');
         if (name === BURN && e.turns === 0) return fail('화상은 1턴 이상이어야 함 (턴이 다하면 기물이 탄다)');
         const turnsLeft = e.turns === 0 ? null : e.turns;
-        if (e.clash !== undefined && (typeof e.clash !== 'number' || !(e.clash >= CLASH_MIN && e.clash <= CLASH_MAX))) {
-          return fail(`합 배율은 ×${CLASH_MIN}~×${CLASH_MAX}`);
+        const clashMax = ctx.clashMax ?? CLASH_MAX;
+        if (e.clash !== undefined && (typeof e.clash !== 'number' || !(e.clash >= CLASH_MIN && e.clash <= clashMax))) {
+          return fail(`합 배율은 ×${CLASH_MIN}~×${clashMax}${clashMax === CLASH_MAX ? ' (희생이 있으면 ×2.5까지)' : ''}`);
         }
         const MOVE_KINDS: readonly PieceType[] = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'];
         if (e.moveAs !== undefined && (!Array.isArray(e.moveAs) || !e.moveAs.every((k) => MOVE_KINDS.includes(k)))) {

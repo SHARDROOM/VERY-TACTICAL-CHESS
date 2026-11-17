@@ -1,4 +1,4 @@
-import { modifierTotal, rollModifiers } from './modifiers';
+import { SACRIFICE_CLASH_MAX, SACRIFICE_MOD_MAX, checkSacrifice, modifierTotal, pendingModifiers } from './modifiers';
 import {
   PROMOTION_TYPES,
   type Board,
@@ -22,7 +22,8 @@ import { revokeCastling } from './castling';
 import { DIE_SIDES, ROLL_MAX, ROLL_MIN } from './config';
 import { applyEffects, validateRuling, type EffectContext } from './effects';
 import { extinguish, hasTag, isShielded, mapStack, moveTimesOf, ridersOf, stackOf, tickTags, unseat, withTag, withoutTag } from './tags';
-import { GRAY, HOOD, SHIELD, type Tag } from './types';
+import { GRAY, HOOD, SHIELD, type Ruling, type Tag } from './types';
+import { checkActor } from './actor';
 import { dropFromBridges, tickTerrain } from './terrain';
 import { capturedAfter } from './captured';
 import { playFalls, startFalls } from './levitation';
@@ -31,6 +32,20 @@ import { canResist, clashMultiplier, clashSkill, resolveClash } from './clash';
 /** What effects applied now start from: the turn, whose it is, the walls and pits, the side of the board. */
 function effectContext(state: GameState, nextSpawnId = state.nextSpawnId): EffectContext {
   return { turnNumber: state.turnNumber, nextSpawnId, color: state.turn, terrain: state.terrain ?? [], captured: state.captured ?? [] };
+}
+
+/** A ruling's effects: with a sacrifice they may hand out stronger buffs (see modifiers.ts). */
+function rulingContext(state: GameState, ruling: Ruling, nextSpawnId = state.nextSpawnId): EffectContext {
+  const offered = !!ruling.sacrifice?.length;
+  return { ...effectContext(state, nextSpawnId), ...(offered && { modMax: SACRIFICE_MOD_MAX, clashMax: SACRIFICE_CLASH_MAX }) };
+}
+
+/** The board once the ruling's sacrifices are gone (the effects happen on it). */
+function withoutSacrifices(board: Board, ruling: Ruling): Board {
+  if (!ruling.sacrifice?.length) return board;
+  const b = [...board];
+  for (const at of ruling.sacrifice) b[at] = null;
+  return b;
 }
 
 /** The single entry point for changing game state. Pure: no I/O, no randomness. */
@@ -483,7 +498,12 @@ function propose(state: GameState, cmd: Extract<Command, { type: 'proposeSpecial
   const action = cmd.action.trim();
   if (!action) return { ok: false, reason: 'emptyAction' };
   if (action.length > state.rules.actionMaxLength) return { ok: false, reason: 'actionTooLong' };
-  const problem = validateRuling(state.board, cmd.ruling, state.rules, { ...effectContext(state), clash: { mode: 'check' } });
+  const offering = cmd.ruling.feasible ? checkSacrifice(state.board, cmd.ruling, state.turn) : null;
+  if (offering) return { ok: false, reason: 'invalidRuling', detail: offering };
+  // The effects happen after the sacrifice, on the board without the pieces given up. The actor is checked on the board as it is.
+  const problem =
+    validateRuling(withoutSacrifices(state.board, cmd.ruling), { ...cmd.ruling, actor: undefined }, state.rules, { ...rulingContext(state, cmd.ruling), clash: { mode: 'check' } }) ??
+    checkActor(state.board, cmd.ruling, state.turn, effectContext(state));
   if (problem) return { ok: false, reason: 'invalidRuling', detail: problem };
 
   const pending = { color: state.turn, action, ruling: cmd.ruling };
@@ -495,7 +515,7 @@ function propose(state: GameState, cmd: Extract<Command, { type: 'proposeSpecial
 }
 
 function attempt(state: GameState, roll: number, clashRolls: readonly number[] = [], dice?: [number, number]): CommandResult {
-  const { color, action, ruling, retry } = state.pending!;
+  const { color, action, ruling, retry, offered } = state.pending!;
   if (!ruling.feasible) return { ok: false, reason: 'notFeasible' };
   // A second try after a failure costs the reroll price, not the action's.
   const cost = retry ? state.rules.rerollCost : ruling.cost;
@@ -508,7 +528,7 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
   // Two dice added up, plus what the actor's skills and the target's will add (modifiers.ts).
   // Snake eyes (1 and 1) always fails, and backfires, whatever the DC and the modifiers;
   // otherwise the DC decides (there is no critical success).
-  const mods = rollModifiers(state.board, ruling, color);
+  const mods = pendingModifiers(state.board, state.pending!);
   const bonus = modifierTotal(mods);
   const outcome: Outcome = roll === ROLL_MIN ? 'critFailure' : roll + bonus >= ruling.dc ? 'success' : 'failure';
   const success = outcome === 'success';
@@ -520,9 +540,20 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
   let nextSpawnId = state.nextSpawnId;
   const effectEvents: GameEvent[] = [];
   let exits = new Map<string, Exit>();
+  // The sacrifice is made the moment the dice are thrown, whatever they show (only once: a second try keeps it).
+  const sacrificed: GameEvent[] = [];
+  if (!offered && ruling.sacrifice?.length) {
+    for (const at of ruling.sacrifice) {
+      const piece = board[at];
+      if (piece) sacrificed.push({ type: 'removed', piece, at, cause: 'sacrifice', exit: 'vanish' });
+    }
+    board = withoutSacrifices(board, ruling);
+    castling = revokeCastling(castling, ruling.sacrifice);
+  }
+  const offering = offered ?? mods.filter((m) => m.kind === 'sacrifice');
   let falls: GameState['falling'] = [];
   if (toApply.length) {
-    const applied = applyEffects(board, toApply, { ...effectContext(state, nextSpawnId), clash: { mode: 'play', rolls: clashRolls } });
+    const applied = applyEffects(board, toApply, { ...rulingContext(state, ruling, nextSpawnId), clash: { mode: 'play', rolls: clashRolls } });
     // Validated on proposal and nothing can change the board while pending, so this is an invariant
     // (except for a clash, which needs its dice).
     if (!applied.ok) return { ok: false, reason: applied.code ?? 'invalidRuling', detail: applied.detail };
@@ -535,6 +566,9 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
     castling = revokeCastling(castling, applied.touched);
     exits = exitsOf(applied.events, applied.sources, ruling.staging?.[outcome]);
     effectEvents.push(...applied.events, ...checkEvents(board, color, terrain));
+  } else if (sacrificed.length) {
+    // Only the sacrifice changed the board.
+    effectEvents.push(...checkEvents(board, color, terrain));
   } else {
     // Nothing changed, but another king was already attacked (e.g. since the turn began).
     for (const c of playersOf()) if (c !== color && isInCheck(board, c, terrain)) effectEvents.push({ type: 'check', color: c });
@@ -546,6 +580,7 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
   const staging = ruling.staging?.[outcome];
   const events: GameEvent[] = [
     { type: 'specialResolved', color, action, roll, ...(dice && { dice }), ...(mods.length && { mods, bonus }), dc: ruling.dc, cost, success, outcome, narration, ...(reroll && { reroll }), effects: toApply, ...(staging && { staging }) },
+    ...sacrificed,
     ...effectEvents,
   ];
   const precedent: Precedent = {
@@ -572,7 +607,7 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
     nextSpawnId,
     ap: { ...state.ap, [color]: apLeft },
     usedApThisTurn: true,
-    pending: again ? { color, action, ruling, retry: { roll, narration, rerolls: reroll } } : null,
+    pending: again ? { color, action, ruling, retry: { roll, narration, rerolls: reroll }, ...(offering.length && { offered: offering }) } : null,
     ...withFalls(state, falls),
     // A second try replaces the precedent of the failure it follows (one action, one precedent).
     precedents: [...(retry ? state.precedents.slice(0, -1) : state.precedents), precedent],

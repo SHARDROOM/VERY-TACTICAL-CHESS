@@ -1,4 +1,4 @@
-import { CLASH_MAX, CLASH_MIN, MAX_MOVE_TIMES, parseSquare, type ChaosEvent, type Effect, type Means, type PieceType, type Ruling, type Square } from '../engine';
+import { CLASH_MAX, CLASH_MIN, MAX_MOVE_TIMES, SACRIFICE_CLASH_MAX, parseSquare, type ChaosEvent, type Effect, type Means, type PieceType, type Ruling, type Square } from '../engine';
 import { GmChaosReplySchema, GmRulingReplySchema } from './schema';
 import { cleanAura, cleanRulingStaging, cleanStaging } from './staging';
 import { propFromGm } from './props';
@@ -18,13 +18,22 @@ export function parseGmRuling(raw: unknown): ParseResult {
     const issue = checked.error.issues[0];
     return { ok: false, error: `${issue.path.join('.') || '판정'}: ${issue.message}` };
   }
-  const { effects, critFailureEffects, staging, actor: actorName, means, target: targetName, skills, mental, ...rest } = checked.data;
+  const { effects, critFailureEffects, staging, actor: actorName, means, target: targetName, skills, mental, sacrifice: offeredNames, ...rest } = checked.data;
   const actorText = (actorName ?? '').trim();
   const actor = actorText ? parseSquare(actorText) : null;
   if (actorText && actor === null) return { ok: false, error: `주체 칸 이름 "${actorText}"이(가) 올바르지 않음` };
   // The target only matters for a mental action's will; a name that is not a square is no target.
   const target = parseSquare((targetName ?? '').trim());
   const skillNames = [...new Set((skills ?? []).map((n) => n.trim()).filter(Boolean))];
+  const sacrifice: Square[] = [];
+  for (const n of offeredNames ?? []) {
+    if (!n.trim()) continue;
+    const s = parseSquare(n.trim());
+    if (s === null) return { ok: false, error: `제물 칸 이름 "${n}"이(가) 올바르지 않음` };
+    if (!sacrifice.includes(s)) sacrifice.push(s);
+  }
+  // With a sacrifice a tag may carry a stronger clash multiplier.
+  const clashMax = sacrifice.length ? SACRIFICE_CLASH_MAX : CLASH_MAX;
 
   const lists: Record<string, Effect[]> = {};
   for (const [key, label, list] of [
@@ -33,7 +42,7 @@ export function parseGmRuling(raw: unknown): ParseResult {
   ] as const) {
     const out: Effect[] = [];
     for (const [i, e] of list.entries()) {
-      const converted = convert(e);
+      const converted = convert(e, clashMax);
       if (typeof converted === 'string') return { ok: false, error: `${label}효과 ${i + 1}: 칸 이름 "${converted}"이(가) 올바르지 않음` };
       out.push(converted);
     }
@@ -50,6 +59,7 @@ export function parseGmRuling(raw: unknown): ParseResult {
       ...(target !== null && { target }),
       ...(skillNames.length > 0 && { skills: skillNames }),
       ...(mental && { mental: true }),
+      ...(sacrifice.length > 0 && { sacrifice }),
       effects: lists.effects,
       critFailureEffects: lists.critFailureEffects,
       staging: cleanRulingStaging(staging, counts),
@@ -58,7 +68,7 @@ export function parseGmRuling(raw: unknown): ParseResult {
 }
 
 /** Converts one effect, or returns the first bad square name. */
-function convert(e: GmEffectReplyJson): Effect | string {
+function convert(e: GmEffectReplyJson, clashMax = CLASH_MAX): Effect | string {
   const squares: Record<string, Square> = {};
   const fields: Record<GmEffectReplyJson['type'], string[]> = {
     move: ['from', 'to'],
@@ -88,7 +98,7 @@ function convert(e: GmEffectReplyJson): Effect | string {
     const clean = cleanAura(aura, auraStrength);
     const look = propFromGm(prop);
     // A multiplier of 1 or less is none; past the range it is pulled in (it is a judgment, not a typo).
-    const mult = typeof clash === 'number' && clash > 1 ? Math.min(CLASH_MAX, Math.max(CLASH_MIN, Math.round(clash * 10) / 10)) : undefined;
+    const mult = typeof clash === 'number' && clash > 1 ? Math.min(clashMax, Math.max(CLASH_MIN, Math.round(clash * 10) / 10)) : undefined;
     // Likewise the move powers: unknown kinds are dropped, too many moves in a row pulled in.
     const kinds = Array.isArray(moveAs) ? [...new Set(moveAs.filter((k): k is PieceType => typeof k === 'string' && MOVE_KINDS.includes(k as PieceType)))] : [];
     const times = typeof moveTimes === 'number' && moveTimes >= 2 ? Math.min(MAX_MOVE_TIMES, Math.round(moveTimes)) : undefined;

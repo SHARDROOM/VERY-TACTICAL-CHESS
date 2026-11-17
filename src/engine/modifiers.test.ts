@@ -89,3 +89,60 @@ describe('roll modifiers (판정 보정)', () => {
     expect(applyEffects(s.board, [{ type: 'tag', at: sq('d4'), tag: 'x', turns: 1, mind: 5 }], ctx).ok).toBe(false);
   });
 });
+
+describe('sacrifice (희생)', () => {
+  /** Kings, a white knight d4 (actor), white pawn e3 and rook c4 next to it, a far white queen h1, black pawn d6. */
+  function altar(): GameState {
+    const s = scene();
+    const board = [...s.board];
+    board[sq('e3')] = { id: 'pe3', color: 'white', type: 'pawn' };
+    board[sq('c4')] = { id: 'rc4', color: 'white', type: 'rook' };
+    board[sq('h1')] = { id: 'qh1', color: 'white', type: 'queen' };
+    return { ...s, board };
+  }
+  const offering = (over: Partial<Ruling> = {}) =>
+    ruling({ interpretation: '제물을 바쳐 나이트가 강해진다', effects: [{ type: 'tag', at: sq('d4'), tag: '피의 맹세', turns: 2, clash: 2.5 }], sacrifice: [sq('e3'), sq('c4')], ...over });
+
+  it('pieces next to the actor are given up when the dice are thrown, even on a failure, and add their worth', () => {
+    const r = roll(altar(), offering(), 4);
+    const resolved = r.events.find((e) => e.type === 'specialResolved');
+    // 4 + (1 + 3) = 8 < 9: a failure, and the offering is gone anyway.
+    expect(resolved).toMatchObject({ outcome: 'failure', bonus: 4, mods: [{ kind: 'sacrifice', value: 1 }, { kind: 'sacrifice', value: 3 }] });
+    expect(r.state.board[sq('e3')]).toBeNull();
+    expect(r.state.board[sq('c4')]).toBeNull();
+    expect(r.events.filter((e) => e.type === 'removed' && e.cause === 'sacrifice')).toHaveLength(2);
+    expect(r.state.captured?.map((c) => c.id)).toEqual(expect.arrayContaining(['pe3', 'rc4']));
+  });
+
+  it('a second try after a failure keeps the offering without giving anything more', () => {
+    const first = roll(altar(), offering(), 4).state;
+    expect(first.pending?.offered).toHaveLength(2);
+    const again = ok(applyCommand(first, { type: 'attemptSpecial', roll: 6 }));
+    expect(again.events.find((e) => e.type === 'specialResolved')).toMatchObject({ outcome: 'success', bonus: 4 });
+    expect(again.events.some((e) => e.type === 'removed' && e.cause === 'sacrifice')).toBe(false);
+    expect(again.state.board[sq('d4')]?.tags?.[0]).toMatchObject({ clash: 2.5 });
+  });
+
+  it('with a sacrifice a buff may be stronger (×2.5, ±4); without one it may not', () => {
+    const s = altar();
+    expect(applyCommand(s, { type: 'proposeSpecial', action: 'x', ruling: offering() }).ok).toBe(true);
+    expect(applyCommand(s, { type: 'proposeSpecial', action: 'x', ruling: offering({ sacrifice: [] }) })).toMatchObject({ ok: false, reason: 'invalidRuling' });
+    const skill4 = offering({ effects: [{ type: 'tag', at: sq('d4'), tag: '광전사', turns: 2, skill: { about: '돌격', bonus: 4 } }] });
+    expect(applyCommand(s, { type: 'proposeSpecial', action: 'x', ruling: skill4 }).ok).toBe(true);
+  });
+
+  it("refuses a far piece, a king, the actor itself and someone else's piece", () => {
+    const s = altar();
+    const refused = (sacrifice: string[]) => applyCommand(s, { type: 'proposeSpecial', action: 'x', ruling: offering({ sacrifice: sacrifice.map(sq) }) });
+    expect(refused(['h1'])).toMatchObject({ ok: false, detail: expect.stringContaining('1칸') });
+    expect(refused(['e1'])).toMatchObject({ ok: false });
+    expect(refused(['d4'])).toMatchObject({ ok: false, detail: expect.stringContaining('주체') });
+    expect(refused(['d6'])).toMatchObject({ ok: false });
+  });
+
+  it('a snake-eyes throw still takes the offering', () => {
+    const r = roll(altar(), offering(), 2);
+    expect(r.events.find((e) => e.type === 'specialResolved')).toMatchObject({ outcome: 'critFailure' });
+    expect(r.state.board[sq('e3')]).toBeNull();
+  });
+});

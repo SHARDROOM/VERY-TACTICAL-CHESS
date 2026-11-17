@@ -377,3 +377,36 @@ describe('skills, wills and mental actions through the GM boundary', () => {
     expect(fakeRuling('d2 폰이 d3 폰을 회유한다', 'white', board)).toMatchObject({ feasible: true, mental: true, target: 'd3', effects: [{ type: 'convert', at: 'd3', color: 'white' }] });
   });
 });
+
+describe('sacrifice through the GM boundary', () => {
+  it('reads the offered squares, and lets a sacrificing ruling carry a stronger multiplier', () => {
+    const base = {
+      interpretation: 'x',
+      actor: 'd4',
+      means: 'touch',
+      target: '',
+      skills: [],
+      mental: false,
+      feasible: true,
+      dc: 8,
+      cost: 2,
+      effects: [{ type: 'tag', at: 'd4', tag: '피의 맹세', turns: 2, clash: 2.4 }],
+      critFailureEffects: [],
+      narration: { success: 's', failure: 'f', critFailure: 'c' },
+    };
+    const offered = parseGmRuling({ ...base, sacrifice: ['e3', 'e3', 'c4'] });
+    if (!offered.ok) throw new Error(offered.error);
+    expect(offered.ruling.sacrifice).toEqual([parseSquare('e3'), parseSquare('c4')]);
+    expect(offered.ruling.effects[0]).toMatchObject({ clash: 2.4 });
+    const plain = parseGmRuling({ ...base, sacrifice: [] });
+    if (!plain.ok) throw new Error(plain.error);
+    expect(plain.ruling).not.toHaveProperty('sacrifice');
+    expect(plain.ruling.effects[0]).toMatchObject({ clash: 2 });
+    expect(parseGmRuling({ ...base, sacrifice: ['z9'] }).ok).toBe(false);
+  });
+
+  it('the fake GM takes "제물로 바쳐" out of the declaration and offers those pieces', () => {
+    const r = fakeRuling('d1 퀸이 e2 폰을 제물로 바쳐 d7 폰을 저격한다', 'white', createInitialState().board);
+    expect(r).toMatchObject({ feasible: true, actor: 'd1', sacrifice: ['e2'], effects: [{ type: 'remove', at: 'd7' }] });
+  });
+});
