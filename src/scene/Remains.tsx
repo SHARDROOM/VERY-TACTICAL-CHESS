@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { keepAmbient } from './renderPace';
+import { keepAwake } from './renderPace';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { IcosahedronGeometry, LatheGeometry, MeshBasicMaterial, Quaternion, Vector2, Vector3, type Group, type Mesh } from 'three';
 import type { Color, PieceType } from '../engine';
@@ -397,10 +397,10 @@ export function SmokeWisp({ follow, height }: { follow: React.RefObject<Group | 
       c.scale.setScalar(0.035 + t * 0.09);
       p.mat.opacity = 0.32 * Math.sin(Math.PI * t);
     });
-    keepAmbient();
+    keepAwake();
   });
   return (
-    <group ref={ref} userData={{ vtcAmbient: true }}>
+    <group ref={ref}>
       {puffs.map((p, i) => (
         <mesh key={i} geometry={PUFF} material={p.mat} />
       ))}

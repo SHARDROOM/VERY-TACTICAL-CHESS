@@ -479,8 +479,8 @@ export function BoardScene({
 
   return (
     // No long-press menu on the table (it would open while drawing or dragging).
-    <Canvas shadows frameloop="demand" dpr={DPR} camera={{ position: [0, 8.5, 8], fov: 45 }} onContextMenu={(e) => e.preventDefault()}>
-      <RenderPace maxFps={tour ? 30 : 60} />
+    <Canvas shadows dpr={DPR} camera={{ position: [0, 8.5, 8], fov: 45 }} onContextMenu={(e) => e.preventDefault()}>
+      <RenderPace />
       <color attach="background" args={['#15161b']} />
       <ambientLight intensity={0.35} />
       {/* Procedural studio reflections: no downloaded HDR files. */}
