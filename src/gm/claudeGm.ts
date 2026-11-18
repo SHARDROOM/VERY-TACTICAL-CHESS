@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import type { z } from 'zod';
 import type { ChaosRequest, GameMaster, GmRequest } from './types';
+import { GmPlayerSchema, buildPlayerSystemPrompt, buildPlayerUserMessage, type ActRequest } from './player';
 import { GmChaosReplySchema, GmChaosSchema, GmRulingReplySchema, GmRulingSchema } from './schema';
 import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
 import { GmError } from './errors';
@@ -52,6 +53,10 @@ export class ClaudeGameMaster implements GameMaster {
 
   chaos({ state, inspiration, problem }: ChaosRequest): Promise<unknown> {
     return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state, inspiration, problem), GmChaosSchema, GmChaosReplySchema);
+  }
+
+  act(request: ActRequest): Promise<unknown> {
+    return this.ask(buildPlayerSystemPrompt(), buildPlayerUserMessage(request), GmPlayerSchema, GmPlayerSchema);
   }
 
   /** `schema` shapes the structured output; `reply` reads it (lenient about the visual parts). */

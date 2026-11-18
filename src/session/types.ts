@@ -1,4 +1,5 @@
 import type { Color, GameEvent, GameState, PromotionType, RuleConfig, Square } from '../engine';
+import { cleanAiSeats } from '../engine';
 import type { GameMaster } from '../gm/types';
 import type { Doodle, DoodleOp } from './doodle';
 import type { ToyOp } from './toy';
@@ -158,6 +159,10 @@ export function cleanRules(base: RuleConfig, change: Partial<RuleConfig>): RuleC
   if ('chaosChance' in change) next.chaosChance = pick(change.chaosChance, CHAOS_CHANCES.map((c) => c.value), base.chaosChance);
   if ('doodle' in change && typeof change.doodle === 'boolean') next.doodle = change.doodle;
   if ('map' in change) next.map = change.map === 'hex3' ? 'hex3' : 'classic';
+  // AI seats: only those the board has (a seat lost with the map change goes too).
+  const ai = cleanAiSeats('ai' in change ? change.ai : next.ai, next.map);
+  if (ai) next.ai = ai;
+  else delete next.ai;
   next.apMax = Math.max(next.apMax, next.apPerTurn);
   return next;
 }

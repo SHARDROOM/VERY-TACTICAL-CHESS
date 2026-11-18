@@ -39,6 +39,8 @@ export interface HostOptions {
   chance?: () => number;
   /** Plays falls with physics (see Authority). */
   fall?: FallSimulator;
+  /** AI players' pace (see Authority; tests: 0). */
+  aiPace?: number;
   /** Liveness ping interval; 0 turns it off. Default 10 s. */
   heartbeatMs?: number;
   /** Silence after which a guest counts as gone. Default 3 minutes (see heartbeat.ts). */
@@ -80,6 +82,7 @@ export class HostSession implements Session {
       phase: resumed ? 'playing' : 'waiting',
       chance: options.chance,
       fall: options.fall,
+      aiPace: options.aiPace,
     });
     const t = this.authority.timer();
     this.timer = t && { ...t, at: Date.now() };

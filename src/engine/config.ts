@@ -33,6 +33,25 @@ export interface RuleConfig {
   doodle: boolean;
   /** The board: the classic 8×8 for two, or the three-player hexagon (docs/SPEC.md, "3인 육각 맵"). */
   map: 'classic' | 'hex3';
+  /** Seats an AI plays (docs/SPEC.md, "AI 플레이어"): how strong it is and how often it tries special actions. */
+  ai?: Partial<Record<'white' | 'black' | 'red', { level: 'easy' | 'normal' | 'hard' | 'master'; specials: 'off' | 'some' | 'often' }>>;
+}
+
+const AI_LEVEL_KEYS = ['easy', 'normal', 'hard', 'master'];
+const AI_SPECIALS_KEYS = ['off', 'some', 'often'];
+
+/** The AI seats that make sense on this board (others dropped, odd values left out). */
+export function cleanAiSeats(ai: unknown, map: RuleConfig['map']): RuleConfig['ai'] {
+  if (!ai || typeof ai !== 'object') return undefined;
+  const seats = map === 'hex3' ? ['white', 'black', 'red'] : ['white', 'black'];
+  const out: NonNullable<RuleConfig['ai']> = {};
+  for (const c of seats) {
+    const s = (ai as Record<string, { level?: unknown; specials?: unknown }>)[c];
+    if (s && AI_LEVEL_KEYS.includes(s.level as string) && AI_SPECIALS_KEYS.includes(s.specials as string)) {
+      out[c as 'white'] = { level: s.level as 'easy', specials: s.specials as 'off' };
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 export const DEFAULT_RULES: RuleConfig = {
@@ -57,6 +76,9 @@ export const DEFAULT_RULES: RuleConfig = {
 export function withDefaultRules(rules: Partial<RuleConfig> | undefined): RuleConfig {
   const out = { ...DEFAULT_RULES, ...(rules ?? {}) };
   if (out.map !== 'hex3') out.map = 'classic';
+  const ai = cleanAiSeats(out.ai, out.map);
+  if (ai) out.ai = ai;
+  else delete out.ai;
   // From the days of the d20 or a single d6: their DCs mean nothing on two dice.
   if (out.dcMax !== DEFAULT_RULES.dcMax || out.dcMin > out.dcMax) {
     out.dcMin = DEFAULT_RULES.dcMin;

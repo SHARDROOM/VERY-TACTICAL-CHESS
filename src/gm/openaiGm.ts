@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type { ChaosRequest, GameMaster, GmRequest } from './types';
+import { GM_PLAYER_JSON_SCHEMA, GmPlayerSchema, buildPlayerSystemPrompt, buildPlayerUserMessage, type ActRequest } from './player';
 import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
 import { GM_CHAOS_JSON_SCHEMA, GM_RULING_JSON_SCHEMA } from './jsonSchema';
 import { GmChaosReplySchema, GmRulingReplySchema } from './schema';
@@ -37,6 +38,10 @@ export class OpenAiGameMaster implements GameMaster {
 
   chaos({ state, inspiration, problem }: ChaosRequest): Promise<unknown> {
     return this.ask(buildChaosSystemPrompt(state.rules), buildChaosUserMessage(state, inspiration, problem), 'gm_chaos', GM_CHAOS_JSON_SCHEMA, GmChaosReplySchema);
+  }
+
+  act(request: ActRequest): Promise<unknown> {
+    return this.ask(buildPlayerSystemPrompt(), buildPlayerUserMessage(request), 'ai_player', GM_PLAYER_JSON_SCHEMA, GmPlayerSchema);
   }
 
   private async ask<T extends z.ZodTypeAny>(system: string, user: string, name: string, jsonSchema: object, schema: T): Promise<z.infer<T>> {

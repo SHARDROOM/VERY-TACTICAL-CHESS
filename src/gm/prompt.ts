@@ -355,16 +355,10 @@ function declaredSquares(action: string, state: GameState): string {
   return lines.join('\n');
 }
 
-export function buildUserMessage(action: string, state: GameState, problem?: string): string {
-  const me = state.turn;
+/** The board as both prompts describe it: pieces, the fallen, remains, terrain, the grid, precedents, chaos so far. */
+export function situationText(state: GameState): string {
   const sides = playersOf(state.map ?? 'classic');
-  const them = sides.filter((c) => c !== me);
-  return `## 현재 상황
-- 차례: ${COLOR[me]} (보유 AP ${state.ap[me]})
-${them.map((c) => `- 상대: ${COLOR[c]} (보유 AP ${state.ap[c] ?? 0})`).join('\n')}
-- 턴 번호: ${state.turnNumber}
-
-## 기물 위치
+  return `## 기물 위치
 ${sides.map((c) => `- ${COLOR[c]}: ${pieceList(state, c)}`).join('\n')}${wanderers(state)}
 
 ## 잡힌 기물 (보드 옆, revive로 되살릴 수 있음)
@@ -382,6 +376,19 @@ ${boardGrid(state)}
 ## 이번 게임의 판례 (최근 ${MAX_PRECEDENTS}개까지, 오래된 순)
 ${precedentList(state)}
 ${chaosSection(state)}
+`;
+}
+
+export function buildUserMessage(action: string, state: GameState, problem?: string): string {
+  const me = state.turn;
+  const sides = playersOf(state.map ?? 'classic');
+  const them = sides.filter((c) => c !== me);
+  return `## 현재 상황
+- 차례: ${COLOR[me]} (보유 AP ${state.ap[me]})
+${them.map((c) => `- 상대: ${COLOR[c]} (보유 AP ${state.ap[c] ?? 0})`).join('\n')}
+- 턴 번호: ${state.turnNumber}
+
+${situationText(state)}
 ## 선언에 나온 칸 (킹 걸음 거리)
 ${declaredSquares(action, state)}
 

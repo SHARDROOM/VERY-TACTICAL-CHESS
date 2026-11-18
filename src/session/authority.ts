@@ -1,9 +1,11 @@
-import { CLASH_ROLLS, applyCommand, impulseOf, impulseTargets, isStunned as isStunnedPiece, vanguardChoice, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
+import { CLASH_ROLLS, aiExile, aiHints, aiShouldRoll, isAir, promotesOn, type AiSeat, applyCommand, impulseOf, impulseTargets, isStunned as isStunnedPiece, vanguardChoice, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
 import { GmError } from '../gm/errors';
 import { REJECT_MESSAGE } from '../ui/messages';
+import { parsePlayerAction } from '../gm/player';
+import { chooseMoveAsync } from './aiCompute';
 import type { NoticeTone, Phase, Request, TimerSnapshot } from './types';
 
 export type AuthorityEvent =
@@ -38,7 +40,12 @@ export interface AuthorityOptions {
   fall?: FallSimulator;
   /** Seeds for fall simulations. */
   seed?: () => number;
+  /** How long AI players wait before acting, as a share of the screen's show (tests: 0). Default 1. */
+  aiPace?: number;
 }
+
+/** An AI player waits at least this long before it acts (its "thinking" is seen). */
+const AI_MIN_MS = 900;
 
 /** How long a fall plays on screen; the clock does not run during it. */
 export const FALL_SHOW_MS = 3200;
@@ -71,6 +78,15 @@ export class Authority {
   /** Bumped whenever the state is replaced, so late GM answers for an old game are dropped. */
   private generation = 0;
   private clock = { remaining: 0, startedAt: null as number | null, handle: null as ReturnType<typeof setTimeout> | null };
+  private readonly aiPace: number;
+  /** An AI player's next look at the game is scheduled. */
+  private aiHandle: ReturnType<typeof setTimeout> | null = null;
+  /** An AI player is acting (thinking, asking the GM). */
+  private aiActing = false;
+  /** When the screens will have shown what has happened so far (ms, this.now()). */
+  private aiReadyAt = 0;
+  /** The turn an AI last tried a special action on (once a turn). */
+  private aiTried = -1;
 
   constructor(
     public gm: GameMaster,
@@ -84,9 +100,14 @@ export class Authority {
     this.now = options.now ?? Date.now;
     this.fall = options.fall;
     this.seed = options.seed ?? (() => Math.floor(Math.random() * 2 ** 31));
+    this.aiPace = options.aiPace ?? 1;
     // A game saved mid-fall lands first.
     if (this.state.falling?.length) setTimeout(() => void this.land(), 0);
-    if (this.phase === 'playing') this.restartClock(false);
+    if (this.phase === 'playing') {
+      this.restartClock(false);
+      // A saved game whose AI is to move.
+      setTimeout(() => this.aiPoke(), 0);
+    }
   }
 
   // ---- room ----------------------------------------------------------------
@@ -103,6 +124,7 @@ export class Authority {
     this.phase = 'playing';
     this.emit({ kind: 'phase', phase: 'playing' });
     this.restartClock();
+    this.aiPoke();
   }
 
   /** Back to the waiting room with a fresh board and the same rules. */
@@ -115,6 +137,8 @@ export class Authority {
 
   dispose(): void {
     this.stopHandle();
+    if (this.aiHandle) clearTimeout(this.aiHandle);
+    this.aiHandle = null;
     this.generation++;
   }
 
@@ -142,6 +166,10 @@ export class Authority {
     }
     if (actor !== 'any' && actor !== this.state.turn && this.state.status.kind === 'playing') {
       return notice('상대의 차례입니다.', 'warn');
+    }
+    // One screen for everyone (hotseat): an AI's turn is the AI's.
+    if (actor === 'any' && this.state.rules.ai?.[this.state.turn as 'white'] && this.state.status.kind === 'playing') {
+      return notice('AI의 차례입니다. 잠시 기다려 주세요.', 'warn');
     }
 
     switch (req.type) {
@@ -188,9 +216,116 @@ export class Authority {
     }
     this.state = result.state;
     this.emit({ kind: 'events', events: result.events, before, after: result.state });
+    this.aiNote(result.events);
     this.afterChange(result.events);
     if (this.state.falling?.length) void this.land();
+    this.aiPoke();
     return true;
+  }
+
+  // ---- AI players (docs/SPEC.md, "AI 플레이어") ------------------------------------
+
+  /** The AI that has to act now, if any: the one to move, or one that surrendered and keeps a piece. */
+  private aiToAct(): { color: Color; seat: AiSeat } | null {
+    const s = this.state;
+    if (this.phase !== 'playing' || s.status.kind !== 'playing' || this.busy || this.landing || s.falling?.length) return null;
+    const ai = s.rules.ai ?? {};
+    const color = s.surrender ? s.surrender.loser : s.turn;
+    const seat = ai[color as 'white'];
+    return seat ? { color, seat } : null;
+  }
+
+  /** What just happened takes this long to show on the screens: an AI waits for it. */
+  private aiNote(events: readonly GameEvent[]): void {
+    let ms = 0;
+    for (const e of events) {
+      if (e.type === 'specialResolved') ms = Math.max(ms, DICE_GRACE_MS + showMs(e.staging, e.effects));
+      else if (e.type === 'clash') ms = Math.max(ms, CLASH_DICE_GRACE_MS + Math.round(duelSeconds(e.exchanges) * 1000));
+      else if (e.type === 'fell' || e.type === 'fallStarted') ms = Math.max(ms, FALL_SHOW_MS);
+      else if (e.type === 'specialProposed') ms = Math.max(ms, 1800);
+      else if (e.type === 'moved' || e.type === 'impulse' || e.type === 'wandered') ms = Math.max(ms, 1700);
+    }
+    const now = this.now();
+    this.aiReadyAt = Math.max(this.aiReadyAt, now) + ms;
+  }
+
+  /** If an AI has to act, it will, once the screens have caught up (and it has "thought" a moment). */
+  private aiPoke(): void {
+    if (this.aiHandle || this.aiActing || !this.aiToAct()) return;
+    const wait = this.aiPace * Math.max(AI_MIN_MS, this.aiReadyAt - this.now());
+    this.aiHandle = setTimeout(() => {
+      this.aiHandle = null;
+      void this.aiAct();
+    }, wait);
+  }
+
+  private async aiAct(): Promise<void> {
+    const who = this.aiToAct();
+    if (!who) return;
+    const s = this.state;
+    const generation = this.generation;
+    this.aiActing = true;
+    try {
+      // Surrendered (3인 육각 맵): it keeps its strongest piece.
+      if (s.surrender) {
+        const at = aiExile(s, who.color);
+        if (at !== null) this.apply({ type: 'exile', at }, who.color);
+        return;
+      }
+      // Its ruling is in: roll, or let it go.
+      if (s.pending) {
+        if (s.pending.color !== who.color) return;
+        await this.handle({ type: aiShouldRoll(s, who.seat.level) ? 'attempt' : 'cancel' }, who.color);
+        return;
+      }
+      // A special action, now and then (once a turn).
+      if (!s.chain && this.aiTried !== s.turnNumber && this.aiWantsSpecial(who)) {
+        this.aiTried = s.turnNumber;
+        const action = await this.aiCompose(who);
+        if (generation !== this.generation) return;
+        if (action) {
+          await this.declare(action, who.color);
+          return;
+        }
+      }
+      // Its move.
+      const move = await chooseMoveAsync(s, who.seat.level, Math.floor(this.chance() * 2 ** 31));
+      if (generation !== this.generation || this.state !== s) return;
+      if (!move || move.to === null) {
+        this.apply({ type: 'endTurn' }, who.color);
+        return;
+      }
+      const piece = s.board[move.from];
+      const promotes = piece?.type === 'pawn' && !isAir(move.to) && promotesOn(piece.color, move.to);
+      await this.handle({ type: 'move', from: move.from, to: move.to, ...(promotes && { promotion: 'queen' as const }) }, who.color);
+    } finally {
+      this.aiActing = false;
+      this.aiPoke();
+    }
+  }
+
+  /** Whether the AI tries a special action this turn: if the GM can make one up and its AP and habit say so. */
+  private aiWantsSpecial({ color, seat }: { color: Color; seat: AiSeat }): boolean {
+    if (seat.specials === 'off' || !this.gm.act) return false;
+    const ap = this.state.ap[color] ?? 0;
+    if (seat.specials === 'often') return ap >= 1;
+    return ap >= 2 && this.chance() < 0.5;
+  }
+
+  /** The AI's declaration, made up by the GM's model as that player (null: none came). */
+  private async aiCompose({ color, seat }: { color: Color; seat: AiSeat }): Promise<string | null> {
+    const generation = this.generation;
+    this.setBusy(true);
+    try {
+      const style = seat.level === 'hard' || seat.level === 'master' ? 'sharp' : 'playful';
+      const raw = await this.gm.act!({ state: this.state, color, style, hints: aiHints(this.state, color) });
+      return parsePlayerAction(raw, this.state.rules.actionMaxLength);
+    } catch {
+      // The model would not: the AI just plays chess this turn.
+      return null;
+    } finally {
+      if (generation === this.generation) this.setBusy(false);
+    }
   }
 
   /** Falling pieces come down: the physics (if any) says where they rest, then `land` plays it. */
@@ -286,7 +421,11 @@ export class Authority {
     this.busy = busy;
     this.emit({ kind: 'busy', busy });
     if (busy) this.pauseClock();
-    else this.resumeClock();
+    else {
+      this.resumeClock();
+      // The GM is done (a ruling turned down, a chaos event): an AI to move carries on.
+      this.aiPoke();
+    }
   }
 
   private async declare(action: string, actor: Color | 'any'): Promise<void> {
@@ -370,6 +509,8 @@ export class Authority {
         const before = this.state;
         this.state = result.state;
         this.emit({ kind: 'events', events: result.events, before, after: result.state });
+        this.aiNote(result.events);
+        this.aiReadyAt += showMs(parsed.chaos.staging, parsed.chaos.effects);
         // The clock restarts when the GM is done (setBusy below); the show is extra.
         this.addTime(showMs(parsed.chaos.staging, parsed.chaos.effects));
         if (this.state.falling?.length) void this.land();

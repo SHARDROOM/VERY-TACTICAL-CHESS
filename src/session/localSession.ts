@@ -17,6 +17,8 @@ export interface LocalOptions {
   chance?: () => number;
   /** Plays falls with physics (see Authority). */
   fall?: FallSimulator;
+  /** AI players' pace (see Authority; tests: 0). */
+  aiPace?: number;
 }
 
 /** Hotseat: both players share this screen; the authority runs right here. */
@@ -34,6 +36,7 @@ export class LocalSession implements Session {
       phase: options.phase ?? 'waiting',
       chance: options.chance,
       fall: options.fall,
+      aiPace: options.aiPace,
     });
     const t = this.authority.timer();
     this.timer = t && { ...t, at: Date.now() };

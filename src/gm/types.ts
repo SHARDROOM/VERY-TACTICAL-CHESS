@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import type { GameState } from '../engine';
 import type { GmChaosSchema, GmEffectReplySchema, GmEffectSchema, GmRulingSchema } from './schema';
+import type { ActRequest } from './player';
 
 /**
  * The ruling exactly as a GM (LLM or fake) returns it: plain JSON with
@@ -27,6 +28,8 @@ export interface GameMaster {
   rule(request: GmRequest): Promise<unknown>;
   /** Makes up a chaos event for the turn that is starting; callers run it through parseGmChaos. */
   chaos?(request: ChaosRequest): Promise<unknown>;
+  /** Makes up an AI player's declaration for its turn (player.ts); callers run it through parsePlayerAction. */
+  act?(request: ActRequest): Promise<unknown>;
 }
 
 export interface ChaosRequest {
