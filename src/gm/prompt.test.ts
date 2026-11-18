@@ -128,17 +128,23 @@ describe("an AI player's declaration", () => {
   it('the prompt says what it can spend and how hard a ruling it would roll', () => {
     const msg = buildPlayerUserMessage({ state: state(), color: 'black', style: 'playful', hints: [], maxDc: 8 });
     expect(msg).toContain('보유 AP는 2입니다');
-    expect(msg).toContain('성공 확률 42% 이상(DC 8 이하)');
+    expect(msg).toContain('성공 확률 42% 이상(실질 DC 8 이하)');
   });
 
   it('the fake GM picks only what its AP pays for and what it would roll', () => {
     for (let i = 0; i < 20; i++) {
       const r = Math.random;
-      // DC 8 at most: a stun up close (DC 7, AP 1) or a shield, never a shot (DC 9 or more).
-      expect(fakeDeclaration(state(), 'black', r, { maxDc: 8 })).not.toMatch(/저격/);
+      // DC 7 at most: a stun up close (DC 7, AP 1) or a shield, never a shot (DC 8, more from afar).
+      expect(fakeDeclaration(state(), 'black', r, { maxDc: 7 })).not.toMatch(/저격/);
       // One AP: stuns only (AP 1).
       expect(fakeDeclaration({ ...state(), ap: { ...state().ap, black: 1 } }, 'black', r)).toMatch(/기절/);
     }
     expect(fakeDeclaration({ ...state(), ap: { ...state().ap, black: 0 } }, 'black')).toBeNull();
   });
+
+  it('the fake GM counts the distance: the far queen is shot only if the AI would roll that', () => {
+    // f6 to d1 is 5 squares: a shot is DC 8 -2 = effectively 10.
+    for (let i = 0; i < 20; i++) expect(fakeDeclaration(state(), 'black', Math.random, { maxDc: 9 })).not.toMatch(/d1 퀸을 저격/);
+  });
 });
+

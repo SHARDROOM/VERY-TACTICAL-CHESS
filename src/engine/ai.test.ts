@@ -75,7 +75,9 @@ describe('AI rolls for its ruling (aiShouldRoll)', () => {
   });
 
   it('보통 rolls at 42% (DC 8), not at 28% (DC 9)', () => {
-    expect(aiShouldRoll(pending(8, 1, [stun('h7')]), 'normal')).toBe(true);
+    expect(aiShouldRoll(pending(8, 1, [stun('b4')]), 'normal')).toBe(true);
+    // The same DC, but 6 squares off by magic: -1 for distance, so 28%.
+    expect(aiShouldRoll(pending(8, 1, [stun('h7')]), 'normal')).toBe(false);
     expect(aiShouldRoll(pending(9, 1, [stun('b4')]), 'normal')).toBe(false);
   });
 

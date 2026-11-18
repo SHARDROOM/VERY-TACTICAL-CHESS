@@ -1,4 +1,4 @@
-import { AIR, SQUARE_PATTERN, clashBuffs, distance, isAttacked, parseSquare, playersOf, squareName, type GameState, type AttachPoint, type Board, type Color, type Means, type PieceType, type PropPreset, type Square } from '../engine';
+import { AIR, SQUARE_PATTERN, clashBuffs, distance, distancePenalty, isAttacked, parseSquare, playersOf, squareName, type GameState, type AttachPoint, type Board, type Color, type Means, type PieceType, type PropPreset, type Square } from '../engine';
 import type { GameMaster, GmRequest, GmRulingJson } from './types';
 import type { ActRequest } from './player';
 import { josa } from '../ui/josa';
@@ -103,11 +103,11 @@ export function fakeDeclaration(
     }
     for (const t of theirs) {
       const far = distance(m.sq, t.sq);
-      // A shot: harder the farther it flies (a blow right next to it is DC 9 too).
-      options.push({ text: `${who(m)} 활을 쏘아 ${whom(t)} 저격한다`, dc: far <= 1 ? 9 : Math.min(11, 7 + far), cost: 2, value: WORTH[t.type] });
-      // A stun: cheap, easy up close; best on a piece that threatens one of its own.
+      // A shot (DC 8), the system's distance modifier on top: the farther, the harder.
+      options.push({ text: `${who(m)} 활을 쏘아 ${whom(t)} 저격한다`, dc: 8 - distancePenalty(far <= 1 ? 'touch' : 'ranged', far), cost: 2, value: WORTH[t.type] });
+      // A stun by a spell (DC 7): cheap; best on a piece that threatens one of its own.
       const threat = mine.some((x) => isAttacked(state.board.map((p, i) => (i === t.sq || p?.color !== t.color ? p : null)), x.sq, t.color, state.terrain));
-      options.push({ text: `${who(m)} 주문으로 ${whom(t)} 기절시킨다`, dc: far > 2 ? 9 : 7, cost: 1, value: WORTH[t.type] * (threat ? 0.5 : 0.2) });
+      options.push({ text: `${who(m)} 주문으로 ${whom(t)} 기절시킨다`, dc: 7 - distancePenalty(far <= 1 ? 'touch' : 'magic', far), cost: 1, value: WORTH[t.type] * (threat ? 0.5 : 0.2) });
     }
   }
   // Arms for a piece that would then win a clash it would lose now (this GM: 검술 ×1.5 for good, DC 9, AP 3).
@@ -565,7 +565,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor: actor!,
       means,
       feasible: true,
-      dc: 7 + (far > 2 ? 2 : 0),
+      dc: 7,
       cost: 1,
       effects: [tag(last, '기절', 1)],
       look: look({
@@ -585,7 +585,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor,
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
-      dc: 7 + (far > 1 ? 2 : 0),
+      dc: 7,
       cost: 2,
       effects: [tag(last, '보호막', 0, { prop: look3d('shield', 'leftHand') })],
       look: look({ fx: [fx('light', 'burst', last, { strength: 3, radius: 1, withEffect: 1 })] }),
@@ -640,7 +640,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor: actor!,
       ...r,
       feasible: true,
-      dc: shot ? Math.min(11, 7 + far) : 6,
+      dc: shot ? 7 : 6,
       cost: 2,
       effects: [tag(last, '화상', 3, { aura: 'fire', auraStrength: 2 })],
       look: look({
@@ -716,7 +716,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       actor: actor!,
       means: shot ? 'ranged' : 'touch',
       feasible: true,
-      dc: shot ? Math.min(11, 7 + far) : 9,
+      dc: 8,
       cost: 2,
       effects: [{ type: 'remove', at: last }],
       look: look({

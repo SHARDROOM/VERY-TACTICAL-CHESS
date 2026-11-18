@@ -120,6 +120,19 @@ describe('footprint', () => {
   });
 });
 
+describe('a pawn that comes down on its last rank', () => {
+  it('promotes to a queen when it lands there (and checks, if it does)', () => {
+    // White's floating pawn above b8, its levitation running out: it comes down on b8.
+    const r = okMove(scene({ b8: { color: 'white', type: 'pawn' }, a2: { color: 'white', type: 'pawn' }, h7: { color: 'black', type: 'pawn' } }, ['b8'], 1), 'a2', 'a3');
+    const id = r.state.falling![0].piece.id;
+    const landed = ok(applyCommand(r.state, { type: 'land', seed: 1, landings: [{ id, file: 1, rank: 7 }] }));
+    expect(landed.state.board[sq('b8')]).toMatchObject({ id, type: 'queen', color: 'white' });
+    expect(landed.events).toContainEqual({ type: 'transformed', pieceId: id, at: sq('b8'), from: 'pawn', to: 'queen' });
+    // The new queen on b8 checks the black king on e8 along the back rank.
+    expect(landed.events).toContainEqual({ type: 'check', color: 'black' });
+  });
+});
+
 describe('falling', () => {
   /** White's floating knight on d4 with one turn left; black pawns around it. */
   const up = () => scene({ d4: { color: 'white', type: 'knight' }, a2: { color: 'white', type: 'pawn' }, h7: { color: 'black', type: 'pawn' } }, ['d4'], 1);

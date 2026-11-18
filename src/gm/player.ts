@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BASE_CLASH, type Color, type GameState, type PieceType } from '../engine';
-import { situationText } from './prompt';
+import { distanceRuleText, situationText } from './prompt';
 
 /*
  * An AI player's special actions (docs/SPEC.md, "AI 플레이어"): the GM's LLM is asked, as that
@@ -45,6 +45,7 @@ export function buildPlayerSystemPrompt(): string {
 선언 쓰는 법:
 - 행동하는 내 기물(주체)의 칸을 맨 앞에 쓰세요. 예: "d4 나이트가 e6 폰에게 달려가 창으로 찌른다".
 - 대상이 있으면 그 칸도 쓰세요. 근접 행동(찌르기, 붙잡기, 불 붙이기)은 대상이 1칸 안이어야 합니다. 멀면 쏘거나 던지거나 주문을 쓰세요.
+- 거리는 시스템이 주사위 합에서 뺍니다: ${distanceRuleText()}. 주체에서 효과가 닿는 가장 먼 칸까지(달려가면 달려간 거리)를 잽니다. 8칸 떨어진 대상에 단검을 던지면 -3, 8칸을 돌진하면 -4라 거의 실패합니다. 대상과 가까운 기물을 주체로 고르세요.
 - 킹은 어떤 행동으로도 잡거나 없앨 수 없습니다. 킹을 노리는 선언은 하지 마세요.
 - 쓸 수 있는 행동의 예: 보호막 두르기, 기절시키기, 불화살로 맞히기, 돌진, 투석기로 날리기, 벽이나 구덩이 만들기, 회유해 편 바꾸기, 검술 같은 싸움 실력(합 배율) 얻기, 공중부양, 다른 기물처럼 움직이기, 원호·인질·행동대장·혼란 태그, 유해 위에서 되살리기, 이웃 기물 흡수(융합), 제물 바치기.
 - 비싸고 어려운 행동은 실패하기 쉽습니다. 내 AP 안에서 해 볼 만한 것을 고르세요.
@@ -70,7 +71,7 @@ export function buildPlayerUserMessage({ state, color, style, hints, maxDc }: Ac
   const { costMin, costMax } = state.rules;
   const budget = [
     `- 보유 AP는 ${ap}입니다. 판정 비용이 ${ap} AP를 넘으면 시도할 수 없으니, 그 안에 들 행동만 고르세요.`,
-    maxDc ? `- 성공 확률 ${chancePct(maxDc)}% 이상(DC ${maxDc} 이하)으로 판정될 만한 행동을 고르세요. 그보다 어려운 판정이 나오면 이 AI는 굴리지 않고 취소합니다.` : '',
+    maxDc ? `- 거리 보정까지 쳐서 성공 확률 ${chancePct(maxDc)}% 이상(실질 DC ${maxDc} 이하)일 행동을 고르세요. 그보다 어려우면 이 AI는 굴리지 않고 취소합니다.` : '',
     `- GM의 기준: 영향이 작고 그럴듯한 행동은 DC 4~6·AP ${costMin}, 폰이나 마이너 기물 제거·중요 기물 위협·먼 이동은 DC 7~9·AP ${Math.min(costMax, costMin + 1)}, 퀸·룩 제거 같은 결정적 행동은 DC 9~11·AP ${costMax}. 대상이 가까울수록(1~2칸), 효과가 짧을수록(1턴) 쉽고 쌉니다.`,
   ]
     .filter(Boolean)

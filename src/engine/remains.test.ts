@@ -41,14 +41,16 @@ describe('remains (유해)', () => {
     let s = okMove(fallen(), 'h7', 'h6').state;
     s = okMove(s, 'a5', 'b5').state;
     const id = s.captured.find((c) => c.type === 'knight')!.id;
+    // (The king on e8 reaches 4 squares by magic: -1 for distance as well.)
     expect(rollModifiers(s.board, revive({ effects: [{ type: 'revive', at: sq('a5'), color: 'black', piece: 'knight' }] }), 'black', s.remains)).toEqual([
       { kind: 'remains', label: '유해 나이트 a5', value: 2 },
+      { kind: 'distance', label: '4칸 마법', value: -1 },
     ]);
-    expect(rollModifiers(s.board, revive(), 'black', s.remains)).toEqual([]);
+    expect(rollModifiers(s.board, revive(), 'black', s.remains).filter((m) => m.kind === 'remains')).toEqual([]);
     s = { ...s, ap: { ...s.ap, black: 3 } };
     const p = ok(applyCommand(s, { type: 'proposeSpecial', action: 'x', ruling: revive({ effects: [{ type: 'revive', at: sq('a5'), color: 'black', piece: 'knight' }] }) })).state;
-    const r = ok(applyCommand(p, { type: 'attemptSpecial', roll: 7 }));
-    expect(r.events.find((e) => e.type === 'specialResolved')).toMatchObject({ outcome: 'success', bonus: 2 });
+    const r = ok(applyCommand(p, { type: 'attemptSpecial', roll: 8 }));
+    expect(r.events.find((e) => e.type === 'specialResolved')).toMatchObject({ outcome: 'success', bonus: 1 });
     expect(r.state.board[sq('a5')]).toMatchObject({ id, type: 'knight', color: 'black' });
     expect(r.state.remains ?? []).toEqual([]);
   });

@@ -1,6 +1,7 @@
 import { distance, squareName } from './squares';
 import { stackOf } from './tags';
-import type { Board, Color, PendingAction, PieceType, RemainsMark, Ruling } from './types';
+import { MEANS, MEANS_NAME, type Board, type Color, type Means, type PendingAction, type PieceType, type RemainsMark, type Ruling } from './types';
+import { targetsOf } from './actor';
 import { remainsAt } from './captured';
 
 /*
@@ -14,11 +15,13 @@ import { remainsAt } from './captured';
  * - sacrifice (희생): pieces of the declarer's next to the actor, given up the moment the dice are
  *   thrown (success or not), worth more the stronger they are; with one, the GM may also hand
  *   out stronger buffs (a clash multiplier up to ×2.5, a skill or will up to ±4);
- * - remains (유해): reviving a piece where it fell, while its remains are still there.
+ * - remains (유해): reviving a piece where it fell, while its remains are still there;
+ * - distance (거리): the farther the action reaches from its actor, the harder (DISTANCE_RULE).
  *
- * Each is at most ±3 (±4 with a sacrifice), the sum at most ±4. Snake eyes still always fails.
+ * Each is at most ±3 (±4 with a sacrifice, -4 for distance), the sum at most ±4. Snake eyes still
+ * always fails.
  */
-export type ModifierKind = 'skill' | 'mind' | 'sacrifice' | 'remains';
+export type ModifierKind = 'skill' | 'mind' | 'sacrifice' | 'remains' | 'distance';
 export interface RollModifier {
   kind: ModifierKind;
   /** Where it comes from: the tag's name, the sacrificed piece, ... */
@@ -68,6 +71,45 @@ export function sacrificeModifiers(board: Board, ruling: Ruling): RollModifier[]
   return out;
 }
 
+/**
+ * Distance (거리): the system takes it off the dice, by how the actor reaches (the GM's DC leaves
+ * distance out). Up to `free` squares cost nothing; then -1 for every `per` squares, at most `max`.
+ * Running and reaching out by hand stretch worst, shots less, spells least.
+ */
+export const DISTANCE_RULE: Record<Means, { free: number; per: number; max: number }> = {
+  touch: { free: 1, per: 2, max: 4 },
+  move: { free: 1, per: 2, max: 4 },
+  ranged: { free: 2, per: 2, max: 4 },
+  magic: { free: 3, per: 3, max: 3 },
+};
+
+/** The distance modifier (0 or less) for reaching `d` squares by `means`. */
+export function distancePenalty(means: Means, d: number): number {
+  const rule = DISTANCE_RULE[means];
+  if (!rule || d <= rule.free) return 0;
+  return -Math.min(rule.max, Math.ceil((d - rule.free) / rule.per));
+}
+
+/**
+ * How far an action reaches from its actor: to the farthest square its effects touch, measured
+ * from wherever the actor stands then; the actor's own run (move effects) counted from where it set out.
+ */
+export function actionReach(ruling: Ruling): number {
+  if (ruling.actor == null) return 0;
+  const start = ruling.actor;
+  let at = start;
+  let reach = 0;
+  for (const e of ruling.effects ?? []) {
+    if (e.type === 'move' && e.from === at) {
+      at = e.to;
+      reach = Math.max(reach, distance(start, at));
+      continue;
+    }
+    for (const sq of targetsOf(e)) reach = Math.max(reach, distance(at, sq));
+  }
+  return reach;
+}
+
 /** Reviving a piece where its remains (유해) still are. */
 export const REMAINS_BONUS = 2;
 
@@ -78,6 +120,11 @@ export function rollModifiers(board: Board, ruling: Ruling, color: Color, remain
     if (e.type !== 'revive') continue;
     const r = remainsAt(remains, e.at);
     if (r && r.color === e.color && r.type === e.piece) mods.push({ kind: 'remains', label: `유해 ${KIND_NAME[r.type]} ${squareName(r.at)}`, value: REMAINS_BONUS });
+  }
+  if (ruling.actor != null && ruling.means && MEANS.includes(ruling.means)) {
+    const reach = actionReach(ruling);
+    const value = distancePenalty(ruling.means, reach);
+    if (value) mods.push({ kind: 'distance', label: `${reach}칸 ${MEANS_NAME[ruling.means]}`, value });
   }
   const named = new Set(ruling.skills ?? []);
   const actor = ruling.actor != null ? board[ruling.actor] : null;

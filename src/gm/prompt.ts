@@ -1,4 +1,4 @@
-import { AIR, BASE_CLASH, COVER_NAME, ridersOf, MAX_TERRAIN, PROP_PRESET_NAME, RIDE, TERRAIN_NAME, airOf, distance, isAir, parseSquare, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig , SQUARE_PATTERN, playersOf, squareAt } from '../engine';
+import { AIR, BASE_CLASH, COVER_NAME, DISTANCE_RULE, ridersOf, MAX_TERRAIN, PROP_PRESET_NAME, RIDE, TERRAIN_NAME, airOf, distance, isAir, parseSquare, squareName, type Color, type GameState, type Outcome, type Piece, type PieceType, type RuleConfig , SQUARE_PATTERN, playersOf, squareAt } from '../engine';
 
 const COLOR: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
 const PIECE: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
@@ -49,15 +49,16 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - 수단은 플레이어가 선언에 쓴 방법 그대로 정합니다. 선언에 없는 수단(화살, 주문, 투석기)을 GM이 덧붙여 거리 문제를 풀어 주지 마세요. "불을 붙인다", "찌른다", "벤다", "밀어낸다", "붙잡는다", "때린다"는 근접입니다.
 - means(수단)에 따라 닿는 거리가 정해집니다.
   - touch(근접): 불 붙이기, 밀치기, 붙잡기, 찌르기, 올라타기처럼 손이 닿는 행동. 대상이 주체와 1칸 이내여야 합니다. 시스템이 검사하며, 멀면 판정이 거부됩니다. 대상이 멀면 feasible: false로 하고 "너무 멀다: 불화살을 쏘거나 다가가는 행동으로 선언해 보세요"처럼 안내하세요. 주체가 먼저 다가간 뒤(move 효과) 손을 쓰는 것은 됩니다.
-  - ranged(원거리): 불화살, 돌 던지기, 저격처럼 쏘거나 던지는 행동. 멀어도 되지만 멀수록, 주체와 대상 사이 직선에 기물이나 벽이 가로막을수록 DC를 올리세요(대략 2~3칸 보통, 4~5칸 어려움, 6칸 이상 매우 어려움, 가로막히면 +2~3).
-  - magic(마법): 주문, 기도, 저주. 거리 제한은 없지만 그 기물이 그럴 법한지에 따라 DC를 정하세요(비숍과 퀸은 쉽고, 나이트와 룩은 보통, 폰과 킹은 어렵게). 멀수록 조금 더 어렵게.
-  - move(이동): 주체 자신이 달려가거나 날아가는 것 자체가 행동인 경우(돌진해 그 칸의 적을 들이받기 포함). 이동 거리가 곧 난이도입니다.
+  - ranged(원거리): 불화살, 돌 던지기, 저격처럼 쏘거나 던지는 행동. 멀어도 됩니다. 주체와 대상 사이 직선에 기물이나 벽이 가로막으면 DC +2~3.
+  - magic(마법): 주문, 기도, 저주. 거리 제한은 없지만 그 기물이 그럴 법한지에 따라 DC를 정하세요(비숍과 퀸은 쉽고, 나이트와 룩은 보통, 폰과 킹은 어렵게).
+  - move(이동): 주체 자신이 달려가거나 날아가는 것 자체가 행동인 경우(돌진해 그 칸의 적을 들이받기 포함).
+- 거리 보정(시스템이 자동으로): 주체에서 효과가 닿는 가장 먼 칸까지(주체가 달려가면 달려간 거리)를 재서 주사위 합에서 뺍니다. ${distanceRuleText()}. 그러니 DC에는 거리를 넣지 마세요. 가까운 곳에서 하는 것처럼 행동 자체의 어려움만으로 DC를 정하면, 멀수록 시스템이 알아서 어려워집니다.
   - "달려가서 찌른다"처럼 다가간 뒤 손을 쓰는 선언은 touch로 하고, 효과에 먼저 주체의 move(대상 옆 빈 칸으로)를 넣은 다음 대상에 대한 효과를 넣으세요. 다가가는 말이 없는 근접 행동의 대상이 멀면 불가능입니다.
 - 예시:
   - "e6 폰이 e7 폰에 불을 붙인다"(1칸): touch로 가능.
   - "g2 폰이 g7 폰에 불을 붙인다"(5칸): 다가가는 말도, 쏘는 말도 없으니 불가능. "너무 멀다: 불화살을 쏘거나 다가가는 행동으로 선언해 보세요."
-  - "g2 폰이 불화살을 쏘아 g7 폰을 맞힌다"(5칸): ranged로 가능, 어렵게.
-  - "b1 나이트가 d7 폰에게 달려가 창으로 찌른다": touch. 효과는 b1에서 d7 옆 빈 칸으로 move, 그다음 d7에 대한 효과. 달려가는 거리만큼 어렵게.
+  - "g2 폰이 불화살을 쏘아 g7 폰을 맞힌다"(5칸): ranged로 가능. 거리는 시스템이 -2로 뺍니다.
+  - "b1 나이트가 d7 폰에게 달려가 창으로 찌른다": touch. 효과는 b1에서 d7 옆 빈 칸으로 move, 그다음 d7에 대한 효과. 달려간 거리는 시스템이 뺍니다.
   - "e7 폰이 …"(e7이 상대 기물): 상대 기물은 주체가 될 수 없으니 불가능. 이유를 쓰세요.
 - 기물 종류도 당위성입니다: 나이트는 돌진, 룩(성탑)은 투석기나 궁수, 비숍은 주문, 폰은 맨손이나 작은 무기가 그럴듯합니다. 어울리지 않을수록 DC를 올리세요.
 - 연출도 주체에서 시작하세요(불화살 beam은 주체 칸에서 대상 칸으로).
@@ -169,7 +170,7 @@ ${hexRules(rules)}
 - 기준(재료 기준): 폰 DC 6·AP 1, 나이트·비숍 DC 8·AP 2, 룩 DC 9·AP 3, 퀸 DC 10·AP 3. 상대나 회색 기물을 흡수하면 DC +2. 분리는 DC 5~6·AP 1. 융합한 기물의 이름(예: "주교관을 쓴 기마")을 서사용 태그로 함께 붙여도 좋습니다.
 
 ## 판정 보정: 특기와 정신력
-주사위 합에 시스템이 보정을 더합니다. 보정은 화면에 출처와 함께 보입니다(예: 🎲 5+3 +2 지휘의 깃발 = 10). 보정 하나는 ±1~3, 다 더해도 ±4까지이고, 1·1은 보정과 상관없이 대실패입니다.
+주사위 합에 시스템이 보정을 더합니다. 보정은 화면에 출처와 함께 보입니다(예: 🎲 5+3 +2 지휘의 깃발 = 10). 보정 하나는 ±1~3(거리는 -4까지), 다 더해도 ±4까지이고, 1·1은 보정과 상관없이 대실패입니다. 거리 보정은 위 "주체와 거리"에 있습니다.
 - 특기(skill): 태그에 붙는 능력. 그 태그를 가진 기물이 하는 특정 종류의 행동에 보정을 줍니다(예: "지휘의 깃발" 특기 about "함께 전진하는 행동" bonus 2, "건축가" about "지형이나 다리 만들기" bonus 2). 직업, 칭호, 장비처럼 "이 기물은 이런 일을 잘한다"는 선언에 쓰세요. 서툴게 만드는 저주는 음수로.
 - 정신력(mind): 태그에 붙는 값 -3~+3. 다른 편이 그 기물에 거는 정신 계열 행동(회유, 매혹, 공포, 설득, 세뇌)의 주사위에서 그만큼 뺍니다(예: "강철 의지" +2, "겁에 질림" -2).
 - 판정할 때: 주체(와 그 위에 탄 기물)의 태그 가운데 이번 행동에 맞는 특기 태그의 이름을 skills에 넣으세요. 회유·매혹 같은 정신 계열 행동이면 mental을 true로 하고 대상 기물의 칸을 target에 쓰세요(정신 계열이 아니어도 대상이 있으면 target을 씁니다).
@@ -356,6 +357,13 @@ function declaredSquares(action: string, state: GameState): string {
 }
 
 /** The board as both prompts describe it: pieces, the fallen, remains, terrain, the grid, precedents, chaos so far. */
+/** The distance rule in words: "근접·이동 2칸부터 2칸마다 -1(최대 -4), ...". */
+export function distanceRuleText(): string {
+  const r = DISTANCE_RULE;
+  const one = (name: string, x: { free: number; per: number; max: number }) => `${name} ${x.free + 1}칸부터 ${x.per}칸마다 -1(최대 -${x.max})`;
+  return [one('근접·이동', r.touch), one('원거리', r.ranged), one('마법', r.magic)].join(', ');
+}
+
 export function situationText(state: GameState): string {
   const sides = playersOf(state.map ?? 'classic');
   return `## 기물 위치

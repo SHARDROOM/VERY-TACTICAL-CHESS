@@ -18,4 +18,4 @@ export { DEFAULT_RULES, DIE_SIDES, DICE_PER_ROLL, ROLL_MAX, ROLL_MIN, withDefaul
 export * from './staging';
 export { buildTimeline, effectDuration, moveDuration, ACT_DURATION, EXIT_DURATION, REVIVE_DURATION, SWAP_DURATION, type Timeline } from './timeline';
 export * from './props';
-export { rollModifiers, pendingModifiers, modifierTotal, checkSacrifice, sacrificeModifiers, MOD_EACH_MAX, MOD_TOTAL_MAX, SACRIFICE_VALUE, SACRIFICE_MOD_MAX, SACRIFICE_CLASH_MAX, type RollModifier, type ModifierKind } from './modifiers';
+export { rollModifiers, pendingModifiers, distancePenalty, actionReach, DISTANCE_RULE, modifierTotal, checkSacrifice, sacrificeModifiers, MOD_EACH_MAX, MOD_TOTAL_MAX, SACRIFICE_VALUE, SACRIFICE_MOD_MAX, SACRIFICE_CLASH_MAX, type RollModifier, type ModifierKind } from './modifiers';

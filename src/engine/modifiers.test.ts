@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCommand, applyEffects, createStateFrom, modifierTotal, rollModifiers, type GameState, type Piece, type Ruling, type Tag } from './index';
+import { actionReach, applyCommand, applyEffects, createStateFrom, distancePenalty, modifierTotal, rollModifiers, type Effect, type GameState, type Piece, type Ruling, type Tag } from './index';
 import { ok, sq } from './testUtil';
 
 const tag = (name: string, extra: Partial<Tag>): Tag => ({ name, turnsLeft: 3, appliedOnTurn: 0, ...extra });
@@ -144,5 +144,25 @@ describe('sacrifice (희생)', () => {
     const r = roll(altar(), offering(), 2);
     expect(r.events.find((e) => e.type === 'specialResolved')).toMatchObject({ outcome: 'critFailure' });
     expect(r.state.board[sq('e3')]).toBeNull();
+  });
+});
+
+describe('distance (거리)', () => {
+  it('costs more the farther, by how the actor reaches', () => {
+    expect([1, 2, 3, 4, 8, 12].map((d) => distancePenalty('touch', d))).toEqual([0, -1, -1, -2, -4, -4]);
+    expect([2, 3, 4, 5, 8, 12].map((d) => distancePenalty('ranged', d))).toEqual([0, -1, -1, -2, -3, -4]);
+    expect([3, 4, 6, 7, 12].map((d) => distancePenalty('magic', d))).toEqual([0, -1, -1, -2, -3]);
+  });
+
+  it("counts the actor's run, then what it reaches from where it stopped", () => {
+    const r = (effects: Effect[], means: Ruling['means'] = 'touch'): Ruling => ({ interpretation: 'x', feasible: true, dc: 7, cost: 2, actor: sq('b1'), means, effects, narration: { success: 's', failure: 'f' } });
+    // b1 runs to c6 (5 squares) and strikes d7 next to it.
+    const charge = r([{ type: 'move', from: sq('b1'), to: sq('c6') }, { type: 'remove', at: sq('d7') }]);
+    expect(actionReach(charge)).toBe(5);
+    expect(rollModifiers(createStateFrom({ e1: { color: 'white', type: 'king' }, e8: { color: 'black', type: 'king' }, b1: { color: 'white', type: 'knight' }, d7: { color: 'black', type: 'pawn' } }, 'white').board, charge, 'white')).toEqual([
+      { kind: 'distance', label: '5칸 근접', value: -2 },
+    ]);
+    // A shot from b1 at h7: 6 squares.
+    expect(actionReach(r([{ type: 'remove', at: sq('h7') }], 'ranged'))).toBe(6);
   });
 });

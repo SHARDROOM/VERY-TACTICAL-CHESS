@@ -56,13 +56,37 @@ function withoutSacrifices(board: Board, ruling: Ruling): Board {
 
 /** The single entry point for changing game state. Pure: no I/O, no randomness. */
 export function applyCommand(state: GameState, cmd: Command): CommandResult {
-  const result = applyOne(state, cmd);
+  const result = promoteStranded(applyOne(state, cmd));
   // A hostage whose holder is gone or moved away is let go, whatever moved it.
   if (!result.ok || !result.state.board.some((p) => p?.tags?.some((t) => t.name === HOSTAGE))) return result;
   const board = [...result.state.board];
   const released: GameEvent[] = [];
   releaseHostages(board, released);
   return released.length ? { ...result, state: { ...result.state, board }, events: [...result.events, ...released] } : result;
+}
+
+/**
+ * A pawn that has come to stand on its last rank promotes there, to a queen, whatever brought it:
+ * a fall (off a toppled carrier, at the end of its levitation), ... (a normal move asks which piece,
+ * and effects promote their own). A new queen may give check.
+ */
+function promoteStranded(result: CommandResult): CommandResult {
+  if (!result.ok) return result;
+  const { board, terrain } = result.state;
+  let next: (Piece | null)[] | null = null;
+  const events: GameEvent[] = [];
+  board.forEach((p, sq) => {
+    if (p?.type !== 'pawn' || isAir(sq) || !promotesOn(p.color, sq)) return;
+    next ??= [...board];
+    next[sq] = { ...p, type: 'queen' };
+    events.push({ type: 'transformed', pieceId: p.id, at: sq, from: 'pawn', to: 'queen' });
+  });
+  if (!next) return result;
+  const promoted: Board = next;
+  for (const c of playersOf()) {
+    if (!result.events.some((e) => e.type === 'check' && e.color === c) && isInCheck(promoted, c, terrain)) events.push({ type: 'check', color: c });
+  }
+  return { ...result, state: { ...result.state, board: promoted }, events: [...result.events, ...events] };
 }
 
 function applyOne(state: GameState, cmd: Command): CommandResult {
