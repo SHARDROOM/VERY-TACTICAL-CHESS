@@ -11,6 +11,7 @@ import { simulateFalls } from './scene/boardPhysics';
 import type { FallSimulator } from './session/authority';
 import { browserId, clearSavedGame, gmForSave, gmFromSave, loadSavedGame, rememberGm, rememberedGm, saveGame, savedName, type SavedGame } from './session/storage';
 import type { Session, SessionView } from './session/types';
+import { isAiOnly } from './engine';
 import { WaitingRoom } from './ui/WaitingRoom';
 import { rollDie } from './dice';
 import { playSfx, unlockAudio } from './audio/sfx';
@@ -64,7 +65,8 @@ export default function App() {
     const write = () => {
       const target = saveTarget.current;
       const view = session.view();
-      if (!target || view.phase !== 'playing') return;
+      // A game only AIs play is for watching, not resuming: it never takes the save slot.
+      if (!target || view.phase !== 'playing' || isAiOnly(view.state)) return;
       const seats = session instanceof HostSession ? session.seats() : undefined;
       saveGame({ kind: target.kind, code: target.kind === 'host' ? target.code : undefined, state: view.state, gm: gmForSave(gmRef.current), seats });
       last = view.state;
@@ -86,11 +88,12 @@ export default function App() {
   const keyNotice = (config: GmConfig) =>
     config.provider !== 'fake' && !config.apiKey ? ' ⚙ GM 설정에서 API 키를 입력해 주세요.' : '';
 
-  /** One screen: two people (hotseat), or against the AI when `vsAi` seats it on black. */
-  const hotseat = (resume: SavedGame | null = null, vsAi = false) => {
+  /** One screen: two people (hotseat), against the AI ('vsAi', on black), or watching two AIs ('watch'). */
+  const hotseat = (resume: SavedGame | null = null, mode: 'people' | 'vsAi' | 'watch' = 'people') => {
     const config = resumeGm(resume);
     const local = new LocalSession(createGm(config), { roll: rollDie, initialState: resume?.state, phase: resume ? 'playing' : 'waiting', fall: landFalls });
-    if (vsAi) local.setAi('black', { level: 'normal', specials: 'some' });
+    if (mode !== 'people') local.setAi('black', { level: mode === 'watch' ? 'hard' : 'normal', specials: 'some' });
+    if (mode === 'watch') local.setAi('white', { level: 'normal', specials: 'some' });
     start(local, { kind: 'hotseat' }, resume ? `저장된 게임을 이어 갑니다.${keyNotice(config)}` : null);
   };
 
@@ -215,7 +218,8 @@ export default function App() {
           error={error}
           saved={saved}
           onHotseat={() => hotseat()}
-          onVsAi={() => hotseat(null, true)}
+          onVsAi={() => hotseat(null, 'vsAi')}
+          onWatchAi={() => hotseat(null, 'watch')}
           onHost={() => void host()}
           onJoin={join}
           onResume={() => (saved?.kind === 'host' ? void host(saved) : hotseat(saved))}
@@ -264,10 +268,12 @@ function RoomScreen(props: { session: Session; gmConfig: GmConfig; onGmConfig: (
     return unsubscribe;
   }, [session]);
   // Every game gets a fresh screen (log, camera, dice).
+  // (A rematch between AIs is a new game too.)
   const phase = view.phase;
+  const round = view.watch.round;
   useEffect(() => {
     if (phase === 'playing') setGameNo((n) => n + 1);
-  }, [phase]);
+  }, [phase, round]);
 
   if (phase === 'waiting') {
     return (

@@ -22,6 +22,7 @@ interface Props {
   onDiscard: () => void;
   onHotseat: () => void;
   onVsAi: () => void;
+  onWatchAi: () => void;
   onHost: () => void;
   onJoin: (code: string) => void;
   /** Display name of the GM a new game would use. */
@@ -56,7 +57,7 @@ function useCoveredInset(root: React.RefObject<HTMLElement | null>, title: React
   return inset;
 }
 
-export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVsAi, onHost, onJoin, gmName, onGmSettings }: Props) {
+export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVsAi, onWatchAi, onHost, onJoin, gmName, onGmSettings }: Props) {
   const [code, setCode] = useState('');
   const [showMenu, setShowMenu] = useState(false);
   const fullscreen = useFullscreen();
@@ -130,6 +131,9 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
         </button>
         <button className="big" onClick={onHotseat} disabled={!!busy}>
           한 화면에서 둘이 하기 (핫시트)
+        </button>
+        <button className="big" onClick={onWatchAi} disabled={!!busy}>
+          AI끼리 보기
         </button>
 
         {busy && <p className="lobby-status">{busy}</p>}

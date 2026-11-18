@@ -20,6 +20,8 @@ import {
   type SessionView,
   type TimerSnapshot,
   type TurnTimer,
+  WATCH_DEFAULT,
+  type WatchState,
 } from './types';
 
 export interface GuestOptions {
@@ -48,6 +50,7 @@ export class GuestSession implements Session {
   private myKey = '';
   private members: Member[] = [];
   private phase: Phase = 'waiting';
+  private watch: WatchState = WATCH_DEFAULT;
   private gmBusy = false;
   private gmName = '';
   private timer: TurnTimer | null = null;
@@ -82,6 +85,7 @@ export class GuestSession implements Session {
       chat: this.chat,
       doodles: this.doodles,
       chaosReady: true,
+      watch: this.watch,
     };
   }
 
@@ -122,6 +126,8 @@ export class GuestSession implements Session {
   assignRole(): void {}
 
   setAi(): void {}
+  setWatch(_change: Parameters<Session['setWatch']>[0]): void {}
+  rematch(): void {}
 
   takeSeat(role: Role): void {
     this.send({ t: 'seat', role });
@@ -203,6 +209,7 @@ export class GuestSession implements Session {
         this.state = msg.state;
         this.phase = msg.room.phase;
         this.members = msg.room.members;
+        this.watch = msg.room.watch ?? WATCH_DEFAULT;
         this.gmName = msg.gmName;
         this.gmBusy = msg.busy;
         this.setTimer(msg.timer);
@@ -221,6 +228,7 @@ export class GuestSession implements Session {
       case 'room':
         this.phase = msg.room.phase;
         this.members = msg.room.members;
+        this.watch = msg.room.watch ?? WATCH_DEFAULT;
         break;
       case 'update': {
         const before = this.state;

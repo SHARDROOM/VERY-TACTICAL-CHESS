@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import {
   AIR,
   setBoardMap,
@@ -31,9 +31,13 @@ import {
   modifierTotal,
   MOD_TOTAL_MAX,
   AI_LEVEL_NAME,
+  AI_LEVELS,
+  isAiOnly,
+  standing,
   playersOf,
+  type AiLevel,
 } from '../engine';
-import { BoardScene, type CameraRequest } from '../scene/BoardScene';
+import { BoardScene, type Broadcast, type CameraRequest } from '../scene/BoardScene';
 import { COLOR_NAME, MOD_KIND_NAME, OUTCOME_LABEL, PIECE_NAME, REJECT_MESSAGE, describeEvents, signed, type LogEntry, type LogTone } from './messages';
 import { PrecedentList } from './PrecedentList';
 import { josa } from './josa';
@@ -45,7 +49,7 @@ import { successChance } from '../dice';
 import { loadPhysics, simulateGroupsInTurn, simulateRolls } from '../dice3d/simulate';
 import { skinRotationFor } from '../dice3d/d6';
 import type { ActiveRoll } from '../dice3d/DiceTray';
-import { CHAT_MAX_LENGTH, timeLeft, type Session, type SessionView, type TurnTimer } from '../session/types';
+import { CHAT_MAX_LENGTH, WATCH_SPEEDS, timeLeft, type Session, type SessionView, type TurnTimer, type WatchSpeed } from '../session/types';
 import { ConnectionOverlay } from './ConnectionOverlay';
 import { DoodleToolbar } from './DoodleToolbar';
 import type { DoodleTool } from '../scene/DoodleLayer';
@@ -64,6 +68,9 @@ import { riderTypes } from '../scene/piecePhysics';
 import { playChunkTracks, restingChunks } from '../scene/debris';
 import { playTakenTracks, receiveToy, setToySender, takenNow } from '../scene/toys';
 import type { PieceDirection } from '../scene/pieceMotion';
+
+/** The watched AIs' pace, as the buttons say it. */
+const SPEED_NAME: Record<WatchSpeed, string> = { slow: '느리게', normal: '보통', fast: '빠르게' };
 
 interface LogLine extends LogEntry {
   id: number;
@@ -278,6 +285,10 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   /** 행동 쓰기 도움: board taps write the declaration's squares into the box instead of picking pieces up. */
   const [writeHelp, setWriteHelp] = useState(false);
   const [camera, setCamera] = useState<CameraRequest>({ mode: 'side', side: homeSide, nonce: 0 });
+  // Watching AIs: the camera leans toward each move.
+  const [focus, setFocus] = useState<Broadcast>({ focus: null, nonce: 0 });
+  // One screen: who plays which side (the turn badge opens it).
+  const [seatMenu, setSeatMenu] = useState(false);
   // Dev only: "x,y,z,tx,ty,tz" pins the camera there (for screenshots from odd angles).
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -393,6 +404,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       else if (passed) setWarning(null);
       const proposed = events.find((ev) => ev.type === 'specialProposed');
       if (proposed && (seat === 'both' || proposed.color === seat)) setText('');
+      const moved = events.find((ev): ev is Extract<GameEvent, { type: 'moved' }> => ev.type === 'moved');
+      if (moved && isAiOnly(after)) setFocus((f) => ({ focus: moved.to, nonce: f.nonce + 1 }));
       setSelected(null);
       // After a show, not in the middle of it.
       if (!staged) swingCamera(batch);
@@ -862,6 +875,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
 
   const sideToMove = game.turn;
   const playing = game.status.kind === 'playing';
+  // A game only AIs play: for watching (docs/SPEC.md, "AI 관전").
+  const watching = isAiOnly(game);
+  const players = playersOf(game.map);
+  const watch = view.watch;
+  const shares = useMemo(() => (watching ? standing(game) : null), [watching, game]);
   const aiToMove = playing ? aiOf(sideToMove) : undefined;
   const myTurn = (seat === 'both' && !aiToMove) || seat === sideToMove;
   const inCheck = playing && isInCheck(game.board, sideToMove, game.terrain);
@@ -1012,6 +1030,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         marks={marks}
         falling={game.falling}
         clashOdds={locked ? undefined : clashOdds}
+        broadcast={watching ? focus : null}
         directions={directions}
         fx={fxShow}
         shake={shake}
@@ -1025,11 +1044,27 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
 
       <div className="hud topbar">
       <header className="top">
-        <div className={`turn turn-${winner ?? sideToMove}`}>
+        <div
+          className={`turn turn-${winner ?? sideToMove} ${!online ? 'turn-seats' : ''}`}
+          {...(!online && {
+            role: 'button',
+            tabIndex: 0,
+            'aria-expanded': seatMenu,
+            title: '누가 어느 편을 두는지 (AI에게 맡기기, 내가 이어 두기)',
+            onClick: () => setSeatMenu((v) => !v),
+            onKeyDown: (e: KeyboardEvent) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setSeatMenu((v) => !v)),
+          })}
+        >
           <span className="turn-token" aria-hidden />
           <span className="turn-text">{winner ? `${COLOR_NAME[winner]} 승리` : `${COLOR_NAME[sideToMove]}의 차례`}</span>
-          {!winner && nameOf(sideToMove) && <span className={`turn-name ${aiToMove ? 'ai-thinking' : ''}`}>{nameOf(sideToMove)}{aiToMove ? ' · 생각 중…' : ''}</span>}
+          {!winner && nameOf(sideToMove) && (
+            <span className={`turn-name ${aiToMove && !(watching && watch.paused) ? 'ai-thinking' : ''}`}>
+              {nameOf(sideToMove)}
+              {aiToMove ? (watching && watch.paused ? ' · 일시정지' : ' · 생각 중…') : ''}
+            </span>
+          )}
           <span className="turn-number">{game.turnNumber}턴</span>
+          {!online && <span className="turn-caret" aria-hidden>▾</span>}
         </div>
         {view.timer && playing && !frozen && <TimerBadge timer={view.timer} mine={myTurn && !spectator} />}
         {(seat === 'white' || seat === 'black' || seat === 'red') && online && <div className={`badge me me-${seat}`}>나: {COLOR_NAME[seat]}</div>}
@@ -1041,6 +1076,81 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         {warning && !winner && <div className="badge warn">⚠ {warning}</div>}
         {absent && playing && <div className="badge warn">{absent.name}님 연결 끊김, 다시 들어오기를 기다리는 중</div>}
       </header>
+
+      {watching && shares && (
+        <section className="watch-bar" aria-label="AI 관전">
+          <div className="standing" role="img" aria-label={`판세: ${players.map((c) => `${COLOR_NAME[c]} ${Math.round((shares[c] ?? 0) * 100)}%`).join(', ')}`}>
+            {players.map((c) => (
+              <span key={c} className={`standing-seg seg-${c}`} style={{ width: `${(shares[c] ?? 0) * 100}%` }} />
+            ))}
+          </div>
+          <div className="watch-row">
+            <span className="watch-tally">
+              {players.map((c, i) => {
+                const e = watch.tally.find((t) => t.color === c);
+                return (
+                  <span key={c} className={`tally-chip chip-${c}`}>
+                    {i > 0 && <span className="tally-sep">:</span>}
+                    <span className="tally-stone" aria-hidden />
+                    {e ? e.label : nameOf(c)} <b>{e?.wins ?? 0}</b>
+                  </span>
+                );
+              })}
+            </span>
+            {view.isAuthority ? (
+              <span className="watch-controls">
+                <button className={`watch-pause ${watch.paused ? 'active' : ''}`} onClick={() => session.setWatch({ paused: !watch.paused })} aria-pressed={watch.paused} disabled={!playing}>
+                  {watch.paused ? '▶ 계속' : '⏸ 멈춤'}
+                </button>
+                <span className="watch-speed" role="group" aria-label="AI 속도">
+                  {WATCH_SPEEDS.map((sp) => (
+                    <button key={sp} className={watch.speed === sp ? 'active' : ''} aria-pressed={watch.speed === sp} onClick={() => session.setWatch({ speed: sp })}>
+                      {SPEED_NAME[sp]}
+                    </button>
+                  ))}
+                </span>
+              </span>
+            ) : (
+              watch.paused && playing && <span className="badge muted-badge">일시정지</span>
+            )}
+          </div>
+        </section>
+      )}
+
+      {seatMenu && !online && (
+        <section className="seat-menu" aria-label="자리">
+          {players.map((c) => {
+            const ai = aiOf(c);
+            return (
+              <div key={c} className={`seat-row seat-${c}`}>
+                <span className="seat-stone" aria-hidden />
+                <span className="seat-label">{COLOR_NAME[c]}</span>
+                {ai ? (
+                  <>
+                    <select aria-label={`${COLOR_NAME[c]} AI 난이도`} value={ai.level} onChange={(e) => session.setAi(c, { ...ai, level: e.target.value as AiLevel })}>
+                      {AI_LEVELS.map((l) => (
+                        <option key={l} value={l}>
+                          🤖 {AI_LEVEL_NAME[l]}
+                        </option>
+                      ))}
+                    </select>
+                    <button onClick={() => session.setAi(c, null)} disabled={!playing}>
+                      내가 이어 두기
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="seat-who">이 기기</span>
+                    <button onClick={() => session.setAi(c, { level: 'normal', specials: 'some' })} disabled={!playing}>
+                      AI에게 맡기기
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </section>
+      )}
 
 
       <nav className="tools" aria-label="테이블 도구">
@@ -1131,45 +1241,50 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
                 </li>
               ))}
             </ol>
-            <form onSubmit={onSubmit} className="input-row">
-              <button
-                type="button"
-                className={`write-help${writeHelp ? ' active' : ''}`}
-                aria-pressed={writeHelp}
-                aria-label="행동 쓰기 도움"
-                title="행동 쓰기 도움: 판의 기물과 칸을 누르면 입력칸에 이어 씁니다"
-                disabled={locked || !!chain}
-                onClick={() => {
-                  setWriteHelp((on) => !on);
-                  setSelected(null);
-                }}
-              >
-                <Icon name="quill" />
-              </button>
-              <input
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder={placeholder}
-                disabled={locked}
-                maxLength={game.rules.actionMaxLength}
-              />
-              <button type="submit" disabled={locked || !text.trim()}>
-                입력
-              </button>
-            </form>
-            <div className="panel-footer">
-              <span className={`counter${writeHelp ? ' write-hint' : ''}`}>
-                {writeHelp ? '기물이나 칸을 누르면 이어 씁니다' : `${text.length}/${game.rules.actionMaxLength}`}
-              </span>
-              <button
-                onClick={() => session.request({ type: 'endTurn' })}
-                disabled={locked || !canEndTurn}
-                title={chain ? '남은 연속 이동을 쓰지 않고 턴을 마칩니다' : canEndTurn ? '이번 턴을 마칩니다' : '수를 두거나 특수 행동을 시도해야 턴을 끝낼 수 있습니다'}
-                className={chain && !locked ? 'end-turn-ready' : undefined}
-              >
-                턴 종료
-              </button>
-            </div>
+            {/* Watching AIs: nobody here moves, so no box to write in. */}
+            {!watching && (
+              <>
+                <form onSubmit={onSubmit} className="input-row">
+                  <button
+                    type="button"
+                    className={`write-help${writeHelp ? ' active' : ''}`}
+                    aria-pressed={writeHelp}
+                    aria-label="행동 쓰기 도움"
+                    title="행동 쓰기 도움: 판의 기물과 칸을 누르면 입력칸에 이어 씁니다"
+                    disabled={locked || !!chain}
+                    onClick={() => {
+                      setWriteHelp((on) => !on);
+                      setSelected(null);
+                    }}
+                  >
+                    <Icon name="quill" />
+                  </button>
+                  <input
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    placeholder={placeholder}
+                    disabled={locked}
+                    maxLength={game.rules.actionMaxLength}
+                  />
+                  <button type="submit" disabled={locked || !text.trim()}>
+                    입력
+                  </button>
+                </form>
+                <div className="panel-footer">
+                  <span className={`counter${writeHelp ? ' write-hint' : ''}`}>
+                    {writeHelp ? '기물이나 칸을 누르면 이어 씁니다' : `${text.length}/${game.rules.actionMaxLength}`}
+                  </span>
+                  <button
+                    onClick={() => session.request({ type: 'endTurn' })}
+                    disabled={locked || !canEndTurn}
+                    title={chain ? '남은 연속 이동을 쓰지 않고 턴을 마칩니다' : canEndTurn ? '이번 턴을 마칩니다' : '수를 두거나 특수 행동을 시도해야 턴을 끝낼 수 있습니다'}
+                    className={chain && !locked ? 'end-turn-ready' : undefined}
+                  >
+                    턴 종료
+                  </button>
+                </div>
+              </>
+            )}
           </>
         ) : (
           <>
@@ -1211,7 +1326,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       </aside>
 
       {pending && !dice && (
-        <div className="overlay">
+        // An AI's ruling is only to look at: the table's buttons (pause, the seat menu) stay usable.
+        <div className={`overlay ${aiOf(pending.color) ? 'passive' : ''}`}>
           <article className="ruling-sheet" aria-labelledby="ruling-title">
             <div className="ruling-who">{COLOR_NAME[pending.color]}{nameOf(pending.color) ? `(${nameOf(pending.color)})` : ''}의 선언</div>
             <blockquote>“{pending.action}”</blockquote>
@@ -1439,9 +1555,19 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             {nameOf(winner) && <div className="victory-name">{nameOf(winner)}</div>}
             <p className="victory-how">{isHex() ? '마지막까지 킹을 지켰습니다.' : `${COLOR_NAME[opponent(winner)]} 킹이 잡혔습니다.`}</p>
             <p className="victory-recap">{recap(game)}</p>
+            {watching && watch.tally.length > 0 && (
+              <p className="victory-tally">
+                {players.map((c) => watch.tally.find((t) => t.color === c)).filter(Boolean).map((t) => `${t!.label} ${t!.wins}승`).join(' · ')}
+              </p>
+            )}
             <div className="victory-actions">
+              {view.isAuthority && watching && (
+                <button className="primary" onClick={() => session.rematch()}>
+                  한 판 더 (자리 바꿔서)
+                </button>
+              )}
               {view.isAuthority ? (
-                <button className="primary" onClick={restart}>
+                <button className={watching ? '' : 'primary'} onClick={restart}>
                   대기실로 돌아가기
                 </button>
               ) : (

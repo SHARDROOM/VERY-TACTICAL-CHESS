@@ -1,4 +1,4 @@
-import { CLASH_ROLLS, aiExile, aiHints, aiMaxDc, isAir, playersOf, promotesOn, type AiSeat, applyCommand, impulseOf, impulseTargets, isStunned as isStunnedPiece, vanguardChoice, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
+import { AI_LEVEL_NAME, CLASH_ROLLS, aiExile, aiHints, aiMaxDc, cleanAiSeats, isAiOnly, isAir, playersOf, promotesOn, type AiSeat, applyCommand, impulseOf, impulseTargets, isStunned as isStunnedPiece, vanguardChoice, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
@@ -6,7 +6,7 @@ import { GmError } from '../gm/errors';
 import { REJECT_MESSAGE } from '../ui/messages';
 import { parsePlayerAction } from '../gm/player';
 import { chooseMoveAsync, shouldRollAsync } from './aiCompute';
-import type { NoticeTone, Phase, Request, TimerSnapshot } from './types';
+import { WATCH_DEFAULT, WATCH_SPEEDS, type Entrant, type NoticeTone, type Phase, type Request, type TimerSnapshot, type WatchSpeed, type WatchState } from './types';
 
 export type AuthorityEvent =
   | { kind: 'events'; events: GameEvent[]; before: GameState; after: GameState }
@@ -16,7 +16,9 @@ export type AuthorityEvent =
   /** A fresh state replaced the old one (new game, back to the waiting room, rules changed). */
   | { kind: 'reset'; state: GameState }
   | { kind: 'phase'; phase: Phase }
-  | { kind: 'timer'; timer: TimerSnapshot | null };
+  | { kind: 'timer'; timer: TimerSnapshot | null }
+  /** A watched game (only AIs play): paused, speed, score, a new round. */
+  | { kind: 'watch'; watch: WatchState };
 
 /** What a fall simulation needs: the board as it is, the falling pieces, and the seed every screen replays it with. */
 export interface FallQuery {
@@ -46,6 +48,9 @@ export interface AuthorityOptions {
 
 /** An AI player waits at least this long before it acts (its "thinking" is seen). */
 const AI_MIN_MS = 900;
+/** Watching AIs: the pause after a show, slow and fast. */
+const AI_SLOW_MS = 2400;
+const AI_FAST_MS = 120;
 
 /** How long a fall plays on screen; the clock does not run during it. */
 export const FALL_SHOW_MS = 3200;
@@ -91,6 +96,8 @@ export class Authority {
   private aiRestUntil: Partial<Record<Color, number>> = {};
   /** The declaration it last let go (never declared again right away). */
   private aiDropped: Partial<Record<Color, string>> = {};
+  /** A game only AIs play: paused or not, how fast, the score of the series (docs/SPEC.md, "AI 관전"). */
+  watch: WatchState = WATCH_DEFAULT;
 
   constructor(
     public gm: GameMaster,
@@ -125,10 +132,104 @@ export class Authority {
   start(): void {
     if (this.phase !== 'waiting') return;
     this.replace(createInitialState(this.state.rules, this.state.rules.map));
+    this.aiForget();
     this.phase = 'playing';
+    // Watching AIs: the same lineup carries on its score, a new one starts from nothing; never paused at the start.
+    this.setWatchState({ ...this.watch, paused: false, tally: this.tallyNow(), round: this.watch.round + 1 });
     this.emit({ kind: 'phase', phase: 'playing' });
     this.restartClock();
     this.aiPoke();
+  }
+
+  /**
+   * After a game only AIs played: the next one at once, every AI one seat on (white's plays black,
+   * black's white; on the hexagon black's plays red and red's white), the score carried over.
+   */
+  rematch(): void {
+    if (this.phase !== 'playing' || this.state.status.kind !== 'won' || !isAiOnly(this.state)) return;
+    const colors = playersOf(this.state.map);
+    const next = (c: Color) => colors[(colors.indexOf(c) + 1) % colors.length];
+    const ai: NonNullable<RuleConfig['ai']> = {};
+    for (const c of colors) ai[next(c) as 'white'] = this.state.rules.ai![c as 'white'];
+    const rules = { ...this.state.rules, ai };
+    this.replace(createInitialState(rules, rules.map));
+    this.aiForget();
+    this.setWatchState({ ...this.watch, paused: false, tally: this.watch.tally.map((e) => ({ ...e, color: next(e.color) })), round: this.watch.round + 1 });
+    this.restartClock();
+    this.aiPoke();
+  }
+
+  /**
+   * One screen, mid-game: a side passes from its AI to the people at the screen, or the other way.
+   * Whatever the AI was thinking is dropped; a game no longer only AIs' is not paused.
+   */
+  setAiNow(color: Color, seat: AiSeat | null): void {
+    if (this.phase !== 'playing' || !playersOf(this.state.map).includes(color)) return;
+    const ai = cleanAiSeats({ ...this.state.rules.ai, [color]: seat ?? undefined }, this.state.rules.map);
+    this.state = { ...this.state, rules: { ...this.state.rules, ai } };
+    this.emit({ kind: 'reset', state: this.state });
+    if (this.watch.paused && !isAiOnly(this.state)) this.setWatchState({ ...this.watch, paused: false });
+    this.resumeClock();
+    this.aiPoke();
+  }
+
+  /** Pause a watched game (the move under way finishes), or change how fast its AIs go. */
+  setWatch(change: { paused?: boolean; speed?: WatchSpeed }): void {
+    const paused = typeof change.paused === 'boolean' ? change.paused : this.watch.paused;
+    const speed = WATCH_SPEEDS.includes(change.speed as WatchSpeed) ? (change.speed as WatchSpeed) : this.watch.speed;
+    if (paused === this.watch.paused && speed === this.watch.speed) return;
+    this.setWatchState({ ...this.watch, paused, speed });
+    if (this.aiHandle) clearTimeout(this.aiHandle);
+    this.aiHandle = null;
+    if (this.paused()) this.pauseClock();
+    else this.resumeClock();
+    this.aiPoke();
+  }
+
+  private setWatchState(watch: WatchState): void {
+    this.watch = watch;
+    this.emit({ kind: 'watch', watch });
+  }
+
+  /** A watched game is paused (pausing means nothing once someone plays). */
+  private paused(): boolean {
+    return this.watch.paused && this.phase === 'playing' && isAiOnly(this.state);
+  }
+
+  /** The AIs of the board, as the scoreboard names them (the same level twice: A, B, ...). */
+  private lineup(): Entrant[] {
+    if (!isAiOnly(this.state)) return [];
+    const colors = playersOf(this.state.map);
+    const levels = colors.map((c) => this.state.rules.ai![c as 'white']!.level);
+    return colors.map((color, i) => {
+      const level = levels[i];
+      const twins = levels.filter((l) => l === level).length > 1;
+      const nth = levels.slice(0, i).filter((l) => l === level).length;
+      return { label: AI_LEVEL_NAME[level] + (twins ? ` ${'ABC'[nth]}` : ''), level, color, wins: 0 };
+    });
+  }
+
+  /** The score as it stands for the AIs now on the board (a different lineup: a fresh one). */
+  private tallyNow(): Entrant[] {
+    const lineup = this.lineup();
+    const tally = this.watch.tally;
+    const same = lineup.length === tally.length && lineup.every((e) => tally.some((t) => t.color === e.color && t.level === e.level));
+    return same ? tally : lineup;
+  }
+
+  /** A watched game was just won: a point to the AI that won it. */
+  private noteResult(before: GameState): void {
+    const status = this.state.status;
+    if (before.status.kind !== 'playing' || status.kind !== 'won' || !isAiOnly(this.state)) return;
+    this.setWatchState({ ...this.watch, tally: this.tallyNow().map((e) => (e.color === status.winner ? { ...e, wins: e.wins + 1 } : e)) });
+  }
+
+  /** A new game: what the AIs remembered of the last one goes. */
+  private aiForget(): void {
+    this.aiTried = -1;
+    this.aiRestUntil = {};
+    this.aiDropped = {};
+    this.aiReadyAt = 0;
   }
 
   /** Back to the waiting room with a fresh board and the same rules. */
@@ -221,6 +322,7 @@ export class Authority {
     }
     this.state = result.state;
     this.emit({ kind: 'events', events: result.events, before, after: result.state });
+    this.noteResult(before);
     this.aiNote(result.events);
     this.afterChange(result.events);
     if (this.state.falling?.length) void this.land();
@@ -256,8 +358,11 @@ export class Authority {
 
   /** If an AI has to act, it will, once the screens have caught up (and it has "thought" a moment). */
   private aiPoke(): void {
-    if (this.aiHandle || this.aiActing || !this.aiToAct()) return;
-    const wait = this.aiPace * Math.max(AI_MIN_MS, this.aiReadyAt - this.now());
+    if (this.aiHandle || this.aiActing || this.paused() || !this.aiToAct()) return;
+    // The shows play in full; watching, the pause after them is longer or shorter.
+    const showing = Math.max(0, this.aiReadyAt - this.now());
+    const speed = isAiOnly(this.state) ? this.watch.speed : 'normal';
+    const wait = this.aiPace * (speed === 'slow' ? showing + AI_SLOW_MS : speed === 'fast' ? showing + AI_FAST_MS : Math.max(AI_MIN_MS, showing));
     this.aiHandle = setTimeout(() => {
       this.aiHandle = null;
       void this.aiAct();
@@ -523,6 +628,7 @@ export class Authority {
         const before = this.state;
         this.state = result.state;
         this.emit({ kind: 'events', events: result.events, before, after: result.state });
+        this.noteResult(before);
         this.aiNote(result.events);
         this.aiReadyAt += showMs(parsed.chaos.staging, parsed.chaos.effects);
         // The clock restarts when the GM is done (setBusy below); the show is extra.
@@ -587,7 +693,7 @@ export class Authority {
 
   private resumeClock(emit = true): void {
     const c = this.clock;
-    if (!this.clockActive() || this.busy || c.startedAt !== null) return;
+    if (!this.clockActive() || this.busy || this.paused() || c.startedAt !== null) return;
     c.startedAt = this.now();
     c.handle = setTimeout(() => this.expire(), Math.max(0, c.remaining));
     if (emit) this.emitTimer();

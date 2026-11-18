@@ -25,6 +25,7 @@ import {
   type Session,
   type SessionView,
   type TurnTimer,
+  type WatchSpeed,
 } from './types';
 
 export interface HostOptions {
@@ -116,6 +117,7 @@ export class HostSession implements Session {
       chat: this.chat,
       doodles: this.doodles.doodles,
       chaosReady: !!this.authority.gm.chaos,
+      watch: this.authority.watch,
     };
   }
 
@@ -327,6 +329,14 @@ export class HostSession implements Session {
     this.setRules({ ai: { ...this.authority.state.rules.ai, [color]: seat ?? undefined } });
   }
 
+  setWatch(change: { paused?: boolean; speed?: WatchSpeed }): void {
+    this.authority.setWatch(change);
+  }
+
+  rematch(): void {
+    this.authority.rematch();
+  }
+
   /** The host sends a guest from their seat back to the bench (only that: guests choose seats themselves). */
   assignRole(key: string, role: Role): void {
     const target = this.members.find((m) => m.key === key && !m.host);
@@ -351,7 +361,7 @@ export class HostSession implements Session {
   }
 
   private room(): RoomSnapshot {
-    return { phase: this.authority.phase as Phase, members: this.publicMembers() };
+    return { phase: this.authority.phase as Phase, members: this.publicMembers(), watch: this.authority.watch };
   }
 
   private sendTo(member: Seat, msg: HostMessage): void {
@@ -421,6 +431,9 @@ export class HostSession implements Session {
       case 'timer':
         this.timer = e.timer && { ...e.timer, at: Date.now() };
         this.broadcast({ t: 'timer', timer: e.timer });
+        break;
+      case 'watch':
+        this.broadcast({ t: 'room', room: this.room() });
         break;
     }
     this.emitView();

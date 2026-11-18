@@ -339,6 +339,29 @@ describe('waiting room', () => {
     host.dispose();
   });
 
+  it('a room only AIs play: everyone watches from the bench; the host pauses for all', async () => {
+    const host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', heartbeatMs: 0, aiPace: 0 });
+    const a = join(host, { name: '하나' });
+    await settle();
+    host.takeSeat('spectator');
+    host.setAi('white', { level: 'easy', specials: 'off' });
+    host.setAi('black', { level: 'easy', specials: 'off' });
+    host.start();
+    await settle();
+    expect(host.view()).toMatchObject({ phase: 'playing', seat: 'spectator' });
+    expect(a.guest.view().watch.round).toBe(1);
+    const end = Date.now() + 8000;
+    while (host.view().state.turnNumber < 3 && Date.now() < end) await new Promise((r) => setTimeout(r, 10));
+    host.setWatch({ paused: true });
+    await settle();
+    expect(a.guest.view().watch.paused).toBe(true);
+    // Guests only watch: their pause does nothing.
+    a.guest.setWatch({ paused: false });
+    await settle();
+    expect(host.view().watch.paused).toBe(true);
+    host.dispose();
+  });
+
   it('the host can send a seated guest back to the bench (and only that)', async () => {
     const o = online();
     const watcher = join(o.host, { name: '구경꾼' });

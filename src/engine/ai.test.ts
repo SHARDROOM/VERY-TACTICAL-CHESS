@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aiExile, aiShouldRoll, applyCommand, chooseMove, createInitialState, createStateFrom, squareName, type AiLevel, type Effect, type GameState, type Ruling } from './index';
+import { aiExile, aiShouldRoll, applyCommand, standing, chooseMove, createInitialState, createStateFrom, squareName, type AiLevel, type Effect, type GameState, type Ruling } from './index';
 import { ok, sq } from './testUtil';
 
 const pick = (s: GameState, level: AiLevel, seed = 0.5) => {
@@ -89,3 +89,28 @@ describe('AI rolls for its ruling (aiShouldRoll)', () => {
   });
 });
 
+
+describe("the watchers' standing bar (standing)", () => {
+  it('even at the start, far ahead a queen up, all of it to the winner', () => {
+    const start = standing(createInitialState());
+    expect(start.white).toBeGreaterThan(0.4);
+    expect(start.white).toBeLessThan(0.6);
+    const up = createStateFrom({ e1: { color: 'white', type: 'king' }, e8: { color: 'black', type: 'king' }, d1: { color: 'white', type: 'queen' } }, 'black');
+    expect(standing(up).white).toBeGreaterThan(0.9);
+    expect(standing({ ...up, status: { kind: 'won', winner: 'black' } })).toEqual({ white: 0, black: 1 });
+  });
+
+  it('a capture under way counts as made (no flicker mid-exchange)', () => {
+    // A rook down on the board, but black's rook on a4 hangs to the white queen, white to move: about even.
+    const s = createStateFrom({ e1: { color: 'white', type: 'king' }, e8: { color: 'black', type: 'king' }, d1: { color: 'white', type: 'queen' }, a4: { color: 'black', type: 'rook' }, h7: { color: 'black', type: 'queen' } }, 'white');
+    expect(standing(s).white).toBeGreaterThan(0.4);
+    expect(standing({ ...s, turn: 'black' }).white).toBeLessThan(0.3);
+  });
+
+  it('three sides share it on the hexagon', () => {
+    const shares = standing(createInitialState(undefined, 'hex3'));
+    const total = (shares.white ?? 0) + (shares.black ?? 0) + (shares.red ?? 0);
+    expect(total).toBeCloseTo(1);
+    expect(shares.red).toBeGreaterThan(0.2);
+  });
+});

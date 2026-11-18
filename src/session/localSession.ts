@@ -5,7 +5,7 @@ import { Authority, type AuthorityEvent, type FallSimulator } from './authority'
 import { Emitter } from './emitter';
 import { DoodleStore, type DoodleOp } from './doodle';
 import type { ToyOp } from './toy';
-import { cleanChat, cleanRules, pushChat, type ChatMessage, type Member, type Phase, type Request, type Role, type Session, type SessionView, type TurnTimer } from './types';
+import { cleanChat, cleanRules, pushChat, type ChatMessage, type Member, type Phase, type Request, type Role, type Session, type SessionView, type TurnTimer, type WatchSpeed } from './types';
 
 const LOCAL_KEY = 'local';
 
@@ -61,6 +61,7 @@ export class LocalSession implements Session {
       chat: this.chat,
       doodles: this.doodles.doodles,
       chaosReady: !!this.authority.gm.chaos,
+      watch: this.authority.watch,
     };
   }
 
@@ -113,9 +114,18 @@ export class LocalSession implements Session {
   assignRole(_key: string, _role: Role): void {}
   takeSeat(_role: Role): void {}
 
-  /** One screen: any seat may be an AI's (the rest are this screen's). */
+  /** One screen: any seat may be an AI's (the rest are this screen's), in the waiting room and mid-game. */
   setAi(color: Color, seat: AiSeat | null): void {
+    if (this.authority.phase === 'playing') return this.authority.setAiNow(color, seat);
     this.setRules({ ai: { ...this.view().state.rules.ai, [color]: seat ?? undefined } });
+  }
+
+  setWatch(change: { paused?: boolean; speed?: WatchSpeed }): void {
+    this.authority.setWatch(change);
+  }
+
+  rematch(): void {
+    this.authority.rematch();
   }
 
   dispose(): void {

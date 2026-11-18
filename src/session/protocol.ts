@@ -1,5 +1,5 @@
 import { PROMOTION_TYPES, SQUARES, type GameEvent, type GameState } from '../engine';
-import { cleanChat, cleanName, type ChatMessage, type Member, type NoticeTone, type Phase, type Request, type Role, type TimerSnapshot } from './types';
+import { cleanChat, cleanName, type ChatMessage, type Member, type NoticeTone, type Phase, type Request, type Role, type TimerSnapshot, type WatchState } from './types';
 import { parseDoodleChange, parseDoodleOp, type Doodle, type DoodleChange, type DoodleOp } from './doodle';
 import { parseToyOp, type ToyOp } from './toy';
 
@@ -26,6 +26,8 @@ export type GuestMessage =
 export interface RoomSnapshot {
   phase: Phase;
   members: Member[];
+  /** A game only AIs play: paused, speed, score (older hosts send none). */
+  watch?: WatchState;
 }
 
 export type HostMessage =

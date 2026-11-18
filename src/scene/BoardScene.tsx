@@ -37,6 +37,16 @@ const DPR: [number, number] = typeof matchMedia === 'function' && matchMedia('(p
 /** 'dice' looks at the dice tray beside the board while a roll plays. */
 export type ViewMode = 'side' | 'top' | 'dice';
 
+/** Watching AIs: the camera circles the table and leans toward the last move (`focus`, new each `nonce`). */
+export interface Broadcast {
+  focus: Square | null;
+  nonce: number;
+}
+/** How fast the watching camera circles (radians a second: once round in two minutes). */
+const BROADCAST_TURN = (Math.PI * 2) / 120;
+/** After a touch, the watching camera waits this long before it moves on its own again. */
+const BROADCAST_IDLE_MS = 6000;
+
 export interface CameraRequest {
   mode: ViewMode;
   side: Color;
@@ -86,6 +96,8 @@ interface Props {
   clashOdds?: { at: Square; chance: number }[];
   /** Pieces in mid-fall from the air (shown where they float until the fall plays). */
   falling?: readonly FallingPiece[];
+  /** Watching AIs: the camera moves by itself (until touched). */
+  broadcast?: Broadcast | null;
 }
 
 /** Shakes everything on the table (not the camera, which the player controls) for a moment. */
@@ -316,8 +328,57 @@ function DevProbe({ resting, shown }: { resting: Map<string, Obstacle>; shown: (
   return null;
 }
 
-function CameraRig({ camera, diceSide, locked, holdNow }: { camera: CameraRequest; diceSide: 1 | -1; locked: boolean; holdNow?: MutableRefObject<(on: boolean) => void> }) {
+function CameraRig({
+  camera,
+  diceSide,
+  locked,
+  holdNow,
+  broadcast = null,
+}: {
+  camera: CameraRequest;
+  diceSide: 1 | -1;
+  locked: boolean;
+  holdNow?: MutableRefObject<(on: boolean) => void>;
+  broadcast?: Broadcast | null;
+}) {
   const ref = useRef<CameraControls>(null);
+  // Watching: a hand on the camera stops it moving by itself, until a while after the hand lets go.
+  const touching = useRef(false);
+  const idleUntil = useRef(0);
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    const start = () => (touching.current = true);
+    const end = () => {
+      touching.current = false;
+      idleUntil.current = performance.now() + BROADCAST_IDLE_MS;
+    };
+    c.addEventListener('controlstart', start);
+    c.addEventListener('controlend', end);
+    return () => {
+      c.removeEventListener('controlstart', start);
+      c.removeEventListener('controlend', end);
+    };
+  }, []);
+  // A view asked for (the side view again, the dice, a duel) settles first; the circling picks up from there.
+  useEffect(() => {
+    idleUntil.current = performance.now() + 1500;
+  }, [camera.mode, camera.side, camera.nonce, camera.custom]);
+  const free = !!broadcast && camera.mode === 'side' && !camera.custom && !locked;
+  // It leans toward the last move a moment, then back to the middle.
+  useEffect(() => {
+    const c = ref.current;
+    if (!c || !free || broadcast?.focus == null || touching.current) return;
+    const [x, , z] = squareToWorld(broadcast.focus);
+    void c.setTarget(x * 0.35, 0, z * 0.35, true);
+    const back = window.setTimeout(() => void ref.current?.setTarget(0, 0, 0, true), 3500);
+    return () => window.clearTimeout(back);
+  }, [broadcast?.nonce]);
+  useFrame((_, dt) => {
+    const c = ref.current;
+    if (!c || !free || touching.current || performance.now() < idleUntil.current) return;
+    void c.rotate(BROADCAST_TURN * Math.min(dt, 0.1), 0, false);
+  });
   // Something picked up: stop turning the camera at once (the same touch must not turn it).
   if (holdNow) {
     holdNow.current = (on) => {
@@ -424,6 +485,7 @@ export function BoardScene({
   marks = null,
   clashOdds = NO_ODDS,
   falling = NO_FALLING,
+  broadcast = null,
 }: Props) {
   const resting = useRef(new Map<string, Obstacle>());
   const objects = useRef(new Map<string, Group>());
@@ -505,7 +567,7 @@ export function BoardScene({
       {tour ? (
         <TourCamera diceSide={diceSide} inset={tour.inset} onPhase={tour.onPhase} />
       ) : (
-        <CameraRig camera={camera} diceSide={diceSide} locked={!!doodle?.tool || holding} holdNow={holdNow} />
+        <CameraRig camera={camera} diceSide={diceSide} locked={!!doodle?.tool || holding} holdNow={holdNow} broadcast={broadcast} />
       )}
       <TwoFingerDepth />
       {import.meta.env.DEV && <DevProbe resting={resting.current} shown={hands.piecesShown} />}

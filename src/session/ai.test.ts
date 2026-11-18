@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createInitialState, withDefaultRules, type GameState } from '../engine';
+import { createInitialState, createStateFrom, withDefaultRules, type GameState } from '../engine';
 import { FakeGameMaster } from '../gm/fakeGm';
 import { LocalSession } from './localSession';
 import type { SessionEvent } from './types';
@@ -70,3 +70,66 @@ describe('AI players (hotseat)', () => {
     again.dispose();
   });
 });
+
+describe('watching AIs (docs/SPEC.md, "AI 관전")', () => {
+  const both = { white: { level: 'easy', specials: 'off' }, black: { level: 'easy', specials: 'off' } } as const;
+
+  it('pauses (nothing moves) and carries on', async () => {
+    const local = new LocalSession(new FakeGameMaster(0), { aiPace: 0, chance: Math.random });
+    local.setRules({ ai: both });
+    local.start();
+    expect(local.view().watch).toMatchObject({ paused: false, round: 1 });
+    await until(() => local.view().state.turnNumber >= 3);
+    local.setWatch({ paused: true });
+    await sleep(30);
+    const at = local.view().state.turnNumber;
+    await sleep(120);
+    expect(local.view().state.turnNumber).toBe(at);
+    local.setWatch({ paused: false, speed: 'fast' });
+    expect(local.view().watch).toMatchObject({ paused: false, speed: 'fast' });
+    await until(() => local.view().state.turnNumber >= at + 2);
+    local.dispose();
+  });
+
+  it('scores a win, and the rematch swaps the seats and keeps the score', async () => {
+    // White's queen takes the black king at once.
+    const s = createStateFrom({ e1: { color: 'white', type: 'king' }, e8: { color: 'black', type: 'king' }, e2: { color: 'white', type: 'queen' } }, 'white');
+    const rules = withDefaultRules({ ai: { white: { level: 'normal', specials: 'off' }, black: { level: 'hard', specials: 'off' } } });
+    const local = new LocalSession(new FakeGameMaster(0), { initialState: { ...s, rules }, phase: 'playing', aiPace: 0, chance: () => 0.5 });
+    await until(() => local.view().state.status.kind === 'won');
+    expect(local.view().watch.tally).toEqual([
+      { label: '보통', level: 'normal', color: 'white', wins: 1 },
+      { label: '어려움', level: 'hard', color: 'black', wins: 0 },
+    ]);
+    local.rematch();
+    const v = local.view();
+    expect(v.state.status.kind).toBe('playing');
+    expect(v.state.rules.ai).toEqual({ white: { level: 'hard', specials: 'off' }, black: { level: 'normal', specials: 'off' } });
+    expect(v.watch.tally.map((e) => [e.label, e.color, e.wins])).toEqual([
+      ['보통', 'black', 1],
+      ['어려움', 'white', 0],
+    ]);
+    expect(v.watch.round).toBe(1);
+    local.dispose();
+  });
+
+  it('one screen takes a side over mid-game (no longer only AIs), and hands it back', async () => {
+    const local = new LocalSession(new FakeGameMaster(0), { aiPace: 0, chance: Math.random });
+    local.setRules({ ai: both });
+    local.start();
+    await until(() => local.view().state.turnNumber >= 2);
+    local.setWatch({ paused: true });
+    local.setAi('white', null);
+    expect(local.view().state.rules.ai).toEqual({ black: both.black });
+    // Pausing means nothing once someone plays.
+    expect(local.view().watch.paused).toBe(false);
+    await until(() => local.view().state.turn === 'white');
+    const at = local.view().state.turnNumber;
+    await sleep(60);
+    expect(local.view().state.turnNumber).toBe(at);
+    local.setAi('white', { level: 'easy', specials: 'off' });
+    await until(() => local.view().state.turnNumber > at);
+    local.dispose();
+  });
+});
+

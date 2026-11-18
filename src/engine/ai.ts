@@ -31,6 +31,46 @@ export interface AiSeat {
   specials: AiSpecials;
 }
 
+/** Every seat of the board is an AI's: a game only to watch (docs/SPEC.md, "AI 관전"). */
+export function isAiOnly(state: GameState): boolean {
+  return playersOf(state.map).every((c) => !!state.rules.ai?.[c as 'white']);
+}
+
+/**
+ * How the sides stand, for watchers: each side's share of the game (0..1, adding up to 1). Two
+ * sides: the engine's score with the captures under way played out, through a soft curve (a rook
+ * up is about 80%). The hexagon: each side's material, the same curve. A side without its king has
+ * none; a won game is all the winner's.
+ */
+export function standing(state: GameState): Partial<Record<Color, number>> {
+  setBoardMap(state.map);
+  const colors = playersOf(state.map);
+  const status = state.status;
+  if (status.kind === 'won') return Object.fromEntries(colors.map((c) => [c, c === status.winner ? 1 : 0]));
+  const alive = colors.filter((c) => state.board.some((p) => p?.type === 'king' && p.color === c));
+  let score: Partial<Record<Color, number>>;
+  if (colors.length === 2 && alive.length === 2) {
+    let lead = evaluate(state.board, 'white');
+    try {
+      lead = search(state.board, state.turn, 0, -Infinity, Infinity, { me: 'white', terrain: state.terrain, deadline: performance.now() + 60, quiet: 4, nodes: 0 }, 0);
+    } catch (e) {
+      if (!(e instanceof OutOfTime)) throw e;
+    }
+    score = { white: lead / 2, black: -lead / 2 };
+  } else {
+    score = {};
+    state.board.forEach((p, sq) => {
+      if (p && p.color !== 'gray') score[p.color] = (score[p.color] ?? 0) + worth(p) + placeBonus(p, sq);
+    });
+  }
+  const weight = (c: Color) => (alive.includes(c) ? Math.exp((score[c] ?? 0) / STANDING_SOFTNESS) : 0);
+  const total = colors.reduce((t, c) => t + weight(c), 0) || 1;
+  return Object.fromEntries(colors.map((c) => [c, weight(c) / total]));
+}
+
+/** How soft the watchers' bar is: a lead of this much (pawns) between two sides is e (2.7) to 1. */
+const STANDING_SOFTNESS = 3.6;
+
 /** A normal move the AI makes (`to` null: it ends its turn, e.g. stopping a run of moves). */
 export interface AiMove {
   from: Square;

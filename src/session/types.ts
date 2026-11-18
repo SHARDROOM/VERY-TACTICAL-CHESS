@@ -1,4 +1,4 @@
-import type { AiSeat, Color, GameEvent, GameState, PromotionType, RuleConfig, Square } from '../engine';
+import type { AiLevel, AiSeat, Color, GameEvent, GameState, PromotionType, RuleConfig, Square } from '../engine';
 import { cleanAiSeats } from '../engine';
 import type { GameMaster } from '../gm/types';
 import type { Doodle, DoodleOp } from './doodle';
@@ -87,6 +87,29 @@ export interface ChatMessage {
   text: string;
 }
 
+/** How fast the AIs of a watched game go: the pause between moves (the shows play in full). */
+export type WatchSpeed = 'slow' | 'normal' | 'fast';
+export const WATCH_SPEEDS: readonly WatchSpeed[] = ['slow', 'normal', 'fast'];
+
+/** One AI of a watched series: its name on the scoreboard, the seat it plays now, its wins. */
+export interface Entrant {
+  label: string;
+  level: AiLevel;
+  color: Color;
+  wins: number;
+}
+
+/** A game only AIs play (docs/SPEC.md, "AI 관전"): paused or not, how fast, the score so far, and which game this is. */
+export interface WatchState {
+  paused: boolean;
+  speed: WatchSpeed;
+  tally: Entrant[];
+  /** Counts games started (a rematch is a new game on the same screen). */
+  round: number;
+}
+
+export const WATCH_DEFAULT: WatchState = { paused: false, speed: 'normal', tally: [], round: 0 };
+
 export interface SessionView {
   state: GameState;
   seat: Seat;
@@ -104,6 +127,8 @@ export interface SessionView {
   doodles: Doodle[];
   /** The GM can make chaos events (a real API GM). Only meaningful on the authority. */
   chaosReady: boolean;
+  /** For a game only AIs play: pause, speed, the score of the series. */
+  watch: WatchState;
 }
 
 export type NoticeTone = 'normal' | 'warn' | 'error';
@@ -138,8 +163,15 @@ export interface Session {
   takeSeat(role: Role): void;
   /** Authority only: send a member from their seat back to the waiting bench. */
   assignRole(key: string, role: Role): void;
-  /** Authority only, in the waiting room: an AI in this seat (null: the seat is free again). */
+  /**
+   * Authority only, in the waiting room: an AI in this seat (null: the seat is free again). On one
+   * screen also mid-game: take a side over from its AI, or hand it to one.
+   */
   setAi(color: Color, seat: AiSeat | null): void;
+  /** Authority only, a game only AIs play: pause it, or change how fast they go. */
+  setWatch(change: { paused?: boolean; speed?: WatchSpeed }): void;
+  /** Authority only, after a game only AIs played: the next one at once, the AIs one seat on. */
+  rematch(): void;
   dispose(): void;
 }
 

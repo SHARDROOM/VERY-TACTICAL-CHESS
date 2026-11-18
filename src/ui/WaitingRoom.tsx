@@ -48,6 +48,12 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
   // AI special actions cost GM API calls (an API GM only: the fake GM is free).
   const aiSpends = host && view.chaosReady && seats.some((c) => (aiOf(c)?.specials ?? 'off') !== 'off');
   const bench = view.members.filter((m) => m.role === 'spectator');
+  // Watching AIs (every seat an AI's): the hexagon's third seat gets one too.
+  const watching = seats.every((c) => !!aiOf(c));
+  const pickMap = (map: 'classic' | 'hex3') => {
+    const third = map === 'hex3' && watching && !rules.ai?.red ? { ai: { ...rules.ai, red: { level: 'normal' as const, specials: 'some' as const } } } : {};
+    session.setRules({ map, ...third });
+  };
   const canStart = !online || emptySeats.length === 0;
   const connected = view.connection.kind === 'local' || view.connection.kind === 'hosting' || view.connection.kind === 'connected';
   const inset = useMemo(() => ({ left: 0, top: 0, bottom: 0 }), []);
@@ -243,7 +249,7 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
                 <div className="rules-form">
                   <label className="field">
                     <span>판</span>
-                    <select value={rules.map} onChange={(e) => set({ map: e.target.value === 'hex3' ? 'hex3' : 'classic' })}>
+                    <select value={rules.map} onChange={(e) => pickMap(e.target.value === 'hex3' ? 'hex3' : 'classic')}>
                       <option value="classic">보통 체스판 (2인)</option>
                       <option value="hex3">육각 판 (3인)</option>
                     </select>
