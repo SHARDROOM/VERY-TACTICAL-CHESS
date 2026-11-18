@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aiExile, aiShouldRoll, applyCommand, standing, chooseMove, createInitialState, createStateFrom, squareName, type AiLevel, type Effect, type GameState, type Ruling } from './index';
+import { aiExile, aiHints, aiShouldRoll, applyCommand, clashBuffs, clashCaptures, standing, chooseMove, createInitialState, createStateFrom, squareName, type AiLevel, type Effect, type GameState, type Ruling } from './index';
 import { ok, sq } from './testUtil';
 
 const pick = (s: GameState, level: AiLevel, seed = 0.5) => {
@@ -112,5 +112,50 @@ describe("the watchers' standing bar (standing)", () => {
     const total = (shares.white ?? 0) + (shares.black ?? 0) + (shares.red ?? 0);
     expect(total).toBeCloseTo(1);
     expect(shares.red).toBeGreaterThan(0.2);
+  });
+});
+
+describe('clashes in what the AI is told (clashCaptures, clashBuffs, aiHints)', () => {
+  // White's d4 piece next to a black rook with 검술 ×1.5 (×1.8 in a clash).
+  const pos = (attacker: 'pawn' | 'queen'): GameState => {
+    const s = createStateFrom({ a1: { color: 'white', type: 'king' }, h8: { color: 'black', type: 'king' }, d4: { color: 'white', type: attacker }, e5: { color: 'black', type: 'rook' }, a7: { color: 'black', type: 'pawn' } }, 'white');
+    const board = [...s.board];
+    board[sq('e5')] = { ...board[sq('e5')]!, tags: [{ name: '검술', turnsLeft: null, appliedOnTurn: 0, clash: 1.5 }] };
+    return { ...s, board };
+  };
+
+  it('a capture into a clash has its odds: a pawn seldom wins, a queen 40% and has more to lose', () => {
+    const [pawn] = clashCaptures(pos('pawn'), 'white');
+    expect(pawn).toMatchObject({ from: sq('d4'), to: sq('e5'), attack: 0.8, defense: 1.8 });
+    expect(pawn.chance).toBeLessThan(0.1);
+    expect(pawn.gain).toBeLessThan(0);
+    const [queen] = clashCaptures(pos('queen'), 'white');
+    expect(queen.chance).toBeCloseTo(0.4, 1);
+    expect(queen.gain).toBeLessThan(0);
+  });
+
+  it('a ×2 buff makes the pawn worth sending; ×1.4 does not', () => {
+    const [plan] = clashBuffs(pos('pawn'), 'white', 2);
+    expect(plan).toMatchObject({ from: sq('d4'), to: sq('e5') });
+    expect(plan.buffedChance).toBeGreaterThan(0.35);
+    expect(plan.buffedGain).toBeGreaterThan(0);
+    expect(clashBuffs(pos('pawn'), 'white', 1.4)).toEqual([]);
+  });
+
+  it("a ruling that walks into the clash counts the clash's odds (not a sure win)", () => {
+    const ruling = (effects: Effect[]): Ruling => ({ interpretation: 'x', feasible: true, dc: 7, cost: 2, actor: sq('d4'), means: 'touch', effects, narration: { success: 's', failure: 'f' } });
+    const propose = (effects: Effect[]) => ok(applyCommand({ ...pos('pawn'), ap: { ...pos('pawn').ap, white: 4 } }, { type: 'proposeSpecial', action: 'x', ruling: ruling(effects) })).state;
+    const sword: Effect = { type: 'tag', at: sq('e5'), tag: '검술', turns: 0, clash: 1.5 };
+    // The pawn charges first (×0.8 against ×1.8: 7%), the sword comes after: not worth it.
+    expect(aiShouldRoll(propose([{ type: 'move', from: sq('d4'), to: sq('e5') }, sword]), 'hard')).toBe(false);
+    // Shot from afar: no clash at all.
+    expect(aiShouldRoll(propose([{ type: 'remove', at: sq('e5') }]), 'hard')).toBe(true);
+  });
+
+  it('the hints never call such a rook a free capture, and give the odds and the plan', () => {
+    const hints = aiHints(pos('pawn'), 'white').join('\n');
+    expect(hints).not.toMatch(/기회/);
+    expect(hints).toMatch(/합 표적.*e5 룩 ×1\.8\(검술\).*d4 폰 ×0\.8의 승률 7%/);
+    expect(hints).toMatch(/합 계획.*d4 폰에 합 배율 태그를 주면 e5 룩을\(를\) 잡을 확률 7% → ×2면 \d+%\(배율 판정 DC 9 성공까지 치면 약 \d+%\)/);
   });
 });

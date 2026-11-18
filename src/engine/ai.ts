@@ -1,4 +1,4 @@
-import { canResist, clashMultiplier, clashWinChance } from './clash';
+import { CLASH_ROLLS, canResist, clashMultiplier, clashWinChance } from './clash';
 import { saverFor } from './guard';
 import { legalTargets, movesFrom } from './moves';
 import { planeOf, playersOf, promotesOn, rankOf, isAir, setBoardMap, isHex } from './squares';
@@ -345,13 +345,82 @@ import { distance, squareName } from './squares';
 
 const KIND_KO: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
 
+/** A capture of `me`'s that would be a clash (합): the target wears clash gear or a shield. */
+export interface ClashCapture {
+  from: Square;
+  to: Square;
+  /** The attacker's multiplier and the defender's, as the clash counts them. */
+  attack: number;
+  defense: number;
+  /** The chance the attacker wins (a shield: only the shield breaks then). */
+  chance: number;
+  shield: boolean;
+  /** What trying it is worth, about (pawns): winning takes the piece (or its shield), losing loses the attacker. */
+  gain: number;
+}
+
+/** What a capture into a clash is worth, about: `chance` of taking it (or its shield), the rest losing the attacker. */
+function clashGain(attacker: Piece, victim: Piece, chance: number): number {
+  return chance * (hasTag(victim, SHIELD) ? 0.6 : worth(victim)) - (1 - chance) * worth(attacker);
+}
+
+/** `piece` with one more multiplier tag (a buff it could be given). */
+const buffed = (piece: Piece, by: number): Piece => ({ ...piece, tags: [...(piece.tags ?? []), { name: '버프', turnsLeft: 1, appliedOnTurn: 0, clash: by }] });
+
+/** Every capture `me` could try now that would be a clash, with its odds and what it is worth. */
+export function clashCaptures(state: GameState, me: Color): ClashCapture[] {
+  setBoardMap(state.map);
+  const { board, terrain } = state;
+  const out: ClashCapture[] = [];
+  board.forEach((p, from) => {
+    if (p?.color !== me) return;
+    for (const to of movesFrom(board, from, terrain)) {
+      const victim = board[to];
+      if (!victim || victim.color === me || victim.type === 'king' || !canResist(victim)) continue;
+      const attack = clashMultiplier(p);
+      const defense = clashMultiplier(victim);
+      const chance = clashWinChance(attack, defense);
+      out.push({ from, to, attack, defense, chance, shield: hasTag(victim, SHIELD), gain: clashGain(p, victim, chance) });
+    }
+  });
+  return out.sort((a, b) => b.gain - a.gain);
+}
+
+/**
+ * Clash captures a buff would make worth trying: the attacker given a ×`by` multiplier (a 1-turn tag)
+ * and the odds then. Only those worth half a pawn or more after it, that were not before (or gain
+ * a pawn or more).
+ */
+export function clashBuffs(state: GameState, me: Color, by: number): (ClashCapture & { buffedChance: number; buffedGain: number })[] {
+  const { board } = state;
+  return clashCaptures(state, me)
+    .map((c) => {
+      const attacker = buffed(board[c.from]!, by);
+      const buffedChance = clashWinChance(clashMultiplier(attacker), c.defense);
+      return { ...c, buffedChance, buffedGain: clashGain(board[c.from]!, board[c.to]!, buffedChance) };
+    })
+    .filter((c) => c.buffedGain >= 0.5 && (c.gain <= 0 || c.buffedGain - c.gain >= 1))
+    .sort((a, b) => b.buffedGain - b.gain - (a.buffedGain - a.gain));
+}
+
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+/** Buffs the hints weigh: a 1-turn multiplier tag and the DC the GM's guide gives it. */
+const BUFF_DC: readonly [number, number][] = [
+  [1.4, 8],
+  [2.0, 9],
+];
+const mult = (x: number) => `×${Math.round(x * 100) / 100}`;
+
 /**
  * What the engine sees for `me`, in a few lines for the LLM that makes up the AI's declarations:
- * its pieces under attack and not covered (위험), and others' it attacks that are not (기회).
+ * its pieces under attack and not covered (위험), others' it can take for free (기회), captures
+ * that would be clashes and their odds (합 표적), buffs that would make one worth it (합 계획),
+ * the most valuable near targets, and the standing.
  */
 export function aiHints(state: GameState, me: Color): string[] {
   setBoardMap(state.map);
   const { board, terrain } = state;
+  const name = (sq: Square) => `${squareName(sq)} ${KIND_KO[board[sq]!.type]}`;
   const danger: string[] = [];
   const chance: string[] = [];
   board.forEach((p, sq) => {
@@ -360,12 +429,44 @@ export function aiHints(state: GameState, me: Color): string[] {
     const hit = others.some((c) => isAttacked(board, sq, c, terrain));
     if (!hit) return;
     const covered = isAttacked(board.map((x, i) => (i === sq ? null : x)), sq, p.color, terrain);
-    if (p.color === me && !covered) danger.push(`${squareName(sq)} ${KIND_KO[p.type]}`);
-    else if (p.color !== me && !covered && isAttacked(board, sq, me, terrain)) chance.push(`${squareName(sq)} ${KIND_KO[p.type]}`);
+    if (p.color === me && !covered) {
+      // Its own clash gear holds them off: how likely the best of them is to win.
+      if (canResist(p)) {
+        const best = Math.max(...others.flatMap((c) => clashCaptures(state, c).filter((x) => x.to === sq).map((x) => x.chance)), 0);
+        danger.push(`${name(sq)}(합으로 버팀, 덤비는 쪽 승률 최대 ${pct(best)})`);
+      } else danger.push(name(sq));
+    } else if (p.color !== me && !covered && !canResist(p) && isAttacked(board, sq, me, terrain)) chance.push(name(sq));
   });
   const out: string[] = [];
   if (danger.length) out.push(`위험(공격받는데 지켜 주는 기물이 없음): ${danger.slice(0, 4).join(', ')}`);
   if (chance.length) out.push(`기회(공짜로 잡을 수 있음): ${chance.slice(0, 4).join(', ')}`);
+  // Captures into a clash: the odds of each attacker, by target.
+  const clashes = clashCaptures(state, me);
+  const byTarget = new Map<Square, ClashCapture[]>();
+  for (const c of clashes) byTarget.set(c.to, [...(byTarget.get(c.to) ?? []), c]);
+  const lines = [...byTarget.entries()].slice(0, 3).map(([to, list]) => {
+    const tagged = (board[to]!.tags ?? []).filter((t) => t.clash || t.name === SHIELD).map((t) => t.name).join('·');
+    const tries = list.slice(0, 3).map((c) => `내 ${name(c.from)} ${mult(c.attack)}의 승률 ${pct(c.chance)}${c.gain > 0 ? '(해 볼 만함)' : ''}`);
+    return `${name(to)} ${mult(list[0].defense)}${tagged ? `(${tagged})` : ''}: ${tries.join(' / ')}`;
+  });
+  if (lines.length) out.push(`합 표적(잡으려 하면 합이 일어남, 지면 공격한 기물이 잡힘): ${lines.join('; ')}`);
+  // Buffs that would turn one of them: the multipliers a 1-turn tag could add (a small one, a big one),
+  // the odds then, and with the buff's own roll counted (the GM's usual DC for a 1-turn tag that big).
+  const plans = new Map<string, { from: Square; to: Square; chance: number; odds: string[] }>();
+  for (const [by, dc] of BUFF_DC) {
+    for (const c of clashBuffs(state, me, by)) {
+      const key = `${c.from}-${c.to}`;
+      const plan = plans.get(key) ?? { from: c.from, to: c.to, chance: c.chance, odds: [] };
+      plan.odds.push(`×${by}면 ${pct(c.buffedChance)}(배율 판정 DC ${dc} 성공까지 치면 약 ${pct(c.buffedChance * odds(dc, 0).win)})`);
+      plans.set(key, plan);
+    }
+  }
+  const planLines = [...plans.values()].slice(0, 2).map((c) => `${name(c.from)}에 합 배율 태그를 주면 ${name(c.to)}을(를) 잡을 확률 ${pct(c.chance)} → ${c.odds.join(', ')}`);
+  if (planLines.length) {
+    out.push(
+      `합 계획(특수 행동으로 배율을 얻고 같은 턴에 바로 잡으러 갈 수 있음. 이번 턴만 쓸 1턴짜리 배율이 영구보다 DC가 2 낮고 쌈. 합이 없는 원거리 제거와 비교해 고르세요): ${planLines.join('; ')}`,
+    );
+  }
   const near = targetsFor(board, me, 3);
   if (near.length) out.push(`노릴 만한 표적(값지고 가까운 순): ${near.join(', ')}`);
   out.push(`판세(엔진 점수, +면 유리): ${evaluate(board, me).toFixed(1)}`);
@@ -378,6 +479,10 @@ function odds(dc: number, bonus: number): { win: number; fumble: number } {
   for (let a = 1; a <= 6; a++) for (let b = 1; b <= 6; b++) if (a + b !== 2 && a + b + bonus >= dc) wins++;
   return { win: wins / 36, fumble: 1 / 36 };
 }
+
+/** Clash dice that make the attacker win every round (6·6 against 1·1), or lose every round. */
+const ATTACKER_WINS: readonly number[] = Array.from({ length: CLASH_ROLLS }, (_, i) => [6, 6, 1, 1][i % 4]);
+const DEFENDER_WINS: readonly number[] = Array.from({ length: CLASH_ROLLS }, (_, i) => [1, 1, 6, 6][i % 4]);
 
 /**
  * What one AP is worth on the board, roughly (a pawn is 1). AP is good for nothing but special
@@ -440,20 +545,36 @@ export function aiShouldRoll(state: GameState, level: AiLevel, now: () => number
     clash: { mode: 'check' as const },
     ...(pending.ruling.actor != null && { actor: pending.ruling.actor }),
   };
-  const tryOut = (effects: Parameters<typeof applyEffects>[1]) => {
-    const r = effects.length ? applyEffects(start, effects, ctx) : null;
-    return r?.ok ? { board: r.board, terrain: r.terrain } : { board: start, terrain: state.terrain };
+  type Outcome = { board: Board; terrain: readonly TerrainCell[] | undefined; p: number };
+  // The effects tried out on the board. One that walks into a clash (합) can go either way: both are
+  // played out (the dice forced), weighed by the clash's odds as the effects stand at that point.
+  const tryOut = (effects: Parameters<typeof applyEffects>[1]): Outcome[] => {
+    const nothing = [{ board: start, terrain: state.terrain, p: 1 }];
+    if (!effects.length) return nothing;
+    const play = (rolls: readonly number[]) => applyEffects(start, effects, { ...ctx, clash: { mode: 'play', rolls } });
+    const won = play(ATTACKER_WINS);
+    if (!won.ok) {
+      const r = applyEffects(start, effects, ctx);
+      return r.ok ? [{ board: r.board, terrain: r.terrain, p: 1 }] : nothing;
+    }
+    const clashes = won.events.filter((e): e is Extract<typeof e, { type: 'clash' }> => e.type === 'clash');
+    if (!clashes.length) return [{ board: won.board, terrain: won.terrain, p: 1 }];
+    const p = clashes.reduce((q, c) => q * clashWinChance(c.attack, c.defense), 1);
+    const lost = play(DEFENDER_WINS);
+    return [{ board: won.board, terrain: won.terrain, p }, ...(lost.ok ? [{ board: lost.board, terrain: lost.terrain, p: 1 - p }] : [])];
   };
-  const won = tryOut(pending.ruling.effects);
+  const success = tryOut(pending.ruling.effects);
   const backfire = tryOut(pending.ruling.critFailureEffects ?? []);
-  const [base, stay, success, fumbled] = lookAhead(
-    [state.board, start, won.board, backfire.board],
+  const values = lookAhead(
+    [state.board, start, ...success.map((o) => o.board), ...backfire.map((o) => o.board)],
     me,
-    [state.terrain, state.terrain, won.terrain, backfire.terrain],
+    [state.terrain, state.terrain, ...success.map((o) => o.terrain), ...backfire.map((o) => o.terrain)],
     level === 'master' ? 900 : 500,
     now,
   );
-  const expected = win * success + fumble * fumbled + (1 - win - fumble) * stay;
+  const [base, stay] = values;
+  const mix = (outcomes: Outcome[], from: number) => outcomes.reduce((v, o, i) => v + o.p * values[from + i], 0);
+  const expected = win * mix(success, 2) + fumble * mix(backfire, 2 + success.length) + (1 - win - fumble) * stay;
   // With AP to spare, spending some costs less.
   const apWorth = state.ap[me] - cost >= 2 ? AP_WORTH / 2 : AP_WORTH;
   return expected - base > cost * apWorth;

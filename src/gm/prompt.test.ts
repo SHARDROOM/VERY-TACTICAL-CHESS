@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ACTS, ELEMENTS, ENTRANCES, EXITS, FX_SHAPES, MOTION_STYLES, createStateFrom, parseSquare, withDefaultRules } from '../engine';
 import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
-import { buildPlayerUserMessage } from './player';
+import { buildPlayerSystemPrompt, buildPlayerUserMessage } from './player';
 import { fakeDeclaration } from './fakeGm';
 
 const rules = withDefaultRules({});
@@ -116,6 +116,14 @@ describe("an AI player's declaration", () => {
     );
     return { ...s, ap: { ...s.ap, black: 2 } };
   };
+
+  it('the AI player is told how clashes go (and that a buff can come before the capture)', () => {
+    const sys = buildPlayerSystemPrompt();
+    expect(sys).toContain('합(싸움) 규칙');
+    expect(sys).toContain('폰 ×0.8');
+    expect(sys).toContain('검술 ×1.5인 폰은 ×1.2');
+    expect(sys).toContain('같은 턴에 바로 그 기물로 잡으러 갈 수 있습니다');
+  });
 
   it('the prompt says what it can spend and how hard a ruling it would roll', () => {
     const msg = buildPlayerUserMessage({ state: state(), color: 'black', style: 'playful', hints: [], maxDc: 8 });

@@ -1,4 +1,4 @@
-import { AIR, SQUARE_PATTERN, distance, isAttacked, parseSquare, playersOf, squareName, type GameState, type AttachPoint, type Board, type Color, type Means, type PieceType, type PropPreset, type Square } from '../engine';
+import { AIR, SQUARE_PATTERN, clashBuffs, distance, isAttacked, parseSquare, playersOf, squareName, type GameState, type AttachPoint, type Board, type Color, type Means, type PieceType, type PropPreset, type Square } from '../engine';
 import type { GameMaster, GmRequest, GmRulingJson } from './types';
 import type { ActRequest } from './player';
 import { josa } from '../ui/josa';
@@ -73,7 +73,8 @@ const WORTH: Record<PieceType, number> = { pawn: 1, knight: 3, bishop: 3, rook: 
 
 /**
  * A declaration an AI player could make with the fake GM: a shield on a piece in danger, a shot at
- * one of the others' pieces, or a stun (on one that threatens its own, best), whichever is worth
+ * one of the others' pieces, a stun (on one that threatens its own, best), or a sword for a piece
+ * that would then win a clash it would lose now, whichever is worth
  * the most for its odds, among those its AP pays for and not harder than `maxDc`. Null: none fits.
  */
 export function fakeDeclaration(
@@ -108,6 +109,11 @@ export function fakeDeclaration(
       const threat = mine.some((x) => isAttacked(state.board.map((p, i) => (i === t.sq || p?.color !== t.color ? p : null)), x.sq, t.color, state.terrain));
       options.push({ text: `${who(m)} 주문으로 ${whom(t)} 기절시킨다`, dc: far > 2 ? 9 : 7, cost: 1, value: WORTH[t.type] * (threat ? 0.5 : 0.2) });
     }
+  }
+  // Arms for a piece that would then win a clash it would lose now (this GM: 검술 ×1.5 for good, DC 9, AP 3).
+  for (const c of clashBuffs(state, color, 1.5)) {
+    const m = mine.find((x) => x.sq === c.from);
+    if (m) options.push({ text: `${who(m)} 검술을 익힌다`, dc: 9, cost: 3, value: c.buffedGain - Math.max(0, c.gain) + 0.75 });
   }
   const fit = options.filter((o) => o.cost <= ap && o.dc <= maxDc);
   if (!fit.length) return null;

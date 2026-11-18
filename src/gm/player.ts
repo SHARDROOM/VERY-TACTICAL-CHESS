@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Color, GameState } from '../engine';
+import { BASE_CLASH, type Color, type GameState, type PieceType } from '../engine';
 import { situationText } from './prompt';
 
 /*
@@ -31,6 +31,11 @@ export const GM_PLAYER_JSON_SCHEMA = {
 } as const;
 
 const COLOR: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
+const KIND: Record<PieceType, string> = { pawn: '폰', knight: '나이트', bishop: '비숍', rook: '룩', queen: '퀸', king: '킹' };
+/** A piece's base clash multiplier times a tag's, as the clash counts it. */
+const times = (base: number, tag: number) => Math.round(base * tag * 100) / 100;
+/** "폰 ×0.8, 나이트 ×1, ..." */
+const BASE_LIST = (['pawn', 'knight', 'bishop', 'rook', 'queen'] as const).map((t) => `${KIND[t]} ×${BASE_CLASH[t]}`).join(', ');
 
 export function buildPlayerSystemPrompt(): string {
   return `당신은 "아주 전략적인 체스"를 두는 AI 플레이어입니다. 이 게임은 체스에 TRPG를 더했습니다: 일반 수 말고도 AP를 써서 자유로운 "특수 행동"을 한국어 문장으로 선언하면, GM이 난이도(DC)와 효과를 정하고 주사위 2개로 판정합니다.
@@ -43,6 +48,13 @@ export function buildPlayerSystemPrompt(): string {
 - 킹은 어떤 행동으로도 잡거나 없앨 수 없습니다. 킹을 노리는 선언은 하지 마세요.
 - 쓸 수 있는 행동의 예: 보호막 두르기, 기절시키기, 불화살로 맞히기, 돌진, 투석기로 날리기, 벽이나 구덩이 만들기, 회유해 편 바꾸기, 검술 같은 싸움 실력(합 배율) 얻기, 공중부양, 다른 기물처럼 움직이기, 원호·인질·행동대장·혼란 태그, 유해 위에서 되살리기, 이웃 기물 흡수(융합), 제물 바치기.
 - 비싸고 어려운 행동은 실패하기 쉽습니다. 내 AP 안에서 해 볼 만한 것을 고르세요.
+
+합(싸움) 규칙:
+- 배율 태그(검술 ×1.5 같은)나 보호막이 있는 기물을 일반 수로 잡으려 하면 합이 일어납니다. 양쪽이 주사위 2개의 합 × 배율을 비교해 큰 쪽이 이기고, 공격 쪽이 지면 공격한 기물이 잡힙니다. 보호막은 지면 보호막만 깨집니다.
+- 기본 배율: ${BASE_LIST}. 태그 배율은 여기에 곱합니다(검술 ×1.5인 폰은 ×${times(BASE_CLASH.pawn, 1.5)}). 그래서 약한 기물로 합 장비를 가진 강한 기물을 잡기는 어렵습니다.
+- 저격·제거 같은 원거리·주문 효과에는 합이 없습니다. 합 장비를 가진 상대는 쏘거나 기절시키는 것도 방법입니다.
+- 특수 행동을 한 턴에도 일반 수를 둘 수 있습니다. 내 기물에 배율 태그를 주고 같은 턴에 바로 그 기물로 잡으러 갈 수 있습니다. "엔진이 본 것"의 합 표적과 합 계획에 승률이 나옵니다.
+- 배율 태그의 GM 기준: ×1.2~1.4는 DC 7~8·AP 2, ×1.5~2.0은 DC 9~10·AP 3(영구면 DC +2).
 - 60자 이내 한국어 한 문장. 설명이나 다른 말은 쓰지 마세요.`;
 }
 
