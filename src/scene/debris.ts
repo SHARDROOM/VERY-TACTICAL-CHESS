@@ -37,6 +37,19 @@ export interface Chunk {
 }
 
 const chunks = new Map<string, Chunk>();
+/** When each shattered piece's chunks began to fly (performance.now() ms): until then the piece itself stays whole. */
+const bursts = new Map<string, number>();
+
+/** The chunks of `pieceId` start breaking away at `start`. */
+export function markBurst(pieceId: string, start: number): void {
+  bursts.set(pieceId, start);
+}
+
+/** Whether the piece has broken apart yet (its chunks are out): before that it is still shown whole. */
+export const burstBegun = (pieceId: string, now: number): boolean => {
+  const t = bursts.get(pieceId);
+  return t !== undefined && now >= t;
+};
 
 export const chunkKey = (pieceId: string, index: number) => `${pieceId}#${index}`;
 
@@ -56,10 +69,12 @@ export function chunksOf(pieceId: string): Chunk[] {
 /** Every chunk gone (the table is cleared). */
 export function clearChunks(): void {
   chunks.clear();
+  bursts.clear();
 }
 
 export function removeChunks(pieceId: string): void {
   for (const c of chunksOf(pieceId)) chunks.delete(c.key);
+  bursts.delete(pieceId);
 }
 
 /** Every chunk, for a simulation (steady ones only: one being held or still flying stays out). */

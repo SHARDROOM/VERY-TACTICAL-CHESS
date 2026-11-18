@@ -5,7 +5,7 @@ import { IcosahedronGeometry, LatheGeometry, MeshBasicMaterial, Quaternion, Vect
 import type { Color, PieceType } from '../engine';
 import { featureParts } from './pieceGeometry';
 import { fragmentsOf, simulateChunkThrow, simulateShatter } from './shatter';
-import { CHUNK, addChunk, chunkKey, chunkPose, chunkWaiting, chunksOf, getChunk, playChunk, removeChunks, type Chunk } from './debris';
+import { markBurst, CHUNK, addChunk, chunkKey, chunkPose, chunkWaiting, chunksOf, getChunk, playChunk, removeChunks, type Chunk } from './debris';
 import { onToy, poseOf, readPose, tellToy } from './toys';
 import type { Pose } from '../session/toy';
 import { Grip, holdingSomething, onDepth, tableObstacles, useTable } from './tableDrag';
@@ -85,33 +85,46 @@ const FLECK = new IcosahedronGeometry(1, 0).scale(0.03, 0.02, 0.03);
  * performance.now() ms `start`) the burst plays, without it they just lie there. Drawn in world
  * space. A tap on a chunk goes through to the square under it.
  */
-export function ShardScatter({ type, color, id, center, square, burst }: {
+export function ShardScatter({ type, color, id, center, square, burst, facing = 0 }: {
   type: PieceType;
   color: Color;
   id: string;
   center: [number, number, number];
   square: number;
-  burst?: { start: number } | null;
+  /**
+   * When it breaks: { start } (performance.now() ms, the blow lands); 'pending': it is about to
+   * (the moment is not known yet: wait for it); null: it broke long ago (they just lie there).
+   */
+  burst?: { start: number } | 'pending' | null;
+  /** How the piece was turned about the vertical, so its chunks start exactly where they were in it. */
+  facing?: number;
 }) {
   const fragments = useMemo(() => fragmentsOf(type), [type]);
   const table = useTable();
   const [cx, cy, cz] = center;
   const [ready, setReady] = useState(() => chunksOf(id).length > 0);
+  const startAt = burst === 'pending' ? undefined : burst ? burst.start : 0;
   useEffect(() => {
     // Already lying about (shown before): they stay where they are.
     if (chunksOf(id).length) return setReady(true);
+    // About to break, but the blow's moment is not known yet.
+    if (startAt === undefined) return;
     let alive = true;
-    simulateShatter(type, id, [cx, cy, cz], table ? tableObstacles(table, { square }) : undefined)
+    simulateShatter(type, id, [cx, cy, cz], table ? tableObstacles(table, { square }) : undefined, facing)
       .then((run) => {
         if (!alive) return;
         if (!chunksOf(id).length) {
+          // Never in the past: a simulation that took a while still plays its whole break (the
+          // piece stays whole until then, see PieceMesh), rather than the chunks popping up at rest.
+          const start = startAt === 0 ? 0 : Math.max(startAt, performance.now() + 16);
           fragments.forEach((f, i) => {
             const frames = run.tracks[i];
             if (!frames) return;
             const c = { key: chunkKey(id, i), pieceId: id, index: i, hull: f.hull, p: new Vector3(), q: new Quaternion() };
-            playChunk(c, frames, run.steps, run.dt, burst?.start ?? 0);
+            playChunk(c, frames, run.steps, run.dt, start);
             addChunk(c);
           });
+          markBurst(id, start);
         }
         setReady(true);
       })
@@ -119,9 +132,8 @@ export function ShardScatter({ type, color, id, center, square, burst }: {
     return () => {
       alive = false;
     };
-    // The burst's moment is read once, when it starts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, id, cx, cy, cz]);
+  }, [type, id, cx, cy, cz, startAt]);
   const refs = useRef<(Mesh | null)[]>([]);
   const look = LOOK[color];
   const drag = useRef<{ key: string; x: number; y: number; moved: boolean; grip: Grip; grab: Vector3; target: Vector3; released: boolean } | null>(null);

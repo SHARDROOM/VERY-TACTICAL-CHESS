@@ -11,7 +11,7 @@ import { actPose, easeInOut, entrancePose, stylePose, swapPose, swerve, type Pie
 import { AIR_Y, squareToWorld } from './coords';
 import { finishMaterial, type Finish } from './pieceFinish';
 import { AshPile, GATHER_SECONDS, Relic, SHATTER_SECONDS, ShardGather, ShardScatter, SmokeWisp } from './Remains';
-import { chunksOf } from './debris';
+import { burstBegun, chunksOf } from './debris';
 import { seedOf, seeded } from './boardPhysics';
 import { Grip, holdingSomething, onDepth, tableObstacles, useTable } from './tableDrag';
 import { LiveDrag } from './liveDrag';
@@ -371,6 +371,11 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const [exiting, setExiting] = useState<{ kind: Exit; start: number; from: [number, number, number] } | null>(null);
   const exitingRef = useRef(exiting);
   exitingRef.current = exiting;
+  /** A shattering piece's chunks have broken away (until then it is shown whole). */
+  const [shardsOut, setShardsOut] = useState(false);
+  const shardsOutRef = useRef(false);
+  /** Mounted already taken (a reload): its chunks just lie there; taken while shown: they break away. */
+  const takenAtMount = useRef(captured);
   const bobPhase = useRef(Math.random() * 6);
   /** The recording this piece last played (so it settles back once only). */
   const puppetDone = useRef<unknown>(null);
@@ -600,6 +605,8 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   /** Burns down, shatters, vanishes or sinks on the spot `from`, then turns up beside the board at `to`. */
   const beginExit = (exit: Exit, from: Vector3, to: Vector3, delay: number) => {
     phys.current = null;
+    shardsOutRef.current = false;
+    setShardsOut(false);
     motion.current = { from, to, fromScale: shownScale.current, toScale: CAPTURED_SCALE, delay, duration: EXIT_SECONDS[exit]!, arc: 0, startedAt: null, kind: 'exit', style: exit };
     setExiting({ kind: exit, start: performance.now() + delay * 1000, from: [from.x, from.y, from.z] });
     const onSquare = EXIT_SECONDS[exit]! * ON_SQUARE * 1000;
@@ -959,17 +966,27 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
         m.startedAt = clock.elapsedTime + m.delay;
         if (m.kind === 'captured') playSfx('knock', { strength: 0.8, delay: m.delay });
       }
+      // A shattering piece stands whole until its chunks actually break away (the blow lands and
+      // the break is worked out, see ShardScatter): only then does its exit run on.
+      const breaking = m.kind === 'exit' && m.style === 'shatter';
+      const broken = breaking && burstBegun(piece.id, now);
+      if (breaking && !broken) m.startedAt = Math.max(m.startedAt, clock.elapsedTime);
+      if (broken && !shardsOutRef.current) {
+        shardsOutRef.current = true;
+        setShardsOut(true);
+      }
       const p = Math.min(1, Math.max(0, (clock.elapsedTime - m.startedAt) / m.duration));
       if (m.kind === 'exit') {
         const style = m.style as Exit;
-        // A shattered piece is gone at once (its shards burst out and strew the board, see
-        // ShardScatter); its telling part then turns up beside the board.
+        // A shattered piece is replaced by its chunks the moment they break away, each where it
+        // was in the piece (they burst out or crumble down, see ShardScatter); its telling part
+        // then turns up beside the board.
         const onSquare = style === 'shatter' ? 0.55 : ON_SQUARE;
         if (p < onSquare) {
           // On its square: burning down, fading upward, or sinking into the board.
           const q = p / onSquare;
           shownAt.current.copy(m.from);
-          shownScale.current = style === 'shatter' ? 0.0001 : m.fromScale;
+          shownScale.current = style === 'shatter' ? (broken ? 0.0001 : m.fromScale) : m.fromScale;
           if (style === 'ash') squash = Math.max(0.04, 1 - 0.96 * q * q);
           else if (style === 'vanish') {
             shownAt.current.y += 0.35 * (1 - (1 - q) ** 3);
@@ -1270,7 +1287,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   // What stands beside the board after a staged exit; while the exit plays, the piece itself.
   const remains = captured && exit && !exiting ? exit : null;
   const body =
-    exiting?.kind === 'shatter' || remains === 'shatter' ? (
+    (exiting?.kind === 'shatter' && shardsOut) || remains === 'shatter' ? (
       <Relic type={piece.type} color={piece.color} />
     ) : remains === 'ash' ? (
       <AshPile type={piece.type} color={piece.color} id={piece.id} />
@@ -1287,7 +1304,15 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
     <>
     {remains === 'burn' && <SmokeWisp follow={group} height={height} />}
     {captured && exit === 'shatter' && shards && (
-      <ShardScatter type={piece.type} color={piece.color} id={piece.id} center={shards.world} square={shards.square} burst={exiting?.kind === 'shatter' ? { start: exiting.start } : null} />
+      <ShardScatter
+        type={piece.type}
+        color={piece.color}
+        id={piece.id}
+        center={shards.world}
+        square={shards.square}
+        facing={facing(piece)}
+        burst={exiting?.kind === 'shatter' ? { start: exiting.start } : takenAtMount.current ? null : 'pending'}
+      />
     )}
     {gather && <ShardGather type={piece.type} color={piece.color} id={piece.id} to={gather.to} turn={facing(piece)} start={gather.start} seconds={gather.seconds} />}
     <group

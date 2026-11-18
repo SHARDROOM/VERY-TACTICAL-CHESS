@@ -112,50 +112,85 @@ function solids(RAPIER: Rapier, world: InstanceType<Rapier['World']>, o?: Obstac
 }
 
 /**
- * The piece `id` of kind `type`, standing on the board at `at` (world), bursts into its chunks:
- * each flies out from the middle and up, spinning, bouncing off the pieces around it, and they
- * settle on the board and the table. The same piece always breaks the same way on a screen
- * (cached per piece and place; the obstacles are those of the first call).
+ * How a piece breaks (사용자 요청: 갑자기 잔해가 생기지 않고 자연스럽게): it bursts apart, its
+ * chunks flying out every way; or it cracks where it stands and crumbles, the chunks parting a
+ * little and then slumping down, the top ones toppling over the side. Each piece always breaks the
+ * same way (its id decides), on every screen.
  */
-export function simulateShatter(type: PieceType, id: string, at: [number, number, number], obstacles?: Obstacles): Promise<ShatterRun> {
+export type ShatterStyle = 'burst' | 'crumble';
+export const shatterStyleOf = (id: string): ShatterStyle => (seedOf(id) % 2 === 0 ? 'burst' : 'crumble');
+
+/** Steps the cracks show before a crumbling piece comes apart. */
+const CRACK_STEPS = 12;
+/** How far its chunks part along the cracks meanwhile. */
+const CRACK_GAP = 0.018;
+
+/**
+ * The piece `id` of kind `type`, standing on the board at `at` (world) and turned `facing` about the
+ * vertical (as it was shown), breaks into its chunks: they start exactly where they were in the
+ * whole piece, then burst out or crumble down (see ShatterStyle), bouncing off the pieces around
+ * it, and settle on the board and the table. The same piece always breaks the same way on a
+ * screen (cached per piece and place; the obstacles are those of the first call).
+ */
+export function simulateShatter(type: PieceType, id: string, at: [number, number, number], obstacles?: Obstacles, facing = 0): Promise<ShatterRun> {
   const key = `${type}|${id}|${at.join(',')}`;
   let run = runCache.get(key);
   if (!run) {
-    run = shatter(type, seedOf(id), at, obstacles);
+    run = shatter(type, seedOf(id), shatterStyleOf(id), at, facing, obstacles);
     runCache.set(key, run);
     run.catch(() => runCache.delete(key));
   }
   return run;
 }
 
-async function shatter(type: PieceType, seed: number, at: [number, number, number], obstacles?: Obstacles): Promise<ShatterRun> {
+async function shatter(type: PieceType, seed: number, style: ShatterStyle, at: [number, number, number], facing: number, obstacles?: Obstacles): Promise<ShatterRun> {
   const RAPIER = await loadPhysics();
   const random = seeded(seed);
   const world = new RAPIER.World({ x: 0, y: -G, z: 0 });
   world.timestep = DT;
   try {
     solids(RAPIER, world, obstacles);
-    const spin = random() * Math.PI * 2;
-    const turn = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), spin);
-    const bodies = fragmentsOf(type).map((f) => {
+    // Turned as the piece was shown, so the first frame is the whole piece, seamlessly.
+    const turn = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), facing);
+    const crumble = style === 'crumble';
+    const parts = fragmentsOf(type).map((f) => {
       const c = new Vector3(...f.center).applyQuaternion(turn);
-      // Out from the middle of the piece (a little up the higher it was), with a twist.
-      const out = Math.hypot(c.x, c.z) > 0.01 ? new Vector3(c.x, 0, c.z).normalize() : new Vector3(Math.cos(spin), 0, Math.sin(spin));
-      const speed = 1.6 + random() * 1.9;
+      const out = Math.hypot(c.x, c.z) > 0.01 ? new Vector3(c.x, 0, c.z).normalize() : new Vector3(Math.cos(facing + random() * 6.3), 0, Math.sin(facing + random() * 6.3));
+      return { f, c, out };
+    });
+    const frames: number[][] = parts.map(() => []);
+    // Crumbling: first the cracks open, the chunks parting a hair along them while it still stands.
+    if (crumble) {
+      for (let k = 1; k <= CRACK_STEPS; k++) {
+        const gap = CRACK_GAP * (k / CRACK_STEPS) ** 2;
+        parts.forEach(({ c, out }, i) => frames[i].push(at[0] + c.x + out.x * gap, at[1] + c.y + 0.01, at[2] + c.z + out.z * gap, turn.x, turn.y, turn.z, turn.w));
+      }
+    }
+    const bodies = parts.map(({ f, c, out }) => {
+      const gap = crumble ? CRACK_GAP : 0;
+      // Burst: out from the middle and up, fast, spinning. Crumble: barely pushed, the higher ones
+      // leaning out and toppling, so the pile slumps down under its own weight.
+      const speed = crumble ? 0.15 + c.y * 0.7 + random() * 0.25 : 2.2 + random() * 2.2;
+      const up = crumble ? -0.1 : 1.1 + c.y * 1.6 + random() * 1.4;
+      const tip = new Vector3(0, 1, 0).cross(out).normalize();
+      const roll = crumble ? 1.2 + c.y * 3.5 + random() * 1.5 : 0;
       const b = world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic()
-          .setTranslation(at[0] + c.x, at[1] + c.y + 0.01, at[2] + c.z)
+          .setTranslation(at[0] + c.x + out.x * gap, at[1] + c.y + 0.01, at[2] + c.z + out.z * gap)
           .setRotation({ x: turn.x, y: turn.y, z: turn.z, w: turn.w })
-          .setLinvel(out.x * speed, 0.9 + c.y * 1.4 + random() * 1.4, out.z * speed)
-          .setAngvel({ x: (random() - 0.5) * 9, y: (random() - 0.5) * 7, z: (random() - 0.5) * 9 })
-          .setLinearDamping(0.12)
-          .setAngularDamping(0.45)
+          .setLinvel(out.x * speed, up, out.z * speed)
+          .setAngvel(
+            crumble
+              ? { x: tip.x * roll + (random() - 0.5) * 1.5, y: (random() - 0.5) * 1.5, z: tip.z * roll + (random() - 0.5) * 1.5 }
+              : { x: (random() - 0.5) * 11, y: (random() - 0.5) * 8, z: (random() - 0.5) * 11 },
+          )
+          .setLinearDamping(crumble ? 0.3 : 0.12)
+          .setAngularDamping(crumble ? 0.6 : 0.45)
           .setCcdEnabled(true),
       );
-      world.createCollider(RAPIER.ColliderDesc.convexHull(f.hull)!.setDensity(1).setFriction(0.5).setRestitution(0.25), b);
+      world.createCollider(RAPIER.ColliderDesc.convexHull(f.hull)!.setDensity(1).setFriction(crumble ? 0.75 : 0.5).setRestitution(crumble ? 0.1 : 0.25), b);
       return b;
     });
-    const frames: number[][] = bodies.map(() => []);
     const maxSteps = Math.round(3.5 / DT);
     let steps = 0;
     let still = 0;
@@ -176,7 +211,7 @@ async function shatter(type: PieceType, seed: number, at: [number, number, numbe
       still = moving ? 0 : still + 1;
       if (still > 15 && steps > 30) break;
     }
-    return { tracks: frames.map((f) => Float32Array.from(f)), steps, dt: DT };
+    return { tracks: frames.map((f) => Float32Array.from(f)), steps: steps + (crumble ? CRACK_STEPS : 0), dt: DT };
   } finally {
     world.free();
   }
