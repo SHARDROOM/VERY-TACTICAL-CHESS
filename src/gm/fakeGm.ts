@@ -83,8 +83,11 @@ export function fakeDeclaration(state: GameState, color: Color, random: () => nu
   });
   const name = (x: { sq: Square; type: PieceType }) => `${squareName(x.sq)} ${KIND_KO[x.type]}`;
   const best = (list: typeof mine) => [...list].sort((a, b) => WORTH[b.type] - WORTH[a.type])[0];
-  const shooter = best(mine);
-  const target = best(theirs);
+  // A shot is harder the farther it flies: the pair worth the most for the distance (a near rook over a far queen).
+  const pairs = mine.flatMap((m) => theirs.map((t) => ({ m, t, score: WORTH[t.type] - distance(m.sq, t.sq) * 1.5 + random() })));
+  const pick = pairs.sort((a, b) => b.score - a.score)[0];
+  const shooter = pick?.m ?? best(mine);
+  const target = pick?.t;
   if (!shooter) return `${squareName(state.board.findIndex((p) => p?.color === color && p.type === 'king'))} 킹이 스스로 보호막을 두른다`;
   const endangered = mine.filter((m) => playersOf().some((c) => c !== color && isAttacked(state.board, m.sq, c, state.terrain)));
   const who = (x: { sq: Square; type: PieceType }) => josa(name(x), '이/가');

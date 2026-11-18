@@ -52,4 +52,21 @@ describe('AI players (hotseat)', () => {
     expect(seen.some((t) => t === 'specialResolved' || t === 'specialCancelled')).toBe(true);
     local.dispose();
   }, 20000);
+
+  it('a saved game with the AI to move picks up where it was (the AI is in the rules)', async () => {
+    const first = new LocalSession(new FakeGameMaster(0), { initialState: game({ black: { level: 'easy', specials: 'off' } }), phase: 'playing', aiPace: 0, chance: () => 0.4 });
+    first.dispose();
+    // Saved right after white's move, before the AI answered: JSON round trip, as the save does.
+    const saved: GameState = JSON.parse(JSON.stringify({ ...first.view().state }));
+    const resumed = new LocalSession(new FakeGameMaster(0), { initialState: saved, phase: 'playing', aiPace: 0, chance: () => 0.4 });
+    resumed.request({ type: 'move', from: 12, to: 28 });
+    resumed.dispose();
+    const mid: GameState = JSON.parse(JSON.stringify(resumed.view().state));
+    expect(mid.turn).toBe('black');
+    expect(mid.rules.ai?.black).toEqual({ level: 'easy', specials: 'off' });
+    const again = new LocalSession(new FakeGameMaster(0), { initialState: mid, phase: 'playing', aiPace: 0, chance: () => 0.4 });
+    await until(() => again.view().state.turn === 'white');
+    expect(again.view().state.turnNumber).toBe(3);
+    again.dispose();
+  });
 });

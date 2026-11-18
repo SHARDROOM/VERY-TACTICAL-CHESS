@@ -1,4 +1,4 @@
-import { CLASH_ROLLS, aiExile, aiHints, aiShouldRoll, isAir, promotesOn, type AiSeat, applyCommand, impulseOf, impulseTargets, isStunned as isStunnedPiece, vanguardChoice, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
+import { CLASH_ROLLS, aiExile, aiHints, aiShouldRoll, isAir, playersOf, promotesOn, type AiSeat, applyCommand, impulseOf, impulseTargets, isStunned as isStunnedPiece, vanguardChoice, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
@@ -87,6 +87,10 @@ export class Authority {
   private aiReadyAt = 0;
   /** The turn an AI last tried a special action on (once a turn). */
   private aiTried = -1;
+  /** After an AI lets its own ruling go: no special action again until this turn number (per color). */
+  private aiRestUntil: Partial<Record<Color, number>> = {};
+  /** The declaration it last let go (never declared again right away). */
+  private aiDropped: Partial<Record<Color, string>> = {};
 
   constructor(
     public gm: GameMaster,
@@ -276,7 +280,13 @@ export class Authority {
       // Its ruling is in: roll, or let it go.
       if (s.pending) {
         if (s.pending.color !== who.color) return;
-        await this.handle({ type: aiShouldRoll(s, who.seat.level) ? 'attempt' : 'cancel' }, who.color);
+        const roll = aiShouldRoll(s, who.seat.level);
+        if (!roll && !s.pending.retry) {
+          // Not worth it: rest from special actions for its next two turns, and not this one again.
+          this.aiRestUntil[who.color] = s.turnNumber + 2 * playersOf(s.map).length + 1;
+          this.aiDropped[who.color] = s.pending.action;
+        }
+        await this.handle({ type: roll ? 'attempt' : 'cancel' }, who.color);
         return;
       }
       // A special action, now and then (once a turn).
@@ -308,6 +318,7 @@ export class Authority {
   /** Whether the AI tries a special action this turn: if the GM can make one up and its AP and habit say so. */
   private aiWantsSpecial({ color, seat }: { color: Color; seat: AiSeat }): boolean {
     if (seat.specials === 'off' || !this.gm.act) return false;
+    if ((this.aiRestUntil[color] ?? 0) > this.state.turnNumber) return false;
     const ap = this.state.ap[color] ?? 0;
     if (seat.specials === 'often') return ap >= 1;
     return ap >= 2 && this.chance() < 0.5;
@@ -320,7 +331,8 @@ export class Authority {
     try {
       const style = seat.level === 'hard' || seat.level === 'master' ? 'sharp' : 'playful';
       const raw = await this.gm.act!({ state: this.state, color, style, hints: aiHints(this.state, color) });
-      return parsePlayerAction(raw, this.state.rules.actionMaxLength);
+      const action = parsePlayerAction(raw, this.state.rules.actionMaxLength);
+      return action && action === this.aiDropped[color] ? null : action;
     } catch {
       // The model would not: the AI just plays chess this turn.
       return null;
