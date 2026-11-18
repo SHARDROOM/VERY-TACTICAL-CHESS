@@ -61,9 +61,10 @@ export class FakeGameMaster implements GameMaster {
   }
 
   /** An AI player's declaration, from a few the fake GM itself understands (no API, no cost). */
-  async act({ state, color }: ActRequest): Promise<{ declaration: string }> {
+  async act({ state, color, maxDc }: ActRequest): Promise<{ declaration: string }> {
     if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs));
-    return { declaration: fakeDeclaration(state, color) };
+    // Nothing that fits its AP and odds: an empty line (the AI just plays chess).
+    return { declaration: fakeDeclaration(state, color, Math.random, { maxDc }) ?? '' };
   }
 }
 
@@ -71,30 +72,53 @@ const KIND_KO: Record<PieceType, string> = { king: '킹', ...PIECE_KO };
 const WORTH: Record<PieceType, number> = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9, king: 0 };
 
 /**
- * A declaration an AI player could make with the fake GM: shield its most valuable piece in danger,
- * else have its strongest piece shoot the other side's most valuable one, else stun it.
+ * A declaration an AI player could make with the fake GM: a shield on a piece in danger, a shot at
+ * one of the others' pieces, or a stun (on one that threatens its own, best), whichever is worth
+ * the most for its odds, among those its AP pays for and not harder than `maxDc`. Null: none fits.
  */
-export function fakeDeclaration(state: GameState, color: Color, random: () => number = Math.random): string {
-  const mine: { sq: Square; type: PieceType }[] = [];
-  const theirs: { sq: Square; type: PieceType }[] = [];
+export function fakeDeclaration(
+  state: GameState,
+  color: Color,
+  random: () => number = Math.random,
+  limits: { ap?: number; maxDc?: number | null } = {},
+): string | null {
+  const ap = limits.ap ?? state.ap[color] ?? 0;
+  const maxDc = limits.maxDc ?? 12;
+  type Seen = { sq: Square; type: PieceType; color: Color };
+  const mine: Seen[] = [];
+  const theirs: Seen[] = [];
   state.board.forEach((p, sq) => {
     if (!p || p.type === 'king' || p.color === 'gray') return;
-    (p.color === color ? mine : theirs).push({ sq, type: p.type });
+    (p.color === color ? mine : theirs).push({ sq, type: p.type, color: p.color });
   });
-  const name = (x: { sq: Square; type: PieceType }) => `${squareName(x.sq)} ${KIND_KO[x.type]}`;
-  const best = (list: typeof mine) => [...list].sort((a, b) => WORTH[b.type] - WORTH[a.type])[0];
-  // A shot is harder the farther it flies: the pair worth the most for the distance (a near rook over a far queen).
-  const pairs = mine.flatMap((m) => theirs.map((t) => ({ m, t, score: WORTH[t.type] - distance(m.sq, t.sq) * 1.5 + random() })));
-  const pick = pairs.sort((a, b) => b.score - a.score)[0];
-  const shooter = pick?.m ?? best(mine);
-  const target = pick?.t;
-  if (!shooter) return `${squareName(state.board.findIndex((p) => p?.color === color && p.type === 'king'))} 킹이 스스로 보호막을 두른다`;
-  const endangered = mine.filter((m) => playersOf().some((c) => c !== color && isAttacked(state.board, m.sq, c, state.terrain)));
-  const who = (x: { sq: Square; type: PieceType }) => josa(name(x), '이/가');
-  const whom = (x: { sq: Square; type: PieceType }) => josa(name(x), '을/를');
-  if (endangered.length && random() < 0.6) return `${who(best(endangered))} 스스로 보호막을 두른다`;
-  if (!target) return `${who(shooter)} 스스로 보호막을 두른다`;
-  return random() < 0.6 ? `${who(shooter)} 활을 쏘아 ${whom(target)} 저격한다` : `${who(shooter)} 주문으로 ${whom(target)} 기절시킨다`;
+  const name = (x: Seen) => `${squareName(x.sq)} ${KIND_KO[x.type]}`;
+  const who = (x: Seen) => josa(name(x), '이/가');
+  const whom = (x: Seen) => josa(name(x), '을/를');
+  // What it could say, with what this GM would ask (DC, AP) and roughly what it is worth.
+  const options: { text: string; dc: number; cost: number; value: number }[] = [];
+  for (const m of mine) {
+    if (playersOf().some((c) => c !== color && isAttacked(state.board, m.sq, c, state.terrain))) {
+      options.push({ text: `${who(m)} 스스로 보호막을 두른다`, dc: 7, cost: 2, value: WORTH[m.type] * 0.6 });
+    }
+    for (const t of theirs) {
+      const far = distance(m.sq, t.sq);
+      // A shot: harder the farther it flies (a blow right next to it is DC 9 too).
+      options.push({ text: `${who(m)} 활을 쏘아 ${whom(t)} 저격한다`, dc: far <= 1 ? 9 : Math.min(11, 7 + far), cost: 2, value: WORTH[t.type] });
+      // A stun: cheap, easy up close; best on a piece that threatens one of its own.
+      const threat = mine.some((x) => isAttacked(state.board.map((p, i) => (i === t.sq || p?.color !== t.color ? p : null)), x.sq, t.color, state.terrain));
+      options.push({ text: `${who(m)} 주문으로 ${whom(t)} 기절시킨다`, dc: far > 2 ? 9 : 7, cost: 1, value: WORTH[t.type] * (threat ? 0.5 : 0.2) });
+    }
+  }
+  const fit = options.filter((o) => o.cost <= ap && o.dc <= maxDc);
+  if (!fit.length) return null;
+  // The best value for its odds, with a little chance in it.
+  const chance = (dc: number) => {
+    let n = 0;
+    for (let a = 1; a <= 6; a++) for (let b = 1; b <= 6; b++) if (a + b !== 2 && a + b >= dc) n++;
+    return n / 36;
+  };
+  const ranked = fit.map((o) => ({ o, score: o.value * chance(o.dc) + random() * 0.5 })).sort((a, b) => b.score - a.score);
+  return ranked[0].o.text;
 }
 
 type StagingJson = GmRulingJson['staging']['success'];

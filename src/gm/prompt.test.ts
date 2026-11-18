@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ACTS, ELEMENTS, ENTRANCES, EXITS, FX_SHAPES, MOTION_STYLES, createStateFrom, parseSquare, withDefaultRules } from '../engine';
 import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
+import { buildPlayerUserMessage } from './player';
+import { fakeDeclaration } from './fakeGm';
 
 const rules = withDefaultRules({});
 
@@ -102,5 +104,33 @@ describe('clashes, props, bridges and ladders in the GM prompts', () => {
     expect(msg).toContain('구덩이 e5 (영구, 다리 영구)');
     expect(msg).toMatch(/^5 \. \. \. \. = \. \. \.$/m);
     expect(msg).toMatch(/^4 \. \. \. H \. \. \. \.$/m);
+  });
+});
+
+describe("an AI player's declaration", () => {
+  // Black (an AI) to act: its knight on f6 next to the white knight on g5; the white queen on d1 far away.
+  const state = () => {
+    const s = createStateFrom(
+      { e1: { color: 'white', type: 'king' }, e8: { color: 'black', type: 'king' }, g5: { color: 'white', type: 'knight' }, d1: { color: 'white', type: 'queen' }, f6: { color: 'black', type: 'knight' } },
+      'black',
+    );
+    return { ...s, ap: { ...s.ap, black: 2 } };
+  };
+
+  it('the prompt says what it can spend and how hard a ruling it would roll', () => {
+    const msg = buildPlayerUserMessage({ state: state(), color: 'black', style: 'playful', hints: [], maxDc: 8 });
+    expect(msg).toContain('보유 AP는 2입니다');
+    expect(msg).toContain('성공 확률 42% 이상(DC 8 이하)');
+  });
+
+  it('the fake GM picks only what its AP pays for and what it would roll', () => {
+    for (let i = 0; i < 20; i++) {
+      const r = Math.random;
+      // DC 8 at most: a stun up close (DC 7, AP 1) or a shield, never a shot (DC 9 or more).
+      expect(fakeDeclaration(state(), 'black', r, { maxDc: 8 })).not.toMatch(/저격/);
+      // One AP: stuns only (AP 1).
+      expect(fakeDeclaration({ ...state(), ap: { ...state().ap, black: 1 } }, 'black', r)).toMatch(/기절/);
+    }
+    expect(fakeDeclaration({ ...state(), ap: { ...state().ap, black: 0 } }, 'black')).toBeNull();
   });
 });

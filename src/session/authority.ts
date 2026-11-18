@@ -1,11 +1,11 @@
-import { CLASH_ROLLS, aiExile, aiHints, aiShouldRoll, isAir, playersOf, promotesOn, type AiSeat, applyCommand, impulseOf, impulseTargets, isStunned as isStunnedPiece, vanguardChoice, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
+import { CLASH_ROLLS, aiExile, aiHints, aiMaxDc, isAir, playersOf, promotesOn, type AiSeat, applyCommand, impulseOf, impulseTargets, isStunned as isStunnedPiece, vanguardChoice, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
 import { GmError } from '../gm/errors';
 import { REJECT_MESSAGE } from '../ui/messages';
 import { parsePlayerAction } from '../gm/player';
-import { chooseMoveAsync } from './aiCompute';
+import { chooseMoveAsync, shouldRollAsync } from './aiCompute';
 import type { NoticeTone, Phase, Request, TimerSnapshot } from './types';
 
 export type AuthorityEvent =
@@ -280,7 +280,8 @@ export class Authority {
       // Its ruling is in: roll, or let it go.
       if (s.pending) {
         if (s.pending.color !== who.color) return;
-        const roll = aiShouldRoll(s, who.seat.level);
+        const roll = await shouldRollAsync(s, who.seat.level);
+        if (generation !== this.generation || this.state !== s) return;
         if (!roll && !s.pending.retry) {
           // Not worth it: rest from special actions for its next two turns, and not this one again.
           this.aiRestUntil[who.color] = s.turnNumber + 2 * playersOf(s.map).length + 1;
@@ -330,7 +331,7 @@ export class Authority {
     this.setBusy(true);
     try {
       const style = seat.level === 'hard' || seat.level === 'master' ? 'sharp' : 'playful';
-      const raw = await this.gm.act!({ state: this.state, color, style, hints: aiHints(this.state, color) });
+      const raw = await this.gm.act!({ state: this.state, color, style, hints: aiHints(this.state, color), maxDc: aiMaxDc(seat.level) });
       const action = parsePlayerAction(raw, this.state.rules.actionMaxLength);
       return action && action === this.aiDropped[color] ? null : action;
     } catch {

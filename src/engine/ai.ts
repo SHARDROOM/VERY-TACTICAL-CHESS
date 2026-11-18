@@ -2,7 +2,7 @@ import { canResist, clashMultiplier, clashWinChance } from './clash';
 import { saverFor } from './guard';
 import { legalTargets, movesFrom } from './moves';
 import { planeOf, playersOf, promotesOn, rankOf, isAir, setBoardMap, isHex } from './squares';
-import { SHIELD, type Board, type Color, type GameState, type Piece, type PieceType, type Square, type TerrainCell } from './types';
+import { BURN, CONFUSED, GUARD, HOSTAGE, LEVITATE, SHIELD, STUN, VANGUARD, type Board, type Color, type GameState, type Piece, type PieceType, type Square, type TerrainCell } from './types';
 import { hasTag, withoutTag } from './tags';
 
 /*
@@ -44,10 +44,23 @@ const KING_LOST = 100_000;
 function worth(p: Piece): number {
   let v = VALUE[p.type];
   for (const c of p.fuse?.crowns ?? []) v += VALUE[c.type] * 0.4;
+  // What a tag does for the piece beyond what the search sees in a move or two: a stun or a
+  // hold costs it its next turns, an extra way to move or a skill is worth having for longer.
+  let lost = 0;
   for (const t of p.tags ?? []) {
     if (t.clash) v += (t.clash - 1) * 1.5;
     if (t.name === SHIELD) v += 0.6;
+    if (t.name === STUN) lost = Math.max(lost, 0.15);
+    if (t.name === HOSTAGE) lost = Math.max(lost, 0.3);
+    if (t.name === CONFUSED) lost = Math.max(lost, 0.1);
+    if (t.name === BURN) lost = Math.max(lost, 0.1);
+    if (t.moveAs?.length) v += 0.4 * t.moveAs.length;
+    if (t.moveTimes) v += 0.4 * (t.moveTimes - 1);
+    if (t.skill) v += 0.15 * t.skill.bonus;
+    if (t.mind) v += 0.1 * t.mind;
+    if (t.name === LEVITATE || t.name === GUARD || t.name === VANGUARD) v += 0.2;
   }
+  v -= VALUE[p.type] * lost;
   if (p.rider) v += worth(p.rider);
   return v;
 }
@@ -288,7 +301,7 @@ export function aiExile(state: GameState, loser: Color): Square | null {
 import { isAttacked } from './moves';
 import { applyEffects } from './effects';
 import { modifierTotal, pendingModifiers } from './modifiers';
-import { squareName } from './squares';
+import { distance, squareName } from './squares';
 
 const KIND_KO: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
 
@@ -313,6 +326,8 @@ export function aiHints(state: GameState, me: Color): string[] {
   const out: string[] = [];
   if (danger.length) out.push(`위험(공격받는데 지켜 주는 기물이 없음): ${danger.slice(0, 4).join(', ')}`);
   if (chance.length) out.push(`기회(공짜로 잡을 수 있음): ${chance.slice(0, 4).join(', ')}`);
+  const near = targetsFor(board, me, 3);
+  if (near.length) out.push(`노릴 만한 표적(값지고 가까운 순): ${near.join(', ')}`);
   out.push(`판세(엔진 점수, +면 유리): ${evaluate(board, me).toFixed(1)}`);
   return out;
 }
@@ -324,15 +339,44 @@ function odds(dc: number, bonus: number): { win: number; fumble: number } {
   return { win: wins / 36, fumble: 1 / 36 };
 }
 
-/** What one AP is worth on the board, roughly (a pawn is 1). */
-const AP_WORTH = 0.5;
+/**
+ * What one AP is worth on the board, roughly (a pawn is 1). AP is good for nothing but special
+ * actions (and second tries), so it is cheap: a 2-AP action that wins a pawn more often than not pays.
+ */
+const AP_WORTH = 0.25;
+
+/** The odds an AI of `level` wants before it rolls (보통 only; the others go by value). */
+export const AI_NORMAL_MIN_CHANCE = 0.4;
+
+/** The hardest DC worth declaring for at `level` (what the AI asks the GM's model to aim under). */
+export function aiMaxDc(level: AiLevel): number | null {
+  return level === 'easy' ? null : level === 'normal' ? 8 : 9;
+}
+
+/**
+ * How `boards` look to `me` with `me` to move: its best move and the replies, captures followed
+ * (2 plies, then 1, then a glance if time runs out: the same depth for all, so they compare).
+ */
+function lookAhead(boards: Board[], me: Color, terrains: (readonly TerrainCell[] | undefined)[], ms: number, now: () => number): number[] {
+  const deadline = now() + ms;
+  for (const depth of [2, 1]) {
+    try {
+      return boards.map((b, i) => search(b, me, depth, -Infinity, Infinity, { me, terrain: terrains[i], deadline, quiet: 2, nodes: 0 }, 0));
+    } catch (e) {
+      if (!(e instanceof OutOfTime)) throw e;
+    }
+  }
+  return boards.map((b) => evaluate(b, me));
+}
 
 /**
  * Whether the AI rolls for its pending ruling (or a second try): 쉬움 always; 보통 when it
- * succeeds at least 40% of the time; 어려움 and 무아 when the expected change of the board (the
- * effects tried out on it, a backfire on snake eyes counted) is worth the AP.
+ * succeeds at least 40% of the time; 어려움 and 무아 when the expected change of the game is worth
+ * the AP. The change is looked at as play goes on (its move after the action and the replies), so
+ * a stun that stops an attacker or a shield on a piece that cannot get away count, not only pieces
+ * taken; a backfire on snake eyes counts against it.
  */
-export function aiShouldRoll(state: GameState, level: AiLevel): boolean {
+export function aiShouldRoll(state: GameState, level: AiLevel, now: () => number = () => performance.now()): boolean {
   setBoardMap(state.map);
   const pending = state.pending;
   if (!pending || !pending.ruling.feasible) return false;
@@ -341,9 +385,8 @@ export function aiShouldRoll(state: GameState, level: AiLevel): boolean {
   const bonus = modifierTotal(pendingModifiers(state.board, pending, state.remains));
   const { win, fumble } = odds(pending.ruling.dc, bonus);
   if (level === 'easy') return true;
-  if (level === 'normal') return win >= 0.4;
+  if (level === 'normal') return win >= AI_NORMAL_MIN_CHANCE;
   const me = pending.color;
-  const base = evaluate(state.board, me);
   // A sacrifice is made whatever the dice say (once): the effects happen without those pieces.
   const start = [...state.board];
   if (!pending.offered) for (const at of pending.ruling.sacrifice ?? []) start[at] = null;
@@ -357,13 +400,41 @@ export function aiShouldRoll(state: GameState, level: AiLevel): boolean {
     clash: { mode: 'check' as const },
     ...(pending.ruling.actor != null && { actor: pending.ruling.actor }),
   };
-  const stay = evaluate(start, me);
   const tryOut = (effects: Parameters<typeof applyEffects>[1]) => {
-    if (!effects.length) return stay;
-    const r = applyEffects(start, effects, ctx);
-    return r.ok ? evaluate(r.board, me) : stay;
+    const r = effects.length ? applyEffects(start, effects, ctx) : null;
+    return r?.ok ? { board: r.board, terrain: r.terrain } : { board: start, terrain: state.terrain };
   };
-  const expected = win * tryOut(pending.ruling.effects) + fumble * tryOut(pending.ruling.critFailureEffects ?? []) + (1 - win - fumble) * stay;
-  const gain = expected - base;
-  return gain > cost * AP_WORTH;
+  const won = tryOut(pending.ruling.effects);
+  const backfire = tryOut(pending.ruling.critFailureEffects ?? []);
+  const [base, stay, success, fumbled] = lookAhead(
+    [state.board, start, won.board, backfire.board],
+    me,
+    [state.terrain, state.terrain, won.terrain, backfire.terrain],
+    level === 'master' ? 900 : 500,
+    now,
+  );
+  const expected = win * success + fumble * fumbled + (1 - win - fumble) * stay;
+  // With AP to spare, spending some costs less.
+  const apWorth = state.ap[me] - cost >= 2 ? AP_WORTH / 2 : AP_WORTH;
+  return expected - base > cost * apWorth;
+}
+
+/**
+ * The others' pieces worth going for, nearest of its own first: "d8 퀸 (f6 나이트에서 2칸)" (at
+ * most `count`). A near target makes an easy ruling.
+ */
+function targetsFor(board: Board, me: Color, count: number): string[] {
+  const mine: Square[] = [];
+  board.forEach((p, sq) => p?.color === me && mine.push(sq));
+  const list: { line: string; score: number }[] = [];
+  board.forEach((p, sq) => {
+    if (!p || p.color === me || p.color === 'gray' || p.type === 'king' || !mine.length) return;
+    const from = mine.reduce((a, b) => (distance(a, sq) <= distance(b, sq) ? a : b));
+    const d = distance(from, sq);
+    list.push({ line: `${squareName(sq)} ${KIND_KO[p.type]} (${squareName(from)} ${KIND_KO[board[from]!.type]}에서 ${d}칸)`, score: worth(p) - d * 1.2 });
+  });
+  return list
+    .sort((a, b) => b.score - a.score)
+    .slice(0, count)
+    .map((t) => t.line);
 }

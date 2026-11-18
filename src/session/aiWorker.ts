@@ -1,15 +1,14 @@
 /// <reference lib="webworker" />
-import { chooseMove, type AiLevel, type GameState } from '../engine';
-import { seededRandom } from './aiCompute';
+import { think, type AiJob } from './aiCompute';
 
-/** Thinks the AI's moves away from the page, so the table keeps moving meanwhile. */
-self.onmessage = (e: MessageEvent<{ id: number; state: GameState; level: AiLevel; seed: number }>) => {
-  const { id, state, level, seed } = e.data;
-  let move = null;
+/** Thinks the AI's moves (and whether to roll) away from the page, so the table keeps moving meanwhile. */
+self.onmessage = (e: MessageEvent<{ id: number; job: AiJob }>) => {
+  const { id, job } = e.data;
+  let result = null;
   try {
-    move = chooseMove(state, level, seededRandom(seed));
+    result = think(job);
   } catch {
-    move = null;
+    result = job.kind === 'roll' ? false : null;
   }
-  (self as unknown as Worker).postMessage({ id, move });
+  (self as unknown as Worker).postMessage({ id, result });
 };

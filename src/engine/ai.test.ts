@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { aiExile, chooseMove, createInitialState, createStateFrom, squareName, type AiLevel, type GameState } from './index';
-import { sq } from './testUtil';
+import { aiExile, aiShouldRoll, applyCommand, chooseMove, createInitialState, createStateFrom, squareName, type AiLevel, type Effect, type GameState, type Ruling } from './index';
+import { ok, sq } from './testUtil';
 
 const pick = (s: GameState, level: AiLevel, seed = 0.5) => {
   const m = chooseMove(s, level, () => seed);
@@ -54,3 +54,38 @@ describe('AI moves (chooseMove)', () => {
     expect(aiExile(s, 'black')).toBe(sq('d5'));
   });
 });
+
+describe('AI rolls for its ruling (aiShouldRoll)', () => {
+  // White (the AI) to act; the black queen on b4 eyes the white rook on e1 (and nothing of white's hits it).
+  const board = () =>
+    createStateFrom(
+      { g1: { color: 'white', type: 'king' }, g8: { color: 'black', type: 'king' }, e1: { color: 'white', type: 'rook' }, b2: { color: 'white', type: 'bishop' }, b4: { color: 'black', type: 'queen' }, h7: { color: 'black', type: 'pawn' } },
+      'white',
+    );
+  const stun = (at: string): Effect => ({ type: 'tag', at: sq(at), tag: '기절', turns: 1 });
+  const pending = (dc: number, cost: number, effects: Effect[], ap = 3): GameState => {
+    const r: Ruling = { interpretation: 'x', feasible: true, dc, cost, actor: sq('b2'), means: 'magic', effects, narration: { success: 's', failure: 'f' } };
+    const s = board();
+    return ok(applyCommand({ ...s, ap: { ...s.ap, white: ap } }, { type: 'proposeSpecial', action: 'b2 비숍이 b4 퀸을 기절시킨다', ruling: r })).state;
+  };
+
+  it('쉬움 rolls whatever comes, if it can pay', () => {
+    expect(aiShouldRoll(pending(11, 2, [stun('h7')]), 'easy')).toBe(true);
+    expect(aiShouldRoll(pending(7, 3, [stun('b4')], 2), 'easy')).toBe(false);
+  });
+
+  it('보통 rolls at 42% (DC 8), not at 28% (DC 9)', () => {
+    expect(aiShouldRoll(pending(8, 1, [stun('h7')]), 'normal')).toBe(true);
+    expect(aiShouldRoll(pending(9, 1, [stun('b4')]), 'normal')).toBe(false);
+  });
+
+  it('어려움 and 무아 roll a stun on the queen (it is worth something besides pieces taken), not a long shot at a pawn', () => {
+    for (const level of ['hard', 'master'] as AiLevel[]) {
+      expect(aiShouldRoll(pending(7, 1, [stun('b4')]), level)).toBe(true);
+      expect(aiShouldRoll(pending(11, 2, [stun('h7')]), level)).toBe(false);
+      // Taking the queen off the board is worth even a long shot.
+      expect(aiShouldRoll(pending(10, 2, [{ type: 'remove', at: sq('b4') }]), level)).toBe(true);
+    }
+  });
+});
+
