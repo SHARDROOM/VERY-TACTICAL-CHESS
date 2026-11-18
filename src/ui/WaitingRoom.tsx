@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { playersOf, type Color, type RuleConfig } from '../engine';
+import { AI_LEVELS, AI_LEVEL_NAME, AI_SPECIALS, AI_SPECIALS_NAME, playersOf, type AiLevel, type AiSpecials, type Color, type RuleConfig } from '../engine';
 import {
   AP_PER_TURN,
   CHAOS_CHANCES,
@@ -8,7 +8,6 @@ import {
   REROLL_COSTS,
   TIMEOUT_PENALTIES,
   TURN_SECONDS,
-  type Member,
   type Session,
   type SessionView,
 } from '../session/types';
@@ -20,7 +19,6 @@ import { chaosLabel, rerollLabel, rulesSummary, secondsLabel } from './rules';
 import { playSfx } from '../audio/sfx';
 import { Icon } from './Icon';
 
-const ROLE_BADGE: Record<Member['role'], string> = { white: '백', black: '흑', red: '적', gray: '회색', spectator: '관전' };
 const SEAT_LABEL: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
 
 interface Props {
@@ -45,7 +43,10 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
   // The board's seats (white, black, and red on the 3-player board) and who sits in each.
   const seats = playersOf(rules.map);
   const holder = (c: Color) => view.members.find((m) => m.role === c);
-  const emptySeats = seats.filter((c) => !holder(c)?.online);
+  const aiOf = (c: Color) => rules.ai?.[c as 'white'];
+  const emptySeats = seats.filter((c) => !aiOf(c) && !holder(c)?.online);
+  // AI special actions cost GM API calls (an API GM only: the fake GM is free).
+  const aiSpends = host && view.chaosReady && seats.some((c) => (aiOf(c)?.specials ?? 'off') !== 'off');
   const bench = view.members.filter((m) => m.role === 'spectator');
   const canStart = !online || emptySeats.length === 0;
   const connected = view.connection.kind === 'local' || view.connection.kind === 'hosting' || view.connection.kind === 'connected';
@@ -115,45 +116,87 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
           <div className="waiting-cols">
             <section className="waiting-section">
               <h2>참가자 {online && <span className="muted">({view.members.length}/10)</span>}</h2>
-              {online ? (
-                <>
-                  <ul className="seats" aria-label="자리">
-                    {seats.map((c) => {
-                      const m = holder(c);
-                      const mine = !!m && m.key === view.myKey;
-                      return (
-                        <li key={c} className={`seat seat-${c} ${m ? 'taken' : 'open'} ${m && !m.online ? 'offline' : ''} ${mine ? 'mine' : ''}`}>
-                          <span className="seat-stone" aria-hidden />
-                          <span className="seat-label">{SEAT_LABEL[c]}</span>
-                          <span className="member-name">
-                            {m ? (
-                              <>
-                                {m.name}
-                                {mine && <span className="member-tag">나</span>}
-                                {m.host && <span className="member-tag">방장</span>}
-                                {!m.online && <span className="member-tag off">연결 끊김</span>}
-                              </>
-                            ) : (
-                              <span className="seat-empty">빈 자리</span>
-                            )}
-                          </span>
-                          <span className="member-actions">
-                            {mine ? (
-                              <button onClick={() => session.takeSeat('spectator')}>일어나기</button>
-                            ) : !m && me ? (
+              <ul className="seats" aria-label="자리">
+                {seats.map((c) => {
+                  const ai = aiOf(c);
+                  const m = online ? holder(c) : undefined;
+                  const mine = !!m && m.key === view.myKey;
+                  const taken = !!ai || !!m || !online;
+                  return (
+                    <li key={c} className={`seat seat-${c} ${taken ? 'taken' : 'open'} ${m && !m.online ? 'offline' : ''} ${mine ? 'mine' : ''} ${ai ? 'ai' : ''}`}>
+                      <span className="seat-stone" aria-hidden />
+                      <span className="seat-label">{SEAT_LABEL[c]}</span>
+                      <span className="member-name">
+                        {ai ? (
+                          host ? (
+                            <span className="ai-pick">
+                              <span aria-hidden>🤖</span>
+                              <select aria-label={`${SEAT_LABEL[c]} AI 난이도`} value={ai.level} onChange={(e) => session.setAi(c, { ...ai, level: e.target.value as AiLevel })}>
+                                {AI_LEVELS.map((l) => (
+                                  <option key={l} value={l}>
+                                    {AI_LEVEL_NAME[l]}
+                                  </option>
+                                ))}
+                              </select>
+                              <select aria-label={`${SEAT_LABEL[c]} AI 특수 행동`} value={ai.specials} onChange={(e) => session.setAi(c, { ...ai, specials: e.target.value as AiSpecials })}>
+                                {AI_SPECIALS.map((x) => (
+                                  <option key={x} value={x}>
+                                    특수 행동 {AI_SPECIALS_NAME[x]}
+                                  </option>
+                                ))}
+                              </select>
+                            </span>
+                          ) : (
+                            <>
+                              🤖 AI · {AI_LEVEL_NAME[ai.level]}
+                              <span className="member-tag">특수 행동 {AI_SPECIALS_NAME[ai.specials]}</span>
+                            </>
+                          )
+                        ) : !online ? (
+                          <>이 기기</>
+                        ) : m ? (
+                          <>
+                            {m.name}
+                            {mine && <span className="member-tag">나</span>}
+                            {m.host && <span className="member-tag">방장</span>}
+                            {!m.online && <span className="member-tag off">연결 끊김</span>}
+                          </>
+                        ) : (
+                          <span className="seat-empty">빈 자리</span>
+                        )}
+                      </span>
+                      <span className="member-actions">
+                        {ai ? (
+                          host && <button onClick={() => session.setAi(c, null)}>{online ? '비우기' : '사람으로'}</button>
+                        ) : mine ? (
+                          <button onClick={() => session.takeSeat('spectator')}>일어나기</button>
+                        ) : (
+                          <>
+                            {online && !m && me && (
                               <button className="primary" onClick={() => session.takeSeat(c)}>
                                 앉기
                               </button>
-                            ) : m && host && !m.host ? (
+                            )}
+                            {host && !m && (
+                              <button onClick={() => session.setAi(c, { level: 'normal', specials: 'some' })} title="이 자리를 AI가 둡니다">
+                                AI 앉히기
+                              </button>
+                            )}
+                            {m && host && !m.host && (
                               <button onClick={() => session.assignRole(m.key, 'spectator')} title={`${m.name}님을 대기석으로 보냅니다`}>
                                 비우기
                               </button>
-                            ) : null}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                            )}
+                          </>
+                        )}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              {aiSpends && <p className="muted-line ai-cost">AI의 특수 행동도 GM API를 씁니다(행동 하나에 호출 두 번). 비용이 걱정되면 "특수 행동 끔"으로 두세요.</p>}
+              {online && (
+                <>
                   <h3 className="bench-title">
                     대기석 <span className="muted">{bench.length}명</span>
                   </h3>
@@ -170,15 +213,6 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
                     ))}
                   </ul>
                 </>
-              ) : (
-                <ul className="members">
-                  {view.members.map((m) => (
-                    <li key={m.key} className="member">
-                      <span className={`role-badge role-${m.role}`}>{ROLE_BADGE[m.role]}</span>
-                      <span className="member-name">{m.name}</span>
-                    </li>
-                  ))}
-                </ul>
               )}
               {online && me && (
                 <label className="field name-field">
@@ -329,7 +363,7 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
                   게임 시작
                 </button>
                 {!canStart && (
-                  <span className="muted-line">{emptySeats.map((c) => SEAT_LABEL[c]).join('·')} 자리에 앉은 사람이 있어야 시작할 수 있습니다.</span>
+                  <span className="muted-line">{emptySeats.map((c) => SEAT_LABEL[c]).join('·')} 자리가 비어 있습니다. 사람이 앉거나 AI를 앉혀야 시작할 수 있습니다.</span>
                 )}
               </>
             ) : (

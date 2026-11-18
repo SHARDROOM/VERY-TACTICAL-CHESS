@@ -1,4 +1,4 @@
-import type { Color, GameState, RuleConfig } from '../engine';
+import type { AiSeat, Color, GameState, RuleConfig } from '../engine';
 import { rollDie } from '../dice';
 import type { GameMaster } from '../gm/types';
 import { Authority, type AuthorityEvent, type FallSimulator } from './authority';
@@ -290,6 +290,7 @@ export class HostSession implements Session {
       if (!playersOf(this.authority.state.rules.map).includes(role)) return;
       const holder = this.members.find((m) => m.role === role);
       if (holder) return tell(`${SEAT_NAME[role]} 자리에는 이미 ${holder.name}님이 앉아 있습니다.`);
+      if (this.authority.state.rules.ai?.[role as 'white']) return tell(`${SEAT_NAME[role]} 자리에는 AI가 앉아 있습니다.`);
     }
     member.role = role;
     this.roomChanged();
@@ -300,7 +301,8 @@ export class HostSession implements Session {
 
   /** Needs someone in every seat of the board (white, black, and red on the 3-player board) who is here. */
   start(): void {
-    const empty = playersOf(this.authority.state.rules.map).find((s) => !this.members.some((m) => m.role === s && m.online));
+    const ai = this.authority.state.rules.ai ?? {};
+    const empty = playersOf(this.authority.state.rules.map).find((s) => !ai[s as 'white'] && !this.members.some((m) => m.role === s && m.online));
     if (empty) {
       this.emitter.emit({ kind: 'notice', text: `${SEAT_NAME[empty]} 자리에 앉은 사람이 있어야 시작할 수 있습니다.`, tone: 'warn' });
       return;
@@ -310,6 +312,19 @@ export class HostSession implements Session {
 
   restart(): void {
     this.authority.reset();
+  }
+
+  /** An AI sits in a free seat (or leaves it): waiting room only. */
+  setAi(color: Color, seat: AiSeat | null): void {
+    if (this.authority.phase !== 'waiting') return;
+    if (seat) {
+      const holder = this.members.find((m) => m.role === color);
+      if (holder) {
+        this.emitter.emit({ kind: 'notice', text: `${SEAT_NAME[color]} 자리에는 ${holder.name}님이 앉아 있습니다.`, tone: 'warn' });
+        return;
+      }
+    }
+    this.setRules({ ai: { ...this.authority.state.rules.ai, [color]: seat ?? undefined } });
   }
 
   /** The host sends a guest from their seat back to the bench (only that: guests choose seats themselves). */

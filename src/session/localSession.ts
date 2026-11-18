@@ -1,5 +1,5 @@
 import { rollDie } from '../dice';
-import type { GameState, RuleConfig } from '../engine';
+import type { AiSeat, Color, GameState, RuleConfig } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { Authority, type AuthorityEvent, type FallSimulator } from './authority';
 import { Emitter } from './emitter';
@@ -112,6 +112,11 @@ export class LocalSession implements Session {
 
   assignRole(_key: string, _role: Role): void {}
   takeSeat(_role: Role): void {}
+
+  /** One screen: any seat may be an AI's (the rest are this screen's). */
+  setAi(color: Color, seat: AiSeat | null): void {
+    this.setRules({ ai: { ...this.view().state.rules.ai, [color]: seat ?? undefined } });
+  }
 
   dispose(): void {
     this.authority.dispose();

@@ -86,13 +86,12 @@ export default function App() {
   const keyNotice = (config: GmConfig) =>
     config.provider !== 'fake' && !config.apiKey ? ' ⚙ GM 설정에서 API 키를 입력해 주세요.' : '';
 
-  const hotseat = (resume: SavedGame | null = null) => {
+  /** One screen: two people (hotseat), or against the AI when `vsAi` seats it on black. */
+  const hotseat = (resume: SavedGame | null = null, vsAi = false) => {
     const config = resumeGm(resume);
-    start(
-      new LocalSession(createGm(config), { roll: rollDie, initialState: resume?.state, phase: resume ? 'playing' : 'waiting', fall: landFalls }),
-      { kind: 'hotseat' },
-      resume ? `저장된 게임을 이어 갑니다.${keyNotice(config)}` : null,
-    );
+    const local = new LocalSession(createGm(config), { roll: rollDie, initialState: resume?.state, phase: resume ? 'playing' : 'waiting', fall: landFalls });
+    if (vsAi) local.setAi('black', { level: 'normal', specials: 'some' });
+    start(local, { kind: 'hotseat' }, resume ? `저장된 게임을 이어 갑니다.${keyNotice(config)}` : null);
   };
 
   const host = async (resume: SavedGame | null = null) => {
@@ -216,6 +215,7 @@ export default function App() {
           error={error}
           saved={saved}
           onHotseat={() => hotseat()}
+          onVsAi={() => hotseat(null, true)}
           onHost={() => void host()}
           onJoin={join}
           onResume={() => (saved?.kind === 'host' ? void host(saved) : hotseat(saved))}

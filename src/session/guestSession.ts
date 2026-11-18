@@ -121,6 +121,8 @@ export class GuestSession implements Session {
   restart(): void {}
   assignRole(): void {}
 
+  setAi(): void {}
+
   takeSeat(role: Role): void {
     this.send({ t: 'seat', role });
   }

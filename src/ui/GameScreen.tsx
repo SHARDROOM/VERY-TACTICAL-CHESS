@@ -30,6 +30,8 @@ import {
   pendingModifiers,
   modifierTotal,
   MOD_TOTAL_MAX,
+  AI_LEVEL_NAME,
+  playersOf,
 } from '../engine';
 import { BoardScene, type CameraRequest } from '../scene/BoardScene';
 import { COLOR_NAME, MOD_KIND_NAME, OUTCOME_LABEL, PIECE_NAME, REJECT_MESSAGE, describeEvents, signed, type LogEntry, type LogTone } from './messages';
@@ -263,7 +265,10 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   setBoardMap(view.state.map);
   const seat = view.seat;
   const online = view.connection.kind !== 'local';
-  const homeSide: Color = seat === 'black' || seat === 'red' ? seat : 'white';
+  // An AI's seat (rules.ai): one screen leaves those turns to it and looks from a person's side.
+  const aiOf = (c: Color) => view.state.rules.ai?.[c as 'white'];
+  const homeSide: Color =
+    seat === 'black' || seat === 'red' ? seat : seat === 'both' ? (playersOf(view.state.map).find((c) => !aiOf(c)) ?? 'white') : 'white';
   const spectator = seat === 'spectator';
 
   const [selected, setSelected] = useState<Square | null>(null);
@@ -357,7 +362,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   useEffect(() => {
     /** In hotseat, the camera swings to whoever moves next. */
     const swingCamera = ({ before, after }: Batch) => {
-      if (seat === 'both' && after.status.kind === 'playing' && after.turn !== before.turn) {
+      if (seat === 'both' && after.status.kind === 'playing' && after.turn !== before.turn && !after.rules.ai?.[after.turn as 'white']) {
         setCamera((c) => ({ ...c, side: after.turn, nonce: c.nonce + 1 }));
       }
     };
@@ -832,7 +837,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   }, [stage, duel, look]);
   // The 3-player board: a player whose king fell picks the one piece it keeps (its pieces light up).
   const surrender = game.surrender ?? null;
-  const choosingExile = !!surrender && (seat === 'both' || seat === surrender.loser);
+  const choosingExile = !!surrender && ((seat === 'both' && !aiOf(surrender.loser)) || seat === surrender.loser);
   const exileChoices = useMemo(
     () => (choosingExile && surrender ? game.board.flatMap((p, sq) => (p?.color === surrender.loser ? [sq] : [])) : []),
     [game, choosingExile, surrender?.loser],
@@ -857,7 +862,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
 
   const sideToMove = game.turn;
   const playing = game.status.kind === 'playing';
-  const myTurn = seat === 'both' || seat === sideToMove;
+  const aiToMove = playing ? aiOf(sideToMove) : undefined;
+  const myTurn = (seat === 'both' && !aiToMove) || seat === sideToMove;
   const inCheck = playing && isInCheck(game.board, sideToMove, game.terrain);
   const checkedKing = inCheck ? findKing(game.board, sideToMove) : null;
   const pending = game.pending;
@@ -958,8 +964,12 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const pendingMods = pending ? pendingModifiers(game.board, pending, game.remains) : [];
   const pendingBonus = modifierTotal(pendingMods);
   const canAfford = pending ? game.ap[pending.color] >= rollCost : false;
-  const canActOnPending = !!pending && (seat === 'both' || seat === pending.color) && connected;
-  const nameOf = (color: Color) => view.members.find((m) => m.role === color)?.name;
+  const canActOnPending = !!pending && ((seat === 'both' && !aiOf(pending.color)) || seat === pending.color) && connected;
+  /** Who plays a color: an AI ("🤖 무아") or, online, the member sitting there. */
+  const nameOf = (color: Color) => {
+    const ai = aiOf(color);
+    return ai ? `🤖 ${AI_LEVEL_NAME[ai.level]}` : online ? view.members.find((m) => m.role === color)?.name : undefined;
+  };
   const absent = view.members.find((m) => (m.role === 'white' || m.role === 'black') && !m.online);
   const watchers = view.members.filter((m) => m.role === 'spectator').length;
 
@@ -970,7 +980,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       : !connected
       ? '연결을 기다리는 중'
       : !myTurn
-        ? `${COLOR_NAME[sideToMove]}의 차례입니다`
+        ? aiToMove
+          ? `🤖 ${COLOR_NAME[sideToMove]} AI가 생각 중…`
+          : `${COLOR_NAME[sideToMove]}의 차례입니다`
         : chain
           ? `${squareName(chain.at)}의 기물을 한 번 더 움직이거나 턴 종료`
           : writeHelp
@@ -1016,7 +1028,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         <div className={`turn turn-${winner ?? sideToMove}`}>
           <span className="turn-token" aria-hidden />
           <span className="turn-text">{winner ? `${COLOR_NAME[winner]} 승리` : `${COLOR_NAME[sideToMove]}의 차례`}</span>
-          {online && !winner && nameOf(sideToMove) && <span className="turn-name">{nameOf(sideToMove)}</span>}
+          {!winner && nameOf(sideToMove) && <span className={`turn-name ${aiToMove ? 'ai-thinking' : ''}`}>{nameOf(sideToMove)}{aiToMove ? ' · 생각 중…' : ''}</span>}
           <span className="turn-number">{game.turnNumber}턴</span>
         </div>
         {view.timer && playing && !frozen && <TimerBadge timer={view.timer} mine={myTurn && !spectator} />}
@@ -1201,7 +1213,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       {pending && !dice && (
         <div className="overlay">
           <article className="ruling-sheet" aria-labelledby="ruling-title">
-            <div className="ruling-who">{COLOR_NAME[pending.color]}{online && nameOf(pending.color) ? `(${nameOf(pending.color)})` : ''}의 선언</div>
+            <div className="ruling-who">{COLOR_NAME[pending.color]}{nameOf(pending.color) ? `(${nameOf(pending.color)})` : ''}의 선언</div>
             <blockquote>“{pending.action}”</blockquote>
             {retry && (
               <div className="retry-note">
@@ -1288,7 +1300,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
               </div>
             ) : (
               <p className="muted-line">
-                {spectator ? `${josa(COLOR_NAME[pending.color], '이/가')} ` : '상대가 '}
+                {aiOf(pending.color) ? `🤖 ${COLOR_NAME[pending.color]} AI가 ` : spectator ? `${josa(COLOR_NAME[pending.color], '이/가')} ` : '상대가 '}
                 {retry ? '다시 굴릴지' : '굴릴지'} 정하는 중입니다…
               </p>
             )}
@@ -1424,7 +1436,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
           <div className={`victory victory-${winner}`}>
             <span className="victory-stone" aria-hidden />
             <h1>{COLOR_NAME[winner]} 승리</h1>
-            {online && nameOf(winner) && <div className="victory-name">{nameOf(winner)}</div>}
+            {nameOf(winner) && <div className="victory-name">{nameOf(winner)}</div>}
             <p className="victory-how">{isHex() ? '마지막까지 킹을 지켰습니다.' : `${COLOR_NAME[opponent(winner)]} 킹이 잡혔습니다.`}</p>
             <p className="victory-recap">{recap(game)}</p>
             <div className="victory-actions">

@@ -161,6 +161,7 @@ export class Authority {
       const s = this.state.surrender;
       if (!s) return notice('항복한 플레이어가 없습니다.', 'warn');
       if (actor !== 'any' && actor !== s.loser) return notice('항복한 쪽이 남길 기물을 고르는 중입니다.', 'warn');
+      if (actor === 'any' && this.state.rules.ai?.[s.loser as 'white']) return notice('AI가 남길 기물을 고르는 중입니다.', 'warn');
       this.apply({ type: 'exile', at: req.at }, actor);
       return;
     }

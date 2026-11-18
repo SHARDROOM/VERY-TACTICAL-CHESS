@@ -306,6 +306,39 @@ describe('waiting room', () => {
     expect(rec.notices().join()).toContain('흑 자리');
   });
 
+  it('the host seats an AI in an empty seat: nobody can sit there, it fills the seat, and it plays', async () => {
+    const host = new HostSession(new TestGm(), { code: 'ABC234', link: 'x', heartbeatMs: 0, aiPace: 0 });
+    const rec = record(host);
+    const a = join(host, { name: '하나' });
+    await settle();
+    host.takeSeat('white');
+    a.guest.takeSeat('black');
+    await settle();
+    // Not over someone sitting there.
+    host.setAi('black', { level: 'easy', specials: 'off' });
+    expect(host.view().state.rules.ai?.black).toBeUndefined();
+    expect(rec.notices().join()).toContain('흑 자리');
+    a.guest.takeSeat('spectator');
+    await settle();
+    host.setAi('black', { level: 'easy', specials: 'off' });
+    await settle();
+    expect(a.guest.view().state.rules.ai?.black).toEqual({ level: 'easy', specials: 'off' });
+    a.guest.takeSeat('black');
+    await settle();
+    expect(a.guest.view().seat).toBe('spectator');
+    expect(a.rec.notices().join()).toContain('AI');
+    host.start();
+    await settle();
+    expect(host.view().phase).toBe('playing');
+    host.request({ type: 'move', from: sq('e2'), to: sq('e4') });
+    const end = Date.now() + 8000;
+    while (host.view().state.turn !== 'white' && Date.now() < end) await new Promise((r) => setTimeout(r, 10));
+    expect(host.view().state.turnNumber).toBe(3);
+    await settle();
+    expect(a.guest.view().state.turnNumber).toBe(3);
+    host.dispose();
+  });
+
   it('the host can send a seated guest back to the bench (and only that)', async () => {
     const o = online();
     const watcher = join(o.host, { name: '구경꾼' });

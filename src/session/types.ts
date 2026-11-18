@@ -1,4 +1,4 @@
-import type { Color, GameEvent, GameState, PromotionType, RuleConfig, Square } from '../engine';
+import type { AiSeat, Color, GameEvent, GameState, PromotionType, RuleConfig, Square } from '../engine';
 import { cleanAiSeats } from '../engine';
 import type { GameMaster } from '../gm/types';
 import type { Doodle, DoodleOp } from './doodle';
@@ -138,6 +138,8 @@ export interface Session {
   takeSeat(role: Role): void;
   /** Authority only: send a member from their seat back to the waiting bench. */
   assignRole(key: string, role: Role): void;
+  /** Authority only, in the waiting room: an AI in this seat (null: the seat is free again). */
+  setAi(color: Color, seat: AiSeat | null): void;
   dispose(): void;
 }
 

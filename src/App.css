@@ -506,6 +506,18 @@ select option { background: var(--walnut); }
 .seat-red .seat-stone { background: radial-gradient(circle at 35% 30%, #d8604f, #7a1d16 70%); }
 .seat-label { flex: none; width: 1.6em; font-family: var(--font-voice); font-weight: 800; font-size: 1.0625rem; }
 .seat-empty { color: var(--muted); }
+.seat .member-name { flex: 1; min-width: 0; }
+.seat.ai { border-color: rgba(150, 190, 220, 0.35); }
+.ai-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ai-pick select {
+  min-width: 0; background: rgba(0, 0, 0, 0.35); color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 5px 6px; font-size: 0.875rem;
+}
+.ai-pick select:focus { border-color: var(--accent); outline: none; }
+.ai-cost { margin: 2px 0 0; font-size: 0.8125rem; }
+.turn-name.ai-thinking { animation: ai-think 1.6s ease-in-out infinite; }
+@keyframes ai-think { 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .turn-name.ai-thinking { animation: none; } }
 .bench-title { margin: 6px 0 0; font-family: var(--font-voice); font-weight: 700; font-size: 1rem; }
 .bench-title .muted { color: var(--muted); font-weight: 400; font-family: var(--font-ui); font-size: 0.875rem; }
 .members.bench .member { padding: 5px 2px; }
