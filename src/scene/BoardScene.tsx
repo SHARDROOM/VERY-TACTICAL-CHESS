@@ -15,7 +15,7 @@ import type { ShownPiece } from './liveDrag';
 import { TABLE_TOP_Y, WoodTable } from './WoodTable';
 import { CoinTable } from '../coins/CoinTable';
 import { DiceTray, trayCenterX, type ActiveRoll } from '../dice3d/DiceTray';
-import { TourCamera, type TourInset, type TourPhase } from './TourCamera';
+import { TourCamera, type TourFocus, type TourInset, type TourPhase } from './TourCamera';
 import { RenderPace, keepAwake } from './renderPace';
 import { Ghosts } from './Ghosts';
 
@@ -75,7 +75,9 @@ interface Props {
   /** Pieces taken off the board, shown small beside it (on the dice side, near whoever took them). */
   captured: CapturedPiece[];
   /** Title screen: a camera tour of the table instead of the player's view. */
-  tour?: { inset: TourInset; onPhase: (phase: TourPhase) => void };
+  tour?: { inset: TourInset; onPhase: (phase: TourPhase) => void; focus?: () => TourFocus | null };
+  /** More things on the table (the title screen's rule book). */
+  extras?: ReactNode;
   /** What each piece does in the show being played, by piece id. */
   directions?: ReadonlyMap<string, PieceDirection>;
   /** Doodles on the table; with a tool picked, pointer drags draw and the camera holds still. */
@@ -486,6 +488,7 @@ export function BoardScene({
   clashOdds = NO_ODDS,
   falling = NO_FALLING,
   broadcast = null,
+  extras = null,
 }: Props) {
   const resting = useRef(new Map<string, Obstacle>());
   const objects = useRef(new Map<string, Group>());
@@ -565,7 +568,7 @@ export function BoardScene({
       {/* Warm lamp over the table. */}
       <pointLight position={[0, 9, 0]} intensity={18} distance={30} decay={1.6} color="#ffdcae" />
       {tour ? (
-        <TourCamera diceSide={diceSide} inset={tour.inset} onPhase={tour.onPhase} />
+        <TourCamera diceSide={diceSide} inset={tour.inset} onPhase={tour.onPhase} focus={tour.focus} />
       ) : (
         <CameraRig camera={camera} diceSide={diceSide} locked={!!doodle?.tool || holding} holdNow={holdNow} broadcast={broadcast} />
       )}
@@ -574,6 +577,7 @@ export function BoardScene({
 
       <ShakeGroup shake={shake}>
       <WoodTable />
+      {extras}
       <DiceTray side={diceSide} roll={diceRoll} onLanded={onDiceLanded} onFirstLanded={onDiceFirstLanded} />
       <CoinTable ap={ap} side={diceSide === 1 ? -1 : 1} />
       {isHex() ? <HexFrame /> : <LabeledFrame />}

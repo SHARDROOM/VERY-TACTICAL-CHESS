@@ -1,10 +1,14 @@
-import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type FormEvent } from 'react';
 import { normalizeRoomCode } from '../session/peerTransport';
 import type { SavedGame } from '../session/storage';
 import type { TourInset } from '../scene/TourCamera';
 import { LobbyBackdrop } from './LobbyBackdrop';
 import { SettingsMenu, useFullscreen } from './SettingsMenu';
 import { Icon } from './Icon';
+import { BOOK_FACES, BookControl } from '../scene/RuleBook';
+
+/** While reading the rule book: the close button above, the page buttons below. */
+const READING_INSET: TourInset = { left: 0, top: 64, bottom: 96 };
 
 function ago(ms: number): string {
   const min = Math.round((Date.now() - ms) / 60000);
@@ -65,6 +69,32 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
   const titleRef = useRef<HTMLElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const inset = useCoveredInset(rootRef, titleRef, cardRef);
+  // The rule book on the table ("이 게임이 매우 전략적인 이유"): open, the camera goes to it.
+  const book = useMemo(() => new BookControl(), []);
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => book.subscribe(redraw), [book]);
+  const reading = book.open;
+  // Narrow (portrait) screens read one page at a time, the camera close on it.
+  useEffect(() => {
+    const fit = () => book.setSingle(window.innerWidth < window.innerHeight * 1.05);
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [book]);
+  useEffect(() => {
+    if (!reading) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') book.next();
+      else if (e.key === 'ArrowLeft') book.prev();
+      else if (e.key === 'Escape') book.close();
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [book, reading]);
+  // As the pages are numbered: the endpapers are the contents and the end.
+  const faceName = (i: number) => (i === 0 ? '차례' : i === BOOK_FACES - 1 ? '끝' : `${i}쪽`);
+  const page = book.page;
+  const pageLabel = page === null ? '' : book.single ? faceName(page) : `${faceName(2 * (book.spread - 1))} · ${faceName(2 * (book.spread - 1) + 1)}`;
   const join = (e: FormEvent) => {
     e.preventDefault();
     const c = normalizeRoomCode(code);
@@ -72,8 +102,8 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
   };
 
   return (
-    <div className="lobby" ref={rootRef}>
-      <LobbyBackdrop inset={inset} />
+    <div className={`lobby ${reading ? 'reading' : ''}`} ref={rootRef}>
+      <LobbyBackdrop inset={reading ? READING_INSET : inset} book={book} />
       <div className="lobby-shade" />
       <header className="lobby-title" ref={titleRef}>
         <h1>
@@ -88,6 +118,9 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
       <div className="lobby-scroll">
       <div className="lobby-card" ref={cardRef}>
         <p className="tagline">체스판 위에서 무엇이든 선언하세요. GM이 판정하고, 주사위가 결정합니다.</p>
+        <button className="book-open" onClick={() => book.openBook()} disabled={!!busy}>
+          <span aria-hidden>📖</span> 이 게임이 매우 전략적인 이유
+        </button>
 
         {saved && (
           <div className="saved-card">
@@ -146,6 +179,26 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
         </details>
       </div>
       </div>
+
+      {reading && (
+        <div className="book-ui">
+          <button className="book-close" onClick={() => book.close()}>
+            ✕ 책 덮기
+          </button>
+          <nav className="book-nav" aria-label="책 넘기기">
+            <button onClick={() => book.prev()} disabled={!book.canPrev} aria-label="이전 쪽">
+              ◀ 이전
+            </button>
+            <span className="book-page" aria-live="polite">
+              {pageLabel}
+            </span>
+            <button className="primary" onClick={() => book.next()} disabled={!book.canNext} aria-label="다음 쪽">
+              다음 ▶
+            </button>
+          </nav>
+          <p className="book-hint">책장을 손으로 끌어서 넘길 수도 있습니다</p>
+        </div>
+      )}
 
       {showMenu && (
         <SettingsMenu

@@ -609,3 +609,27 @@ select option { background: var(--walnut); }
 }
 .seat-row button { padding: 4px 10px; font-size: 0.875rem; }
 .victory-tally { margin: 8px 0 0; font-family: var(--font-voice); font-size: 1.0625rem; color: var(--accent-bright); }
+
+/* ---- the rule book on the title screen ("이 게임이 매우 전략적인 이유") ---- */
+.book-open {
+  display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 14px;
+  font-family: var(--font-voice); font-weight: 700; font-size: 1rem; color: var(--accent-bright);
+  background: rgba(200, 150, 62, 0.08); border: 1px solid rgba(200, 150, 62, 0.45);
+}
+.book-open:hover { background: rgba(200, 150, 62, 0.16); }
+.lobby-title, .lobby-scroll, .lobby-menu-button, .lobby-shade { transition: opacity 0.5s ease; }
+.lobby.reading .lobby-title, .lobby.reading .lobby-scroll, .lobby.reading .lobby-menu-button, .lobby.reading .lobby-shade { opacity: 0; pointer-events: none; }
+.lobby.reading .lobby-scroll > * { pointer-events: none; }
+.lobby.reading .lobby-backdrop { pointer-events: auto; touch-action: none; }
+.book-ui { position: absolute; inset: 0; z-index: 2; pointer-events: none; animation: book-ui-in 0.6s ease 0.4s both; }
+.book-ui > * { pointer-events: auto; }
+@keyframes book-ui-in { from { opacity: 0; } to { opacity: 1; } }
+.book-close { position: absolute; top: 14px; right: 14px; background: var(--panel); }
+.book-nav {
+  position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; box-shadow: var(--shadow);
+}
+.book-nav button { min-width: 84px; }
+.book-page { min-width: 70px; text-align: center; font-family: var(--font-voice); font-weight: 700; font-variant-numeric: tabular-nums; }
+.book-hint { position: absolute; left: 0; right: 0; bottom: 8px; margin: 0; text-align: center; font-size: 0.8125rem; color: var(--muted); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .book-ui { animation: none; } }

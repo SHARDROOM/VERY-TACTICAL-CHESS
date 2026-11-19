@@ -5,6 +5,7 @@ import type { TourInset, TourPhase } from '../scene/TourCamera';
 import type { ActiveRoll } from '../dice3d/DiceTray';
 import { simulateRolls } from '../dice3d/simulate';
 import { skinRotationFor } from '../dice3d/d6';
+import { RuleBook, type BookControl } from '../scene/RuleBook';
 
 const NO_SQUARES: never[] = [];
 const noop = () => {};
@@ -17,7 +18,7 @@ const CUE_DELAY = { dice: 1.6, coins: 1.8 };
  * toured by a slow camera. When the camera reaches the dice tray a d6 is thrown; at the
  * dishes the dealer throws gold coins in. Both are live physics, different every time.
  */
-export function LobbyBackdrop({ inset, map = 'classic' }: { inset: TourInset; map?: BoardMap }) {
+export function LobbyBackdrop({ inset, map = 'classic', book }: { inset: TourInset; map?: BoardMap; book?: BookControl }) {
   // The board the room will play on (the title screen: the classic one). Its geometry is in play
   // while the backdrop is up; a change of board builds the table afresh (see the key below).
   setBoardMap(map);
@@ -73,7 +74,8 @@ export function LobbyBackdrop({ inset, map = 'classic' }: { inset: TourInset; ma
         onDiceLanded={noop}
         ap={ap}
         captured={NO_SQUARES}
-        tour={{ inset, onPhase }}
+        tour={{ inset, onPhase, focus: book ? () => book.focus() : undefined }}
+        extras={book && map === 'classic' ? <RuleBook control={book} /> : null}
       />
     </div>
   );

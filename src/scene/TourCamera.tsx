@@ -22,17 +22,30 @@ export interface TourInset {
   bottom: number;
 }
 
+/** Something on the table to frame instead of touring: a rectangle (world units) seen from its near side. */
+export interface TourFocus {
+  center: [number, number, number];
+  width: number;
+  depth: number;
+  yaw: number;
+}
+
 interface Props {
   diceSide: 1 | -1;
   inset: TourInset;
   onPhase: (phase: TourPhase) => void;
+  /** Asked every frame: while it gives a rectangle, the tour holds and the camera frames that. */
+  focus?: () => TourFocus | null;
 }
+
+/** How steeply the camera looks down at a framed rectangle (from the horizontal). */
+const FOCUS_TILT = (62 * Math.PI) / 180;
 
 /**
  * A slow camera tour of the table for the title screen: circling the board, then the dice
  * tray, then the coin dishes, and round again. It glides between views instead of cutting.
  */
-export function TourCamera({ diceSide, inset, onPhase }: Props) {
+export function TourCamera({ diceSide, inset, onPhase, focus }: Props) {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   const onPhaseRef = useRef(onPhase);
@@ -82,6 +95,28 @@ export function TourCamera({ diceSide, inset, onPhase }: Props) {
     if (st.startedAt === null) {
       st.startedAt = now;
       onPhaseRef.current(PHASES[0].phase);
+    }
+    // Framing something (the rule book): the tour holds where it is, the camera glides there.
+    const framed = focus?.();
+    if (framed && st.pos) {
+      st.startedAt += dt;
+      const cam = camera as import('three').PerspectiveCamera;
+      const vfov = (cam.fov * Math.PI) / 360;
+      const freeAspect = freeW / freeH;
+      const hfov = Math.atan(Math.tan(vfov) * freeAspect);
+      // A margin: the near corners loom larger in perspective.
+      const dist = Math.max(framed.width / 2 / Math.tan(hfov), (framed.depth * Math.sin(FOCUS_TILT)) / 2 / Math.tan(vfov)) * 1.22;
+      const [cx, cy, cz] = framed.center;
+      // From the near side of the rectangle (its +z, turned by its yaw), looking down at it.
+      const back = Math.cos(FOCUS_TILT) * dist;
+      want.pos.set(cx + Math.sin(framed.yaw) * back, cy + Math.sin(FOCUS_TILT) * dist, cz + Math.cos(framed.yaw) * back);
+      want.look.set(cx, cy, cz);
+      const k = 1 - Math.exp(-dt * 2.6);
+      st.pos.lerp(want.pos, k);
+      st.look.lerp(want.look, k);
+      camera.position.copy(st.pos);
+      camera.lookAt(st.look);
+      return;
     }
     let t = now - st.startedAt;
     if (t > PHASES[st.index].seconds) {
