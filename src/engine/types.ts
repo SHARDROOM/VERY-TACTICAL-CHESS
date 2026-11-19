@@ -169,7 +169,8 @@ export type Effect =
    * turns: 0 = permanent. Not for 탑승 (use 'board'). `clash`: a clash multiplier; `prop`: its look
    * on the piece; `moveAs`: kinds it also moves like; `moveTimes`: moves in a row in one turn.
    */
-  | { type: 'tag'; at: Square; tag: string; turns: number; aura?: Aura; clash?: number; prop?: Prop; moveAs?: PieceType[]; moveTimes?: number; skill?: { about: string; bonus: number }; mind?: number }
+  /** `by`: in a chaos event, who holds the 인질 (a special action's actor holds it there). */
+  | { type: 'tag'; at: Square; tag: string; turns: number; by?: Square; aura?: Aura; clash?: number; prop?: Prop; moveAs?: PieceType[]; moveTimes?: number; skill?: { about: string; bonus: number }; mind?: number }
   | { type: 'untag'; at: Square; tag: string }
   /** The piece on `rider` climbs onto the friendly piece on `carrier`. */
   | { type: 'board'; rider: Square; carrier: Square }

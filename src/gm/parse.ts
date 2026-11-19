@@ -96,7 +96,13 @@ function convert(e: GmEffectReplyJson, clashMax = CLASH_MAX): Effect | string {
     squares[f] = s;
   }
   if (e.type === 'tag') {
-    const { aura, auraStrength, clash, prop, moveAs, moveTimes, skill, mind, ...tag } = e;
+    const { aura, auraStrength, clash, prop, moveAs, moveTimes, skill, mind, by, ...tag } = e as typeof e & { by?: unknown };
+    // Who holds a hostage in a chaos event ("" or nothing: no one named).
+    if (typeof by === 'string' && by.trim()) {
+      const holder = parseSquare(by.trim());
+      if (holder === null) return by;
+      squares.by = holder;
+    }
     const clean = cleanAura(aura, auraStrength);
     const look = propFromGm(prop);
     // A multiplier of 1 or less is none; past the range it is pulled in (it is a judgment, not a typo).

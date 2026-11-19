@@ -268,14 +268,15 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (!isInt(e.turns) || e.turns < 0) return fail('지속 턴은 0(영구) 이상의 정수여야 함');
         if (name === BURN && piece.type === 'king') return fail('킹에는 화상을 입힐 수 없음');
         if ((name === GUARD || name === HOSTAGE) && piece.type === 'king') return fail(`킹에는 ${name}을(를) 붙일 수 없음`);
-        // A hostage is held by the actor, next to it, of another side, and not a king.
+        // A hostage is held by the actor (in a chaos event, by the piece `by` names), next to it, of another side, not a king.
         let holder: string | undefined;
         if (name === HOSTAGE) {
-          const by = ctx.actor !== undefined ? board[ctx.actor] : null;
-          if (!by || ctx.actor === undefined) return fail('인질은 행동하는 기물(주체)이 잡음: 주체가 있어야 함');
+          const at = ctx.actor !== undefined ? ctx.actor : e.by;
+          const by = at !== undefined && onBoard(at) ? board[at] : null;
+          if (!by || at === undefined) return fail(ctx.actor === undefined ? '인질을 잡는 기물의 칸(by)이 있어야 함' : '인질은 행동하는 기물(주체)이 잡음: 주체가 있어야 함');
           if (by.color === piece.color) return fail('인질은 다른 편 기물만 잡을 수 있음');
           if (by.type === 'king') return fail('킹은 인질을 잡을 수 없음');
-          if (distance(ctx.actor, e.at) > 1) return fail(`인질은 주체(${squareName(ctx.actor)}) 바로 옆(1칸)에 있어야 함`);
+          if (distance(at, e.at) > 1) return fail(`인질은 잡는 기물(${squareName(at)}) 바로 옆(1칸)에 있어야 함`);
           holder = by.id;
         }
         if (name === BURN && e.turns === 0) return fail('화상은 1턴 이상이어야 함 (턴이 다하면 기물이 탄다)');

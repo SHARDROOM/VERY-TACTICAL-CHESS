@@ -410,3 +410,16 @@ describe('sacrifice through the GM boundary', () => {
     expect(r).toMatchObject({ feasible: true, actor: 'd1', sacrifice: ['e2'], effects: [{ type: 'remove', at: 'd7' }] });
   });
 });
+
+describe('a chaos hostage named in the reply', () => {
+  it('reads the holder square (by), and leaves it out when empty', async () => {
+    const { parseGmChaos } = await import('./parse');
+    const tagJson = (at: string, tag: string, by: string) => ({ type: 'tag', at, tag, turns: 2, aura: 'none', auraStrength: 0, clash: 0, prop: { preset: 'none', color: '', scale: 1, attach: 'head', parts: '' }, moveAs: [], moveTimes: 1, skill: { about: '', bonus: 0 }, mind: 0, by });
+    const reply = (effects: unknown[]) => ({ title: '산적', narration: 'n', effects, staging: { fx: [], shake: 0, beats: [], acts: [] } });
+    const r = parseGmChaos(reply([tagJson('e4', '인질', 'd5'), tagJson('e2', '보호막', '')]));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.chaos.effects[0]).toMatchObject({ type: 'tag', tag: '인질', by: 35 });
+    expect(r.chaos.effects[1]).not.toHaveProperty('by');
+  });
+});

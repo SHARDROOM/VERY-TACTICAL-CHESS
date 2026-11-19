@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCommand, createStateFrom, wanderTargets, type GameState } from './index';
+import { applyCommand, createStateFrom, wanderTargets, type Effect, type GameState } from './index';
 import { sq } from './testUtil';
 
 const withGray = (s: GameState, at: string, type: 'pawn' | 'knight' | 'rook', tags: { name: string; turnsLeft: number | null; appliedOnTurn: number; clash?: number }[] = []): GameState => {
@@ -55,5 +55,30 @@ describe('chaos\'s gray wanderers', () => {
     const r = applyCommand(s, { type: 'move', from: sq('a1'), to: sq('a6') });
     if (!r.ok) throw new Error(r.reason);
     expect(r.state.captured).toEqual([expect.objectContaining({ color: 'gray', type: 'knight' })]);
+  });
+});
+
+describe('chaos with the core tags', () => {
+  const base = () => createStateFrom({ e1: { color: 'white', type: 'king' }, e8: { color: 'black', type: 'king' }, e4: { color: 'white', type: 'pawn' } }, 'white');
+  const chaos = (effects: Effect[]) => applyCommand(base(), { type: 'chaos', chaos: { title: '산적', narration: '산적이 나타났다', effects } });
+
+  it('a bandit (a gray wanderer) comes and takes a pawn hostage: the effect names who holds it', () => {
+    const r = chaos([
+      { type: 'spawn', at: sq('d5'), color: 'gray', piece: 'pawn' },
+      { type: 'tag', at: sq('e4'), tag: '인질', turns: 2, by: sq('d5') },
+    ]);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const holder = r.state.board[sq('d5')]!;
+    expect(r.state.board[sq('e4')]?.tags).toEqual([expect.objectContaining({ name: '인질', holder: holder.id })]);
+  });
+
+  it('a hostage in a chaos event needs someone next to it to hold it', () => {
+    expect(chaos([{ type: 'tag', at: sq('e4'), tag: '인질', turns: 2 }])).toMatchObject({ ok: false });
+    expect(chaos([{ type: 'spawn', at: sq('d7'), color: 'gray', piece: 'pawn' }, { type: 'tag', at: sq('e4'), tag: '인질', turns: 2, by: sq('d7') }])).toMatchObject({ ok: false });
+  });
+
+  it('chaos may make a 행동대장, 원호 or 혼란 too', () => {
+    for (const name of ['행동대장', '원호', '혼란']) expect(chaos([{ type: 'tag', at: sq('e4'), tag: name, turns: 1 }]).ok).toBe(true);
   });
 });

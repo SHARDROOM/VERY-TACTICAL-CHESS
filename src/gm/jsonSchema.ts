@@ -1,7 +1,7 @@
 import { ELEMENTS, MEANS } from '../engine';
 import { GM_RULING_STAGING_JSON_SCHEMA, GM_STAGING_JSON_SCHEMA } from './staging';
 import { GM_PROP_JSON_SCHEMA } from './props';
-import { SACRIFICE_DESCRIPTION, MENTAL_DESCRIPTION, MIND_DESCRIPTION, MOVE_AS_DESCRIPTION, MOVE_TIMES_DESCRIPTION, SKILLS_DESCRIPTION, SKILL_ABOUT_DESCRIPTION, SKILL_BONUS_DESCRIPTION, SKILL_DESCRIPTION } from './schema';
+import { BY_DESCRIPTION, SACRIFICE_DESCRIPTION, MENTAL_DESCRIPTION, MIND_DESCRIPTION, MOVE_AS_DESCRIPTION, MOVE_TIMES_DESCRIPTION, SKILLS_DESCRIPTION, SKILL_ABOUT_DESCRIPTION, SKILL_BONUS_DESCRIPTION, SKILL_DESCRIPTION } from './schema';
 
 const prop = { ...GM_PROP_JSON_SCHEMA, description: '조형물: 태그나 지형의 모습. 필요 없으면 preset "none"에 parts 빈 목록' };
 
@@ -45,6 +45,7 @@ export const GM_EFFECT_JSON_SCHEMAS = [
       additionalProperties: false,
     },
     mind: { type: 'integer', description: MIND_DESCRIPTION },
+    by: { type: 'string', description: BY_DESCRIPTION },
   }),
   effect('untag', { at: sq('태그를 뗄 기물의 칸'), tag: { type: 'string', description: '뗄 태그 이름' } }),
   effect('board', { rider: sq('올라탈 기물의 칸'), carrier: sq('태울 같은 편 기물의 칸') }),

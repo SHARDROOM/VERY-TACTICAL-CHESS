@@ -29,6 +29,8 @@ export const SKILL_BONUS_DESCRIPTION = '보정 -3~+3 (0이 아닌 정수). 없�
 export const MIND_DESCRIPTION = '정신력 -3~+3: 다른 편이 이 기물에 거는 정신 계열 행동(회유, 매혹, 공포, 설득, 세뇌)의 주사위에서 이만큼 뺀다(강철 의지 +2, 겁에 질림 -2). 없으면 0';
 const skillField = z.object({ about: z.string().describe(SKILL_ABOUT_DESCRIPTION), bonus: z.number().int().describe(SKILL_BONUS_DESCRIPTION) }).describe(SKILL_DESCRIPTION);
 const mindField = z.number().int().describe(MIND_DESCRIPTION);
+export const BY_DESCRIPTION = '인질을 잡는 기물의 칸: 혼돈 사건에서 "인질" 태그를 붙일 때만 씀(인질 바로 옆의 다른 편 기물, 회색 떠돌이도 됨, 킹은 안 됨). 특수 행동에서는 주체가 잡으니 "". 그 밖에는 ""';
+const byField = z.string().describe(BY_DESCRIPTION);
 
 function effectSchema<
   A extends z.ZodTypeAny,
@@ -39,7 +41,8 @@ function effectSchema<
   T extends z.ZodTypeAny,
   K extends z.ZodTypeAny,
   W extends z.ZodTypeAny,
->(aura: A, auraStrength: B, clash: C, prop: P, moveAs: M, moveTimes: T, skill: K, mind: W) {
+  Y extends z.ZodTypeAny,
+>(aura: A, auraStrength: B, clash: C, prop: P, moveAs: M, moveTimes: T, skill: K, mind: W, by: Y) {
   return z.discriminatedUnion('type', [
     z.object({ type: z.literal('move'), from: square('기물이 있는 칸'), to: square('도착 칸') }),
     z.object({ type: z.literal('remove'), at: square('제거할 기물이 있는 칸') }),
@@ -56,6 +59,7 @@ function effectSchema<
       moveTimes,
       skill,
       mind,
+      by,
     }),
     z.object({ type: z.literal('untag'), at: square('태그를 뗄 기물의 칸'), tag: z.string().describe('뗄 태그 이름') }),
     z.object({ type: z.literal('board'), rider: square('올라탈 기물의 칸'), carrier: square('태울 같은 편 기물의 칸') }),
@@ -146,12 +150,13 @@ function chaosSchema<E extends z.ZodTypeAny, S extends z.ZodTypeAny>(effect: E, 
   });
 }
 
-export const GmEffectSchema = effectSchema(auraField, auraStrengthField, clashField, propField, moveAsField, moveTimesField, skillField, mindField);
+export const GmEffectSchema = effectSchema(auraField, auraStrengthField, clashField, propField, moveAsField, moveTimesField, skillField, mindField, byField);
 // Reading a reply, odd move fields are cleaned up (parse.ts) rather than refused.
 export const GmEffectReplySchema = effectSchema(
   auraField.optional(),
   auraStrengthField.optional(),
   clashField.optional(),
+  z.unknown().optional(),
   z.unknown().optional(),
   z.unknown().optional(),
   z.unknown().optional(),

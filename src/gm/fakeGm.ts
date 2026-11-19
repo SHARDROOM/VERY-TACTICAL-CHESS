@@ -160,7 +160,7 @@ const tag = (
   at: string,
   name: string,
   turns: number,
-  extra: { aura?: string; auraStrength?: number; clash?: number; prop?: PropJson; moveAs?: PieceType[]; moveTimes?: number; skill?: { about: string; bonus: number }; mind?: number } = {},
+  extra: { aura?: string; auraStrength?: number; clash?: number; prop?: PropJson; moveAs?: PieceType[]; moveTimes?: number; skill?: { about: string; bonus: number }; mind?: number; by?: string } = {},
 ) => ({
   type: 'tag' as const,
   at,
@@ -174,6 +174,7 @@ const tag = (
   moveTimes: extra.moveTimes ?? 1,
   skill: extra.skill ?? { about: '', bonus: 0 },
   mind: extra.mind ?? 0,
+  by: extra.by ?? '',
 });
 
 /** Mental actions (정신 계열): the target's will counts. */
