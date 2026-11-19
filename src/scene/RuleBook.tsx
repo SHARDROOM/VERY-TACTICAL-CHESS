@@ -1,19 +1,47 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { BackSide, BufferAttribute, BufferGeometry, FrontSide, Group, Plane, Raycaster, Vector2, Vector3, type CanvasTexture } from 'three';
+import { isHex, type Color } from '../engine';
 import { TABLE_TOP_Y } from './WoodTable';
 import { keepAwake } from './renderPace';
+import { sideDir } from './coords';
 import { BOOK_PAGES, bookFontsReady, coverTexture, pageTexture } from './ruleBookPages';
 
 /*
- * The rule book on the title screen's table ("이 게임이 매우 전략적인 이유"): a leather-bound book
- * of three paper sheets. Each leaf turns about the spine under its own little physics (gravity,
- * inertia, a bounce where it lands, and paper that bends as it moves and sags off the stack), by a
- * drag of the finger or a tap, or by the reader's buttons (BookControl).
+ * The rule book on the table ("이 게임이 매우 전략적인 이유"), on the title screen and in the game:
+ * a leather-bound book of three paper sheets. Each leaf turns about the spine under its own little
+ * physics (gravity, inertia, a bounce where it lands, and paper that bends as it moves and sags off
+ * the stack), by a drag of the finger or a tap, or by the reader's buttons (BookControl). Turning
+ * the cover over by hand opens the book for reading; shutting it closes it.
  */
 
-/** Where it lies and how big it is (world units; a board square is 1). */
-export const BOOK = { x: -8.2, z: 5.6, yaw: 0.12, w: 2.4, d: 3.2, cover: 0.07, gap: 0.016, sheets: 3 } as const;
+/** How big it is (world units; a board square is 1). */
+export const BOOK = { w: 2.4, d: 3.2, cover: 0.07, gap: 0.016, sheets: 3 } as const;
+
+/** Where the book lies on the table: its spine's middle, and its turn about the vertical. */
+export interface BookPose {
+  x: number;
+  z: number;
+  yaw: number;
+}
+
+/** The title screen's table (and white's place in a game): front left, outside the dice tray. */
+export const LOBBY_BOOK_POSE: BookPose = { x: -8.2, z: 5.6, yaw: 0.12 };
+
+/**
+ * In a game the book lies at the front left of whoever is looking (the seat's side, or the side
+ * to move on a shared screen): white's place turned to that side of the table.
+ */
+export function bookPoseFor(side: Color): BookPose {
+  // The hexagon: just beyond the middle of the player's own edge (its left flank holds the taken
+  // pieces, and turned to black's place the front left would be the dice tray).
+  const home: BookPose = isHex() ? { x: 0.4, z: 9.7, yaw: 0 } : LOBBY_BOOK_POSE;
+  const [dx, dz] = sideDir(side === 'gray' ? 'white' : side);
+  const a = Math.atan2(dx, dz);
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return { x: home.x * c + home.z * s, z: -home.x * s + home.z * c, yaw: home.yaw + a };
+}
 /** The front cover and the sheets turn; the back cover stays. */
 const LEAVES = BOOK.sheets + 1;
 /** Reading faces: the inside of the front cover, each sheet's two sides, the inside of the back cover. */
@@ -36,7 +64,25 @@ export class BookControl {
   single = false;
   /** Turns waiting to be played: a leaf, which way, and when (performance.now ms). */
   readonly turns: { leaf: number; dir: 1 | -1; at: number }[] = [];
+  /** Where the book lies (a new place waits while the book is open). */
+  pose: BookPose;
+  private nextPose: BookPose | null = null;
   private listeners = new Set<Listener>();
+
+  constructor(pose: BookPose = LOBBY_BOOK_POSE) {
+    this.pose = pose;
+  }
+
+  /** Moves the book (to the side now looking at the table); not while it is being read. */
+  setPose(pose: BookPose): void {
+    if (pose.x === this.pose.x && pose.z === this.pose.z && pose.yaw === this.pose.yaw) return;
+    if (this.open) {
+      this.nextPose = pose;
+      return;
+    }
+    this.pose = pose;
+    this.emit();
+  }
 
   subscribe(f: Listener): () => void {
     this.listeners.add(f);
@@ -68,6 +114,15 @@ export class BookControl {
     const now = performance.now();
     for (let leaf = this.spread - 1, i = 0; leaf >= 0; leaf--, i++) this.turns.push({ leaf, dir: -1, at: now + i * 220 });
     this.spread = 0;
+    this.shut();
+  }
+
+  /** Shut: a place that waited is taken now. */
+  private shut(): void {
+    if (this.nextPose) {
+      this.pose = this.nextPose;
+      this.nextPose = null;
+    }
     this.emit();
   }
 
@@ -108,9 +163,26 @@ export class BookControl {
     this.emit();
   }
 
-  /** The leaves came to rest with `spread` turned (a hand turned some): reading moves to the new pages. */
+  /**
+   * The leaves came to rest with `spread` turned (a hand turned some): reading moves to the new
+   * pages. A hand that opened the shut book opens it for reading; one that shut it closes it.
+   */
   settled(spread: number): void {
-    if (!this.open || spread === this.spread || spread === 0) return;
+    if (spread === 0) {
+      if (!this.open) return;
+      this.open = false;
+      this.spread = 0;
+      this.shut();
+      return;
+    }
+    if (!this.open) {
+      this.open = true;
+      this.side = 0;
+      this.spread = spread;
+      this.emit();
+      return;
+    }
+    if (spread === this.spread) return;
     this.side = spread > this.spread ? 0 : 1;
     this.spread = spread;
     this.emit();
@@ -122,14 +194,15 @@ export class BookControl {
    */
   focus(): { center: [number, number, number]; width: number; depth: number; yaw: number; margin: number } | null {
     if (!this.open) return null;
+    const { x, z, yaw } = this.pose;
     const local = this.single ? (this.side === 0 ? -BOOK.w / 2 : BOOK.w / 2) : 0;
-    const c = Math.cos(BOOK.yaw);
-    const s = Math.sin(BOOK.yaw);
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
     return {
-      center: [BOOK.x + local * c, TABLE_TOP_Y + 0.15, BOOK.z - local * s],
+      center: [x + local * c, TABLE_TOP_Y + 0.15, z - local * s],
       width: this.single ? BOOK.w * 1.04 : BOOK.w * 2.08,
       depth: BOOK.d * 1.04,
-      yaw: BOOK.yaw,
+      yaw,
       // A whole spread needs room for its near corners (they loom in perspective); one page less.
       margin: this.single ? 1.13 : 1.22,
     };
@@ -217,7 +290,14 @@ function bend(g: BufferGeometry, leaf: Leaf) {
   g.computeBoundingSphere();
 }
 
-export function RuleBook({ control }: { control: BookControl }) {
+/**
+ * The book on the table. `onHold` says when a hand takes a leaf and lets it go (the table's camera
+ * holds still meanwhile).
+ */
+export function RuleBook({ control, onHold }: { control: BookControl; onHold?: (on: boolean) => void }) {
+  // A new place for the book (the table seen from another side).
+  const [pose, setPose] = useState(control.pose);
+  useEffect(() => control.subscribe(() => setPose(control.pose)), [control]);
   const [fonts, setFonts] = useState(false);
   useEffect(() => {
     let live = true;
@@ -282,7 +362,7 @@ export function RuleBook({ control }: { control: BookControl }) {
     if (!d || !book) return;
     const rect = gl.domElement.getBoundingClientRect();
     const leaf = leaves.current[d.leaf];
-    if (control.single) {
+    if (control.single && control.open) {
       // One page fills the screen (the spine at its edge): a swipe across most of the screen turns it.
       leaf.target = Math.min(Math.PI, Math.max(0, d.startTh + ((d.startX - clientX) / (rect.width * 0.7)) * Math.PI));
     } else {
@@ -300,6 +380,7 @@ export function RuleBook({ control }: { control: BookControl }) {
     const d = drag.current;
     if (!d) return;
     drag.current = null;
+    onHold?.(false);
     const leaf = leaves.current[d.leaf];
     leaf.held = false;
     // A tap turns the leaf over the way it would go; a drag lets it go as it was moving, with a
@@ -319,10 +400,12 @@ export function RuleBook({ control }: { control: BookControl }) {
     };
   });
   const down = (i: number) => (e: ThreeEvent<PointerEvent>) => {
-    if (!control.open) return;
+    // Shut, only the cover can be taken (to open it).
     const { right, left } = tops();
     if (i !== right && i !== left) return;
+    if (!control.open && i !== 0) return;
     e.stopPropagation();
+    onHold?.(true);
     drag.current = { leaf: i, startTh: leaves.current[i].th, moved: false, startX: e.nativeEvent.clientX };
   };
 
@@ -390,7 +473,7 @@ export function RuleBook({ control }: { control: BookControl }) {
 
   const { w, d, cover } = BOOK;
   return (
-    <group ref={bookRef} position={[BOOK.x, TABLE_TOP_Y, BOOK.z]} rotation={[0, BOOK.yaw, 0]}>
+    <group ref={bookRef} position={[pose.x, TABLE_TOP_Y, pose.z]} rotation={[0, pose.yaw, 0]}>
       {/* The back cover, with the endpaper on its inside. */}
       <mesh position={[w / 2, cover / 2, 0]} castShadow receiveShadow>
         <boxGeometry args={[w + 0.06, cover, d + 0.06]} />

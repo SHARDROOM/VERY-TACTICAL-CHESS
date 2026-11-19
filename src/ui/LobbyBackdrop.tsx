@@ -5,7 +5,7 @@ import type { TourInset, TourPhase } from '../scene/TourCamera';
 import type { ActiveRoll } from '../dice3d/DiceTray';
 import { simulateRolls } from '../dice3d/simulate';
 import { skinRotationFor } from '../dice3d/d6';
-import { RuleBook, type BookControl } from '../scene/RuleBook';
+import type { BookControl } from '../scene/RuleBook';
 
 const NO_SQUARES: never[] = [];
 const noop = () => {};
@@ -75,7 +75,7 @@ export function LobbyBackdrop({ inset, map = 'classic', book }: { inset: TourIns
         ap={ap}
         captured={NO_SQUARES}
         tour={{ inset, onPhase, focus: book ? () => book.focus() : undefined }}
-        extras={book && map === 'classic' ? <RuleBook control={book} /> : null}
+        book={map === 'classic' ? book : undefined}
       />
     </div>
   );

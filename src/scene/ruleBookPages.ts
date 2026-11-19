@@ -133,14 +133,21 @@ export const BOOK_PAGES: PageText[] = [
 /** Page textures are this many pixels (the page's 2.4 × 3.2 shape). */
 const TEX_W = 1024;
 const TEX_H = 1365;
+/** Pages are painted this much finer than their layout units (small print stays sharp up close). */
+const PAGE_SCALE = 1.5;
 
 const VOICE = '"Hahmlet Variable", "Nanum Myeongjo", serif';
-const UI = '"Gowun Dodum", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
+/** Body text: the book's serif at a sturdy weight, dark ink (thin strokes wash out on paper in 3D). */
+const BODY = 520;
+const INK = '#1c1209';
 
 /** Waits for the book's fonts (they come with the app, but load lazily). */
 export async function bookFontsReady(): Promise<void> {
   if (typeof document === 'undefined' || !document.fonts) return;
-  await Promise.all([document.fonts.load(`700 52px ${VOICE}`, '이유'), document.fonts.load(`36px ${UI}`, '판정')]).catch(() => {});
+  await Promise.all([
+    document.fonts.load(`700 52px ${VOICE}`, '이유'),
+    document.fonts.load(`${BODY} 36px ${VOICE}`, '판정'),
+  ]).catch(() => {});
 }
 
 /** Splits text into lines that fit `width` (by words, and by letters when a word is too long). */
@@ -239,16 +246,16 @@ function layout(ctx: CanvasRenderingContext2D, page: PageText, size: number, dra
       y += line;
     } else if ('p' in b || 'note' in b) {
       const text = 'p' in b ? b.p : b.note;
-      ctx.font = `${'note' in b ? 'italic ' : ''}${Math.round(size * ('note' in b ? 0.9 : 1))}px ${UI}`;
-      ctx.fillStyle = 'note' in b ? '#6b4a2a' : '#2b1d12';
+      ctx.font = `${BODY} ${Math.round(size * ('note' in b ? 0.9 : 1))}px ${VOICE}`;
+      ctx.fillStyle = 'note' in b ? '#5a3a1c' : INK;
       for (const t of wrap(ctx, text, width)) {
         if (draw) ctx.fillText(t, left, y);
         y += line;
       }
-      ctx.fillStyle = '#2b1d12';
+      ctx.fillStyle = INK;
       y += Math.round(size * 0.35);
     } else if ('li' in b) {
-      ctx.font = `${size}px ${UI}`;
+      ctx.font = `${BODY} ${size}px ${VOICE}`;
       const indent = Math.round(size * 1.1);
       const lines = wrap(ctx, b.li, width - indent);
       lines.forEach((t, i) => {
@@ -258,7 +265,7 @@ function layout(ctx: CanvasRenderingContext2D, page: PageText, size: number, dra
             ctx.beginPath();
             ctx.arc(left + size * 0.35, y - size * 0.35, size * 0.15, 0, Math.PI * 2);
             ctx.fill();
-            ctx.fillStyle = '#2b1d12';
+            ctx.fillStyle = INK;
           }
           ctx.fillText(t, left + indent, y);
         }
@@ -266,14 +273,14 @@ function layout(ctx: CanvasRenderingContext2D, page: PageText, size: number, dra
       });
       y += Math.round(size * 0.2);
     } else if ('rows' in b) {
-      ctx.font = `${size}px ${UI}`;
+      ctx.font = `${BODY} ${size}px ${VOICE}`;
       const half = Math.ceil(b.rows.length / 2);
       const col = width / 2;
       b.rows.forEach(([k, v], i) => {
         const x = left + (i < half ? 0 : col);
         const yy = y + (i % half) * line;
         if (draw) {
-          ctx.fillStyle = '#2b1d12';
+          ctx.fillStyle = INK;
           ctx.fillText(k, x + size * 0.4, yy);
           ctx.fillStyle = '#8a2f1d';
           ctx.textAlign = 'right';
@@ -281,7 +288,7 @@ function layout(ctx: CanvasRenderingContext2D, page: PageText, size: number, dra
           ctx.textAlign = 'left';
           ctx.fillStyle = 'rgba(110, 72, 34, 0.25)';
           ctx.fillRect(x + size * 0.4, yy + size * 0.3, col - size * 1.2, 1.5);
-          ctx.fillStyle = '#2b1d12';
+          ctx.fillStyle = INK;
         }
       });
       y += half * line + Math.round(size * 0.4);
@@ -295,7 +302,7 @@ function layout(ctx: CanvasRenderingContext2D, page: PageText, size: number, dra
         y += Math.round(size * 1.7);
       }
       ctx.textAlign = 'left';
-      ctx.fillStyle = '#2b1d12';
+      ctx.fillStyle = INK;
     }
   }
   return y <= bottom;
@@ -304,7 +311,8 @@ function layout(ctx: CanvasRenderingContext2D, page: PageText, size: number, dra
 function texture(canvas: HTMLCanvasElement, mirror: boolean): CanvasTexture {
   const t = new CanvasTexture(canvas);
   t.colorSpace = SRGBColorSpace;
-  t.anisotropy = 8;
+  // As sharp as the screen allows when the page is seen at a slant (three clamps to the device's limit).
+  t.anisotropy = 16;
   if (mirror) {
     // Seen from its back (a page that has been turned): the spine is on its right.
     t.wrapS = RepeatWrapping;
@@ -317,9 +325,10 @@ function texture(canvas: HTMLCanvasElement, mirror: boolean): CanvasTexture {
 /** Page `index` (reading order, see BOOK_PAGES) painted on paper; `mirror` for a face seen from the leaf's back. */
 export function pageTexture(index: number, mirror: boolean): CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = TEX_W;
-  canvas.height = TEX_H;
+  canvas.width = Math.round(TEX_W * PAGE_SCALE);
+  canvas.height = Math.round(TEX_H * PAGE_SCALE);
   const ctx = canvas.getContext('2d')!;
+  ctx.scale(PAGE_SCALE, PAGE_SCALE);
   const page = BOOK_PAGES[index];
   const endpaper = index === 0 || index === BOOK_PAGES.length - 1;
   paper(ctx, index + 1, endpaper);

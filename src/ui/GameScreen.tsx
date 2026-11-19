@@ -38,6 +38,7 @@ import {
   type AiLevel,
 } from '../engine';
 import { BoardScene, type Broadcast, type CameraRequest } from '../scene/BoardScene';
+import { BookControl, bookPoseFor } from '../scene/RuleBook';
 import { COLOR_NAME, MOD_KIND_NAME, OUTCOME_LABEL, PIECE_NAME, REJECT_MESSAGE, describeEvents, signed, type LogEntry, type LogTone } from './messages';
 import { PrecedentList } from './PrecedentList';
 import { josa } from './josa';
@@ -285,6 +286,9 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   /** 행동 쓰기 도움: board taps write the declaration's squares into the box instead of picking pieces up. */
   const [writeHelp, setWriteHelp] = useState(false);
   const [camera, setCamera] = useState<CameraRequest>({ mode: 'side', side: homeSide, nonce: 0 });
+  // The rule book lies at the front left of whoever is looking at the table, to open by hand.
+  const book = useMemo(() => new BookControl(bookPoseFor(homeSide)), []);
+  useEffect(() => book.setPose(bookPoseFor(camera.side)), [book, camera.side, view.state.map]);
   // Watching AIs: the camera leans toward each move.
   const [focus, setFocus] = useState<Broadcast>({ focus: null, nonce: 0 });
   // One screen: who plays which side (the turn badge opens it).
@@ -1020,6 +1024,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         onSquareClick={onSquareClick}
         onHoverSquare={setHovered}
         diceSide={isHex() || seat === 'black' ? 1 : -1}
+        book={book}
         diceRoll={diceRoll}
         onDiceLanded={onDiceLanded}
         onDiceFirstLanded={() => setDice((d) => (d ? { ...d, firstLanded: true } : d))}

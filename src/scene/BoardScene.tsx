@@ -17,6 +17,7 @@ import { CoinTable } from '../coins/CoinTable';
 import { DiceTray, trayCenterX, type ActiveRoll } from '../dice3d/DiceTray';
 import { TourCamera, type TourFocus, type TourInset, type TourPhase } from './TourCamera';
 import { RenderPace, keepAwake } from './renderPace';
+import { RuleBook, type BookControl } from './RuleBook';
 import { Ghosts } from './Ghosts';
 
 const NO_REMAINS: RemainsMark[] = [];
@@ -33,6 +34,12 @@ import type { PieceDirection } from './pieceMotion';
  * sharp enough and there are far fewer pixels to fill (battery). Others up to 2×.
  */
 const DPR: [number, number] = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? [1, 1.5] : [1, 2];
+/**
+ * While the rule book is open, sharper (its print is small): the screen's own sharpness on the
+ * title screen, where only the book is being looked at; at most 2 in a game, which goes on meanwhile.
+ */
+const readingDpr = (cap: number): [number, number] => [1, Math.max(DPR[1], Math.min(cap, typeof devicePixelRatio === 'number' ? devicePixelRatio : 1))];
+const READING_DPR = { title: readingDpr(3), game: readingDpr(2) };
 
 /** 'dice' looks at the dice tray beside the board while a roll plays. */
 export type ViewMode = 'side' | 'top' | 'dice';
@@ -76,8 +83,10 @@ interface Props {
   captured: CapturedPiece[];
   /** Title screen: a camera tour of the table instead of the player's view. */
   tour?: { inset: TourInset; onPhase: (phase: TourPhase) => void; focus?: () => TourFocus | null };
-  /** More things on the table (the title screen's rule book). */
+  /** More things on the table. */
   extras?: ReactNode;
+  /** The rule book lying on the table, opened and read by hand. */
+  book?: BookControl;
   /** What each piece does in the show being played, by piece id. */
   directions?: ReadonlyMap<string, PieceDirection>;
   /** Doodles on the table; with a tool picked, pointer drags draw and the camera holds still. */
@@ -489,7 +498,11 @@ export function BoardScene({
   falling = NO_FALLING,
   broadcast = null,
   extras = null,
+  book,
 }: Props) {
+  // The book open: drawn at the screen's full sharpness.
+  const [reading, setReading] = useState(() => !!book?.open);
+  useEffect(() => (book ? book.subscribe(() => setReading(book.open)) : undefined), [book]);
   const resting = useRef(new Map<string, Obstacle>());
   const objects = useRef(new Map<string, Group>());
   const physics = useMemo<PiecePhysics>(() => ({ diceSide, resting: resting.current, objects: objects.current }), [diceSide]);
@@ -550,7 +563,7 @@ export function BoardScene({
 
   return (
     // No long-press menu on the table (it would open while drawing or dragging).
-    <Canvas shadows dpr={DPR} camera={{ position: [0, 8.5, 8], fov: 45 }} onContextMenu={(e) => e.preventDefault()}>
+    <Canvas shadows dpr={reading ? READING_DPR[tour ? 'title' : 'game'] : DPR} camera={{ position: [0, 8.5, 8], fov: 45 }} onContextMenu={(e) => e.preventDefault()}>
       <RenderPace />
       <color attach="background" args={['#15161b']} />
       <ambientLight intensity={0.35} />
@@ -578,6 +591,7 @@ export function BoardScene({
       <ShakeGroup shake={shake}>
       <WoodTable />
       {extras}
+      {book && <RuleBook control={book} onHold={hands.hold} />}
       <DiceTray side={diceSide} roll={diceRoll} onLanded={onDiceLanded} onFirstLanded={onDiceFirstLanded} />
       <CoinTable ap={ap} side={diceSide === 1 ? -1 : 1} />
       {isHex() ? <HexFrame /> : <LabeledFrame />}
