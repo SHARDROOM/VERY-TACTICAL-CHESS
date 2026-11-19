@@ -126,6 +126,9 @@ select option { background: var(--walnut); }
 .panel.collapsed .log { display: none; }
 .panel.collapsed .panel-footer .counter { display: none; }
 .panel.collapsed .panel-footer { justify-content: flex-end; }
+/* Folded chat keeps nothing but the tabs; so does the log when watching (nothing to type there). */
+.panel.collapsed .chat ~ .input-row { display: none; }
+.panel.collapsed.watching { left: auto; width: auto; }
 .panel-footer { display: flex; justify-content: space-between; align-items: center; }
 .counter { color: var(--muted); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
 
@@ -541,6 +544,8 @@ select option { background: var(--walnut); }
 }
 .ai-pick select:focus { border-color: var(--accent); outline: none; }
 .ai-cost { margin: 2px 0 0; font-size: 0.8125rem; }
+/* An AI seat's own model (AI의 두뇌). */
+.brain-pick { padding: 4px 8px; font-size: 0.8125rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .turn-name.ai-thinking { animation: ai-think 1.6s ease-in-out infinite; }
 @keyframes ai-think { 50% { opacity: 0.55; } }
 @media (prefers-reduced-motion: reduce) { .turn-name.ai-thinking { animation: none; } }
@@ -608,6 +613,12 @@ select option { background: var(--walnut); }
 .standing-seg.seg-white { background: linear-gradient(#fffaf0, #d9cdb3); }
 .standing-seg.seg-black { background: linear-gradient(#6a5d50, #2e251d); }
 .standing-seg.seg-red { background: linear-gradient(#d8604f, #7a1d16); }
+.watch-bar { grid-template-columns: 1fr auto; align-items: center; }
+.watch-bar .watch-row { grid-column: 1 / -1; }
+/* Folded (사용자 요청, phones): the standing line, the score and the button to unfold. */
+.watch-bar.folded { grid-template-columns: 1fr auto auto; padding: 6px 8px; gap: 8px; }
+.watch-fold { padding: 2px 9px; font-size: 0.8125rem; line-height: 1.2; }
+.watch-score { font-size: 0.8125rem; font-variant-numeric: tabular-nums; color: var(--muted); }
 .watch-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .watch-tally { display: flex; align-items: center; gap: 6px; font-size: 0.9375rem; flex-wrap: wrap; }
 .tally-chip { display: inline-flex; align-items: center; gap: 5px; }

@@ -13,8 +13,11 @@ import { squareToWorld } from './coords';
 
 type ClashEvent = Extract<GameEvent, { type: 'clash' }>;
 
-/** How the loser goes: cut down (shatters on the spot), knocked flying, or only its shield bursts. */
-export type Finale = 'shatter' | 'knock' | 'shield';
+/**
+ * How the loser goes: cut down (shatters on the spot), knocked flying, only its shield bursts, or
+ * (a missile or spell that failed to kill) the attacker is thrown back unharmed.
+ */
+export type Finale = 'shatter' | 'knock' | 'shield' | 'repel';
 
 export interface DuelPlan {
   attackerId: string;
@@ -25,6 +28,8 @@ export interface DuelPlan {
   exchanges: number;
   winner: 'attacker' | 'defender';
   finale: Finale;
+  /** The attacker goes back to its own square at the end (an instant kill fought out: it never takes the defender's). */
+  goHome?: boolean;
 }
 
 export interface DuelRun {
@@ -66,7 +71,17 @@ export function planDuel(clash: ClashEvent, board: Board, maxExchanges = 6): Due
   const stance = target.clone().add(dir.multiplyScalar(Math.min(len, 0.95) / len));
   // A winner with skill (a weapon) cuts the loser down; anyone else knocks it over.
   const finale: Finale =
-    clash.winner === 'defender' ? (clashSkill(d) > 1 ? 'shatter' : 'knock') : clash.shield ? 'shield' : clashSkill(a) > 1 ? 'shatter' : 'knock';
+    clash.winner === 'defender'
+      ? clash.strike === 'ranged'
+        ? 'repel'
+        : clashSkill(d) > 1
+          ? 'shatter'
+          : 'knock'
+      : clash.shield
+        ? 'shield'
+        : clashSkill(a) > 1
+          ? 'shatter'
+          : 'knock';
   return {
     attackerId: clash.attackerId,
     defenderId: clash.defenderId,
@@ -75,6 +90,8 @@ export function planDuel(clash: ClashEvent, board: Board, maxExchanges = 6): Due
     exchanges: Math.max(1, Math.min(maxExchanges, clash.exchanges)),
     winner: clash.winner,
     finale,
+    // It struck from its own square: back there, unless it fell (a melee attacker that lost).
+    goHome: !!clash.strike && (clash.winner === 'attacker' || clash.strike === 'ranged'),
   };
 }
 
@@ -215,7 +232,7 @@ export async function simulateDuel(plan: DuelPlan): Promise<DuelRun> {
           // Knocked flying, tumbling away from the winner.
           loserBody.setLinvel({ x: toward.x * 4.2 * sign, y: 4.5, z: toward.z * 4.2 * sign }, true);
           loserBody.setAngvel({ x: toward.z * 9 * sign, y: 2, z: -toward.x * 9 * sign }, true);
-        } else if (plan.finale === 'shield') {
+        } else if (plan.finale === 'shield' || plan.finale === 'repel') {
           // The shield takes it: the defender reels, the attacker bounces off.
           ba.setLinvel({ x: -toward.x * 3, y: 1.5, z: -toward.z * 3 }, true);
           bd.setLinvel({ x: toward.x * 1.2, y: 0.6, z: toward.z * 1.2 }, true);
@@ -228,6 +245,7 @@ export async function simulateDuel(plan: DuelPlan): Promise<DuelRun> {
         rec.glide(plan.winner === 'attacker' && plan.finale === 'shatter' ? A.stance : last.a.p.setY(0), last.d.p.setY(0), T.finale * 0.45);
       }
     }
+    if (plan.goHome) goHome(rec, plan);
     if (!rec.hits.some((h) => h.final)) rec.hits.push({ t: rec.steps * DT * 0.8, strength: 0.8, final: true });
     return rec.run(contact);
   } catch {
@@ -256,7 +274,22 @@ export function scriptedDuel(plan: DuelPlan): DuelRun {
     if (plan.winner === 'attacker') rec.glide(A.stance, D.home.clone().add(away), T.finale * 0.6, 0.8);
     else rec.glide(A.stance.clone().add(away), D.home, T.finale * 0.6, 0.8);
   }
+  if (plan.goHome) goHome(rec, plan);
   return rec.run(contact);
+}
+
+/** The attacker walks back to its own square, standing up; the defender stays as it ended (standing, or as it fell). */
+function goHome(rec: Recorder, plan: DuelPlan) {
+  const a = rec.last('a');
+  const d = rec.last('d');
+  const n = Math.max(1, Math.round(T.approach / DT));
+  for (let i = 1; i <= n; i++) {
+    const t = i / n;
+    const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+    const p = a.p.clone().lerp(plan.attacker.home, e);
+    p.y = a.p.y + (plan.attacker.home.y - a.p.y) * e + Math.sin(Math.PI * t) * 0.1;
+    rec.push(p, a.q.clone().slerp(UP, e), d.p, d.q);
+  }
 }
 
 /** The pose of a piece `seconds` into a duel run (the last pose once it is over). */

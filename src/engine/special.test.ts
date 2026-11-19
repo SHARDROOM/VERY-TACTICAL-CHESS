@@ -272,14 +272,14 @@ describe('rolling again after a failure', () => {
   });
 
   it('a second try costs the reroll price, uses the same ruling and replaces the precedent', () => {
-    const s = failed(5, { cost: 3 });
-    expect(s.state.ap.white).toBe(2);
+    const s = failed(5, { cost: 2 });
+    expect(s.state.ap.white).toBe(3);
     const r = ok(attempt(s.state, 5));
     expect(r.events[0]).toMatchObject({ type: 'specialResolved', roll: 5, cost: DEFAULT_RULES.rerollCost, reroll: 1, success: true });
-    expect(r.state.ap.white).toBe(2 - DEFAULT_RULES.rerollCost);
+    expect(r.state.ap.white).toBe(3 - DEFAULT_RULES.rerollCost);
     expect(r.state.board[sq('e5')]).toMatchObject({ type: 'knight' });
     expect(r.state.pending).toBeNull();
-    expect(r.state.precedents).toEqual([expect.objectContaining({ roll: 5, outcome: 'success', rerolls: 1, cost: 3 })]);
+    expect(r.state.precedents).toEqual([expect.objectContaining({ roll: 5, outcome: 'success', rerolls: 1, cost: 2 })]);
   });
 
   it('failing again keeps it open, counting the tries, until the AP runs out', () => {

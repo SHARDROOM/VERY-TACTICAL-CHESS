@@ -11,7 +11,9 @@ import {
   type Session,
   type SessionView,
 } from '../session/types';
-import { saveName } from '../session/storage';
+import { saveName, type AiBrains } from '../session/storage';
+import { GmSettings, type GmConfig } from './GmSettings';
+import { CLAUDE_MODELS } from '../gm/claudeGm';
 import { LobbyBackdrop } from './LobbyBackdrop';
 import { ConnectionOverlay } from './ConnectionOverlay';
 import { SettingsMenu, useFullscreen } from './SettingsMenu';
@@ -26,11 +28,25 @@ interface Props {
   view: SessionView;
   onLeave: () => void;
   onGmSettings: () => void;
+  /** This browser's models for the AI seats (AI의 두뇌; the authority's only) and the GM's, to start from. */
+  brains?: AiBrains;
+  gmConfig?: GmConfig;
+  onBrain?: (seat: 'white' | 'black' | 'red', config: GmConfig | null) => void;
+}
+
+/** A model as named on a seat: the provider and the model. */
+function brainLabel(config: GmConfig | undefined): string {
+  if (!config) return 'GM과 같이';
+  if (config.provider === 'fake') return '내장 AI';
+  const model = config.provider === 'claude' ? (CLAUDE_MODELS.find((m) => m.id === config.model)?.label ?? config.model) : config.model;
+  return `${model}${config.apiKey ? '' : ' (키 없음)'}`;
 }
 
 /** Before a game: who is here, the room's rules, chat, and the host's start button. */
-export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
+export function WaitingRoom({ session, view, onLeave, onGmSettings, brains = {}, gmConfig, onBrain }: Props) {
   const [showMenu, setShowMenu] = useState(false);
+  // Which AI seat's model is being chosen.
+  const [brainSeat, setBrainSeat] = useState<'white' | 'black' | 'red' | null>(null);
   const fullscreen = useFullscreen();
   const [copied, setCopied] = useState(false);
   const [chatText, setChatText] = useState('');
@@ -151,6 +167,11 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
                                   </option>
                                 ))}
                               </select>
+                              {onBrain && (
+                                <button type="button" className="brain-pick" onClick={() => setBrainSeat(c as 'white')} title="이 AI가 특수 행동을 지을 모델과 API 키">
+                                  🧠 {brainLabel(brains[c as 'white'])}
+                                </button>
+                              )}
                             </span>
                           ) : (
                             <>
@@ -200,7 +221,11 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
                   );
                 })}
               </ul>
-              {aiSpends && <p className="muted-line ai-cost">AI의 특수 행동도 GM API를 씁니다(행동 하나에 호출 두 번). 비용이 걱정되면 "특수 행동 끔"으로 두세요.</p>}
+              {aiSpends && (
+                <p className="muted-line ai-cost">
+                  AI의 특수 행동도 API를 씁니다(문장 짓기는 그 AI의 🧠 모델, 판정은 GM). 비용이 걱정되면 "특수 행동 끔"으로 두세요.
+                </p>
+              )}
               {online && (
                 <>
                   <h3 className="bench-title">
@@ -389,6 +414,17 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings }: Props) {
         />
       )}
       <ConnectionOverlay connection={view.connection} onLeave={onLeave} />
+      {brainSeat && onBrain && (
+        <GmSettings
+          current={brains[brainSeat] ?? gmConfig ?? { provider: 'fake' }}
+          brain={{ seat: SEAT_LABEL[brainSeat], usesGm: !brains[brainSeat], onUseGm: () => (onBrain(brainSeat, null), setBrainSeat(null)) }}
+          onClose={() => setBrainSeat(null)}
+          onSave={(config) => {
+            onBrain(brainSeat, config);
+            setBrainSeat(null);
+          }}
+        />
+      )}
     </div>
   );
 }

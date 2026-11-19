@@ -115,6 +115,52 @@ export function rememberGm(config: GmConfig, storage?: Storage): void {
   }
 }
 
+/**
+ * Each AI seat's own model (docs/SPEC.md, "AI의 두뇌"): the one that writes its special actions, with
+ * its own key. A seat left out uses the room's GM. Kept only on this browser (the keys never leave it).
+ */
+export type AiBrains = Partial<Record<'white' | 'black' | 'red', GmConfig>>;
+const BRAINS_KEY = 'vtc.brains.v1';
+const AI_SEATS = ['white', 'black', 'red'] as const;
+
+/** A GM config as stored (with its key), or null if it is not one. */
+function readConfig(c: unknown): GmConfig | null {
+  if (!isObj(c)) return null;
+  if (c.provider === 'fake') return { provider: 'fake' };
+  const apiKey = typeof c.apiKey === 'string' ? c.apiKey : '';
+  if (c.provider === 'claude' && typeof c.model === 'string' && (c.effort === 'low' || c.effort === 'medium' || c.effort === 'high')) {
+    return { provider: 'claude', model: c.model, effort: c.effort, apiKey };
+  }
+  if ((c.provider === 'openai' || c.provider === 'gemini') && typeof c.model === 'string') return { provider: c.provider, model: c.model, apiKey };
+  return null;
+}
+
+export function rememberedBrains(storage?: Storage): AiBrains {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(store(storage)?.getItem(BRAINS_KEY) ?? 'null');
+  } catch {
+    return {};
+  }
+  if (!isObj(raw)) return {};
+  const out: AiBrains = {};
+  for (const seat of AI_SEATS) {
+    const c = readConfig(raw[seat]);
+    if (c) out[seat] = c;
+  }
+  return out;
+}
+
+export function rememberBrains(brains: AiBrains, storage?: Storage): void {
+  const s = store(storage);
+  if (!s) return;
+  try {
+    s.setItem(BRAINS_KEY, JSON.stringify(brains));
+  } catch {
+    // blocked storage: the seats use the GM next time
+  }
+}
+
 export function saveGame(game: Omit<SavedGame, 'version' | 'savedAt'>, storage?: Storage, now = Date.now()): void {
   const s = store(storage);
   if (!s) return;

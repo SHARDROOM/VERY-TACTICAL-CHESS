@@ -1,4 +1,4 @@
-import { SACRIFICE_CLASH_MAX, SACRIFICE_MOD_MAX, checkSacrifice, modifierTotal, pendingModifiers } from './modifiers';
+import { SACRIFICE_MOD_MAX, checkSacrifice, modifierTotal, pendingModifiers, sacrificeClashBonus, sacrificeModifiers } from './modifiers';
 import {
   PROMOTION_TYPES,
   type Board,
@@ -36,13 +36,21 @@ function effectContext(state: GameState, nextSpawnId = state.nextSpawnId): Effec
   return { turnNumber: state.turnNumber, nextSpawnId, color: state.turn, terrain: state.terrain ?? [], captured: state.captured ?? [], remains: state.remains ?? [] };
 }
 
-/** A ruling's effects: with a sacrifice they may hand out stronger buffs (see modifiers.ts). */
-function rulingContext(state: GameState, ruling: Ruling, nextSpawnId = state.nextSpawnId): EffectContext {
+/**
+ * A ruling's effects: with a sacrifice they may hand out stronger buffs (see modifiers.ts); the
+ * actor and how it acts (a hostage, an instant kill that becomes a clash). Also how a show replays them.
+ */
+export function rulingContext(state: GameState, ruling: Ruling, nextSpawnId = state.nextSpawnId): EffectContext {
   const offered = !!ruling.sacrifice?.length;
+  // An offering for a clash multiplier raises it by what it is worth (the pieces may be gone already: a second try).
+  const offering = state.pending?.ruling === ruling && state.pending.offered ? state.pending.offered : offered ? sacrificeModifiers(state.board, ruling, state.turn) : [];
+  const clashBonus = sacrificeClashBonus(offering);
   return {
     ...effectContext(state, nextSpawnId),
-    ...(offered && { modMax: SACRIFICE_MOD_MAX, clashMax: SACRIFICE_CLASH_MAX }),
+    ...(offered && { modMax: SACRIFICE_MOD_MAX }),
+    ...(clashBonus > 0 && { clashBonus }),
     ...(ruling.actor != null && { actor: ruling.actor }),
+    ...(ruling.means && { means: ruling.means }),
   };
 }
 

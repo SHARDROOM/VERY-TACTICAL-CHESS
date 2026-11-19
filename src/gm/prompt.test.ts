@@ -84,7 +84,7 @@ describe('who does it and how far (주체와 거리)', () => {
 describe('clashes, props, bridges and ladders in the GM prompts', () => {
   it('the ruling prompt explains clashes with their prices, props, bridges and ladders; chaos lists them too', () => {
     const ruling = buildSystemPrompt(rules);
-    for (const word of ['## 합 (clash)', '## 조형물 (prop)', 'DC 9~10·AP 3', 'DC +1', '소수점은 반올림', '"cover"', '"clearCover"', 'rightHand', 'barricade', 'torus', '1.5배']) expect(ruling).toContain(word);
+    for (const word of ['## 합 (clash)', '## 조형물 (prop)', 'DC 9~10·AP 2', 'DC +1', '소수점은 반올림', '"cover"', '"clearCover"', 'rightHand', 'barricade', 'torus', '1.5배']) expect(ruling).toContain(word);
     const chaos = buildChaosSystemPrompt(rules);
     for (const word of ['"cover"', '"clearCover"', 'clash', 'prop']) expect(chaos).toContain(word);
   });
@@ -136,8 +136,8 @@ describe("an AI player's declaration", () => {
       const r = Math.random;
       // DC 7 at most: a stun up close (DC 7, AP 1) or a shield, never a shot (DC 8, more from afar).
       expect(fakeDeclaration(state(), 'black', r, { maxDc: 7 })).not.toMatch(/저격/);
-      // One AP: stuns only (AP 1).
-      expect(fakeDeclaration({ ...state(), ap: { ...state().ap, black: 1 } }, 'black', r)).toMatch(/기절/);
+      // One AP: never the sword lessons (AP 2).
+      expect(fakeDeclaration({ ...state(), ap: { ...state().ap, black: 1 } }, 'black', r)).not.toMatch(/검술/);
     }
     expect(fakeDeclaration({ ...state(), ap: { ...state().ap, black: 0 } }, 'black')).toBeNull();
   });

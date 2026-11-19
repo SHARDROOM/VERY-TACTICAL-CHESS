@@ -439,6 +439,12 @@ export type GameEvent =
       shield: boolean;
       /** How many times they meet on screen (합 횟수). */
       exchanges: number;
+      /**
+       * An instant kill (a remove) tried on a piece with clash gear became this clash (사용자 요청):
+       * the attacker fights from its own square and does not take the defender's. 'melee': losing
+       * costs it its life as in any clash; 'ranged' (a missile or a spell): it loses nothing but the try.
+       */
+      strike?: 'melee' | 'ranged';
     }
   /** `cause`: burnt up by 화상, fell into a pit, or lost a clash it started. `exit`: how it goes, if the rules say. */
   | { type: 'removed'; piece: Piece; at: Square; cause?: 'burn' | 'pit' | 'clash' | 'fall' | 'sacrifice' | 'guard' | 'hostage'; exit?: Exit }

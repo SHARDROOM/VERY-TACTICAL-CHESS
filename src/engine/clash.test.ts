@@ -181,3 +181,43 @@ describe('clashes in special actions', () => {
     expect(attempt(duel({ defender: 1.5 }), charge)).toMatchObject({ ok: false, reason: 'clashRollsNeeded' });
   });
 });
+
+describe('an instant kill on a piece with clash gear is a clash (사용자 요청)', () => {
+  // The rook on d4 stabs (touch: after charging to d6) or throws a dagger (ranged) at the knight on d7.
+  const ATTACKER = [6, 6, 1, 1];
+  const DEFENDER = [1, 1, 6, 6];
+  const run = (state: GameState, means: Ruling['means'], effects: Effect[], rolls: number[]) => {
+    const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 5, cost: 1, actor: sq('d4'), means, effects, narration: { success: 's', failure: 'f' } };
+    const proposed = ok(applyCommand({ ...state, ap: { ...state.ap, white: 5 } }, { type: 'proposeSpecial', action: 'x', ruling })).state;
+    return ok(applyCommand(proposed, { type: 'attemptSpecial', roll: 12, clashRolls: rolls }));
+  };
+  const kill: Effect = { type: 'remove', at: sq('d7') };
+
+  it('a melee kill that wins the clash takes the target off; the attacker stays where it stood', () => {
+    const r = run(duel({ defender: 1.5 }), 'touch', [{ type: 'move', from: sq('d4'), to: sq('d6') }, kill], ATTACKER);
+    const clash = r.events.find((e) => e.type === 'clash');
+    expect(clash).toMatchObject({ from: sq('d6'), at: sq('d7'), winner: 'attacker', strike: 'melee' });
+    expect(r.state.board[sq('d7')]).toBeNull();
+    expect(r.state.board[sq('d6')]?.type).toBe('rook');
+  });
+
+  it('a melee kill that loses: the attacker falls and the rest never happens', () => {
+    const r = run(duel({ defender: 1.5 }), 'touch', [{ type: 'move', from: sq('d4'), to: sq('d6') }, kill, { type: 'tag', at: sq('d6'), tag: '영웅', turns: 1 }], DEFENDER);
+    expect(r.state.board[sq('d6')]).toBeNull();
+    expect(r.state.board[sq('d7')]?.type).toBe('knight');
+    expect(r.events).toContainEqual(expect.objectContaining({ type: 'removed', at: sq('d6'), cause: 'clash' }));
+  });
+
+  it('a ranged kill that loses only misses: the attacker lives, the target too', () => {
+    const r = run(duel({ defender: 1.5 }), 'ranged', [kill], DEFENDER);
+    expect(r.events.find((e) => e.type === 'clash')).toMatchObject({ winner: 'defender', strike: 'ranged' });
+    expect(r.state.board[sq('d4')]?.type).toBe('rook');
+    expect(r.state.board[sq('d7')]?.type).toBe('knight');
+  });
+
+  it('no gear, no clash: the kill is instant as before', () => {
+    const r = run(duel(), 'ranged', [kill], []);
+    expect(r.events.some((e) => e.type === 'clash')).toBe(false);
+    expect(r.state.board[sq('d7')]).toBeNull();
+  });
+});

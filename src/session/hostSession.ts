@@ -259,6 +259,10 @@ export class HostSession implements Session {
     this.broadcast({ t: 'toy', op });
   }
 
+  setBrains(brains: Partial<Record<Color, GameMaster>>): void {
+    this.authority.brains = brains;
+  }
+
   setGm(gm: GameMaster): void {
     this.authority.gm = gm;
     this.broadcast({ t: 'busy', busy: this.authority.busy, gmName: gm.name });

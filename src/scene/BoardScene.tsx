@@ -344,12 +344,14 @@ function CameraRig({
   diceSide,
   locked,
   holdNow,
+  pinchNow,
   broadcast = null,
 }: {
   camera: CameraRequest;
   diceSide: 1 | -1;
   locked: boolean;
   holdNow?: MutableRefObject<(on: boolean) => void>;
+  pinchNow?: MutableRefObject<(spread: number, dx: number, dy: number) => void>;
   broadcast?: Broadcast | null;
 }) {
   const ref = useRef<CameraControls>(null);
@@ -397,6 +399,18 @@ function CameraRig({
       if (!c) return;
       if (on) c.cancel();
       c.enabled = !on && !locked;
+    };
+  }
+  // Two fingers on the rule book: zoom by their spread, slide with their middle.
+  const viewHeight = useThree((st) => st.size.height);
+  if (pinchNow) {
+    pinchNow.current = (spread, dx, dy) => {
+      const c = ref.current;
+      if (!c) return;
+      void c.dollyTo(c.distance / spread, false);
+      const fov = (c.camera as import('three').PerspectiveCamera).fov ?? 45;
+      const perPixel = (2 * c.distance * Math.tan((fov * Math.PI) / 360)) / Math.max(1, viewHeight);
+      void c.truck(-dx * perPixel, -dy * perPixel, false);
     };
   }
   const aspect = useThree((st) => st.size.width / Math.max(1, st.size.height));
@@ -524,6 +538,7 @@ export function BoardScene({
   // Picking things up off the table: the camera holds still meanwhile (see CameraRig).
   const [holding, setHolding] = useState(false);
   const holdNow = useRef<(on: boolean) => void>(() => {});
+  const pinchNow = useRef<(spread: number, dx: number, dy: number) => void>(() => {});
   const boardNow = useRef(board);
   boardNow.current = board;
   const diceSideNow = useRef(diceSide);
@@ -583,7 +598,7 @@ export function BoardScene({
       {tour ? (
         <TourCamera diceSide={diceSide} inset={tour.inset} onPhase={tour.onPhase} focus={tour.focus} />
       ) : (
-        <CameraRig camera={camera} diceSide={diceSide} locked={!!doodle?.tool || holding} holdNow={holdNow} broadcast={broadcast} />
+        <CameraRig camera={camera} diceSide={diceSide} locked={!!doodle?.tool || holding} holdNow={holdNow} pinchNow={pinchNow} broadcast={broadcast} />
       )}
       <TwoFingerDepth />
       {import.meta.env.DEV && <DevProbe resting={resting.current} shown={hands.piecesShown} />}
@@ -591,7 +606,7 @@ export function BoardScene({
       <ShakeGroup shake={shake}>
       <WoodTable />
       {extras}
-      {book && <RuleBook control={book} onHold={hands.hold} />}
+      {book && <RuleBook control={book} onHold={hands.hold} onPinch={(spread, dx, dy) => pinchNow.current(spread, dx, dy)} />}
       <DiceTray side={diceSide} roll={diceRoll} onLanded={onDiceLanded} onFirstLanded={onDiceFirstLanded} />
       <CoinTable ap={ap} side={diceSide === 1 ? -1 : 1} />
       {isHex() ? <HexFrame /> : <LabeledFrame />}

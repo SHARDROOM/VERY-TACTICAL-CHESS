@@ -30,6 +30,8 @@ export interface RollModifier {
   /** Where it comes from: the tag's name, the sacrificed piece, ... */
   label: string;
   value: number;
+  /** A sacrifice's whole worth (SACRIFICE_VALUE added up), when `value` is less: it went into a clash multiplier. */
+  worth?: number;
 }
 
 /** Most one tag's skill or mind may be worth. */
@@ -39,9 +41,15 @@ export const MOD_TOTAL_MAX = 4;
 
 /** What each kind of piece is worth given up (희생). Kings cannot be. */
 export const SACRIFICE_VALUE: Record<Exclude<PieceType, 'king'>, number> = { pawn: 1, knight: 2, bishop: 2, rook: 3, queen: 4 };
-/** With a sacrifice, the most one skill or will (and the strongest clash multiplier) a ruling may give. */
+/** With a sacrifice, the most one skill or will a ruling may give. */
 export const SACRIFICE_MOD_MAX = 4;
-export const SACRIFICE_CLASH_MAX = 2.5;
+/**
+ * A sacrifice for a clash multiplier (사용자 요청): every point the offering is worth adds this to
+ * the multiplier the ruling gives the declarer's pieces (the GM picks it as without one), up to
+ * SACRIFICE_CLASH_CAP; the offering then helps the roll only a third as much.
+ */
+export const SACRIFICE_CLASH_PER_POINT = 0.1;
+export const SACRIFICE_CLASH_CAP = 3;
 
 const KIND_NAME: Record<PieceType, string> = { king: '킹', queen: '퀸', rook: '룩', bishop: '비숍', knight: '나이트', pawn: '폰' };
 
@@ -64,14 +72,31 @@ export function checkSacrifice(board: Board, ruling: Ruling, color: Color): stri
   return null;
 }
 
-/** The pieces given up, as modifiers (from the board before they go). */
-export function sacrificeModifiers(board: Board, ruling: Ruling): RollModifier[] {
+/** The ruling gives one of `color`'s pieces a clash multiplier (a tag with one). */
+export function givesClash(board: Board, ruling: Ruling, color: Color): boolean {
+  return ruling.effects.some((e) => e.type === 'tag' && typeof e.clash === 'number' && e.clash > 1 && board[e.at]?.color === color);
+}
+
+/**
+ * The pieces given up, as modifiers (from the board before they go). Given up for a clash
+ * multiplier, they are one modifier worth a third of the offering (it went into the multiplier).
+ */
+export function sacrificeModifiers(board: Board, ruling: Ruling, color: Color): RollModifier[] {
   const out: RollModifier[] = [];
   for (const at of ruling.sacrifice ?? []) {
     const p = board[at];
     if (p && p.type !== 'king') out.push({ kind: 'sacrifice', label: `제물 ${KIND_NAME[p.type]} ${squareName(at)}`, value: SACRIFICE_VALUE[p.type] });
   }
-  return out;
+  if (!out.length || !givesClash(board, ruling, color)) return out;
+  const worth = out.reduce((s, m) => s + m.value, 0);
+  const names = out.map((m) => m.label.replace(/^제물 /, '')).join(', ');
+  return [{ kind: 'sacrifice', label: `제물 ${names} (배율에 바쳐 1/3)`, value: Math.round(worth / 3), worth }];
+}
+
+/** How much an offering raises the clash multiplier the ruling gives (0 when it was not for one). */
+export function sacrificeClashBonus(offering: readonly RollModifier[]): number {
+  const worth = offering.reduce((s, m) => s + (m.kind === 'sacrifice' && m.worth !== undefined ? m.worth : 0), 0);
+  return Math.round(worth * SACRIFICE_CLASH_PER_POINT * 10) / 10;
 }
 
 /**
@@ -118,7 +143,7 @@ export const REMAINS_BONUS = 2;
 
 /** The modifiers this ruling's roll gets on `board`, declared by `color` (`remains`: the game's 유해, `terrain`: its buildings). */
 export function rollModifiers(board: Board, ruling: Ruling, color: Color, remains?: readonly RemainsMark[], terrain?: readonly TerrainCell[]): RollModifier[] {
-  const mods: RollModifier[] = [...sacrificeModifiers(board, ruling)];
+  const mods: RollModifier[] = [...sacrificeModifiers(board, ruling, color)];
   for (const at of new Set(ruling.buildings ?? [])) {
     const b = terrain?.find((c) => c.at === at)?.building;
     if (b && ruling.actor != null && distance(ruling.actor, at) <= BUILDING_REACH) mods.push({ kind: 'building', label: b.name, value: b.bonus });

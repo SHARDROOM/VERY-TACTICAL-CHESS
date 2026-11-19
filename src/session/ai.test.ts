@@ -53,6 +53,26 @@ describe('AI players (hotseat)', () => {
     local.dispose();
   }, 20000);
 
+  it("an AI with a model of its own asks that model, not the GM's, for its declaration (AI의 두뇌)", async () => {
+    const s = game({ black: { level: 'easy', specials: 'often' } });
+    const asked: string[] = [];
+    const gm = new FakeGameMaster(0);
+    const brain = new FakeGameMaster(0);
+    const spy = (who: string, m: FakeGameMaster) => {
+      const act = m.act.bind(m);
+      m.act = (r) => (asked.push(who), act(r));
+    };
+    spy('gm', gm);
+    spy('brain', brain);
+    const local = new LocalSession(gm, { initialState: { ...s, ap: { ...s.ap, black: 4 } }, phase: 'playing', aiPace: 0, chance: () => 0.3 });
+    local.setBrains({ black: brain });
+    local.request({ type: 'move', from: 12, to: 28 });
+    await until(() => local.view().state.turn === 'white', 15000);
+    expect(asked).toContain('brain');
+    expect(asked).not.toContain('gm');
+    local.dispose();
+  }, 20000);
+
   it('a saved game with the AI to move picks up where it was (the AI is in the rules)', async () => {
     const first = new LocalSession(new FakeGameMaster(0), { initialState: game({ black: { level: 'easy', specials: 'off' } }), phase: 'playing', aiPace: 0, chance: () => 0.4 });
     first.dispose();

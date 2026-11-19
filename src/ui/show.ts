@@ -1,4 +1,5 @@
 import {
+  rulingContext,
   ridersOf,
   type Piece,
   applyEffects,
@@ -108,15 +109,20 @@ export function buildShow(events: GameEvent[], before: GameState, outcomeLabel: 
   const movers: (string | null)[] = [];
   const color = head.type === 'specialResolved' ? head.color : before.turn;
   // Clashes come out as they did: the same dice, from the clash events (special actions only).
-  const rolls = events.flatMap((e) => (e.type === 'clash' ? e.rounds.flatMap((r) => [r.attack, r.defense]) : []));
-  const ctx: EffectContext = {
-    turnNumber: before.turnNumber,
-    nextSpawnId: before.nextSpawnId,
-    color,
-    terrain: before.terrain ?? [],
-    captured: before.captured ?? [],
-    ...(head.type === 'specialResolved' && { clash: { mode: 'play' as const, rolls } }),
-  };
+  const rolls = events.flatMap((e) => (e.type === 'clash' ? e.rounds.flatMap((r) => [...r.attackDice, ...r.defenseDice]) : []));
+  // A special action's effects replay as the game applied them: its actor and means, a sacrifice's limits.
+  const ruling = head.type === 'specialResolved' ? before.pending?.ruling : undefined;
+  const ctx: EffectContext = ruling
+    ? { ...rulingContext(before, ruling), color, captured: before.captured ?? [], clash: { mode: 'play' as const, rolls } }
+    : {
+        turnNumber: before.turnNumber,
+        nextSpawnId: before.nextSpawnId,
+        color,
+        terrain: before.terrain ?? [],
+        captured: before.captured ?? [],
+        ...(head.type === 'specialResolved' && { clash: { mode: 'play' as const, rolls } }),
+        ...(head.type === 'chaos' && { chaos: true }),
+      };
   const clashes: Show['clashes'] = [];
   for (let i = 0; i < effects.length; i++) {
     movers.push(moverOf(effects[i], steps[i].board));

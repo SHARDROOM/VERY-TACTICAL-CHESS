@@ -153,6 +153,8 @@ export interface Session {
   toy(op: ToyOp): void;
   /** Authority only. */
   setGm(gm: GameMaster): void;
+  /** Authority only: the AI seats' own models for their special actions (a seat left out uses the GM's). */
+  setBrains(brains: Partial<Record<Color, GameMaster>>): void;
   /** Authority only, in the waiting room. */
   setRules(rules: Partial<RuleConfig>): void;
   /** Authority only: from the waiting room into a fresh game. */

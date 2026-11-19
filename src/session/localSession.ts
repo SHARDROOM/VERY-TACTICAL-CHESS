@@ -99,6 +99,10 @@ export class LocalSession implements Session {
     this.emitView();
   }
 
+  setBrains(brains: Partial<Record<Color, GameMaster>>): void {
+    this.authority.brains = brains;
+  }
+
   setRules(rules: Partial<RuleConfig>): void {
     this.authority.setRules(cleanRules(this.authority.state.rules, rules));
   }

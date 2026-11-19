@@ -15,6 +15,7 @@ import {
   type Color,
   type Effect,
   type FallingPiece,
+  type Means,
   type GameEvent,
   type Piece,
   type PieceType,
@@ -30,9 +31,9 @@ import { SHIELD } from './types';
 import { BUILDING_INFO, BUILDING_REACH, MAX_TERRAIN, cleanBuilding, dropFromBridges } from './terrain';
 import { capturedAfter, remainsAt } from './captured';
 import { checkActor } from './actor';
-import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, clashSkill, resolveClash } from './clash';
+import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, clashSkill, hasClashGear, resolveClash } from './clash';
 import { cleanProp } from './props';
-import { MOD_EACH_MAX } from './modifiers';
+import { MOD_EACH_MAX, SACRIFICE_CLASH_CAP } from './modifiers';
 import { intercept, saverFor } from './guard';
 import { fused, split } from './fusion';
 import { startFalls } from './levitation';
@@ -63,10 +64,14 @@ export interface EffectContext {
   chaos?: boolean;
   /** Most a skill or will a tag gets may be worth (raised by a sacrifice, see modifiers.ts). */
   modMax?: number;
-  /** Strongest clash multiplier a tag may get (raised by a sacrifice). */
+  /** Strongest clash multiplier a ruling may give a tag. */
   clashMax?: number;
-  /** The ruling's actor (a 인질 is held by it). */
+  /** Added to a clash multiplier given to a piece of `color`'s: what a sacrifice for it was worth (modifiers.ts). */
+  clashBonus?: number;
+  /** The ruling's actor (a 인질 is held by it; an instant kill on a piece with clash gear is its clash). */
   actor?: Square;
+  /** How the actor acts (a ranged or magic attacker that loses a clash lives). */
+  means?: Means;
 }
 
 export type EffectResult =
@@ -113,8 +118,10 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
   const touched: Square[] = [];
   let nextSpawnId = ctx.nextSpawnId;
   const terrainOn = (sq: Square) => terrain.find((c) => c.at === sq) ?? null;
-  /** Clash dice used so far (they are used in order across the effects). */
+  /** Clash dice used so far (they are used in order across the effects, four a round). */
   let rollAt = 0;
+  /** Where the actor is now (it may have moved in an earlier effect, as in a charge). */
+  let actorAt = ctx.actor;
   let cut: number | undefined;
   const falling: FallingPiece[] = [];
   /** A piece leaving the board for good throws off whoever rides it (`push`: where the blow came from). */
@@ -173,12 +180,12 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           const done = intercept(board, e.from, e.to, saver, events, (a, d) => {
             if (clashMode.mode === 'check') return 'attacker';
             const rolls = clashMode.rolls.slice(rollAt);
-            if (rolls.length < 2) {
+            if (rolls.length < 4) {
               short = true;
               return null;
             }
             const result = resolveClash(clashMultiplier(a), clashMultiplier(d), rolls);
-            rollAt += result.rounds.length * 2;
+            rollAt += result.rounds.length * 4;
             events.push({ type: 'clash', attackerId: a.id, defenderId: d.id, attacker: a.color, from: e.from, at: saver.at, attack: clashMultiplier(a), defense: clashMultiplier(d), rounds: result.rounds, winner: result.winner, shield: isShielded(d), exchanges: result.exchanges });
             return result.winner;
           });
@@ -198,9 +205,9 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           let winner: 'attacker' | 'defender' = 'attacker';
           if (ctx.clash.mode === 'play') {
             const rolls = ctx.clash.rolls.slice(rollAt);
-            if (rolls.length < 2) return { ok: false, detail: `${where}: 합 주사위가 없음`, code: 'clashRollsNeeded' };
+            if (rolls.length < 4) return { ok: false, detail: `${where}: 합 주사위가 없음`, code: 'clashRollsNeeded' };
             const result = resolveClash(attack, defense, rolls);
-            rollAt += result.rounds.length * 2;
+            rollAt += result.rounds.length * 4;
             winner = result.winner;
             events.push({
               type: 'clash',
@@ -241,6 +248,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         events.push({ type: 'moved', pieceId: piece.id, from: e.from, to: e.to, captured: occupant, ...(capturedExit && { capturedExit }) });
         if (occupant) throwOff(occupant, e.to, e.from);
         board[e.to] = extinguish(piece, e.to, events);
+        if (e.from === actorAt) actorAt = e.to;
         break;
       }
       case 'remove': {
@@ -248,6 +256,55 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         const piece = board[e.at];
         if (!piece) return fail(`${squareName(e.at)}에 기물이 없음`);
         if (piece.type === 'king') return fail('특수 행동으로는 킹을 제거할 수 없음');
+        // An instant kill (a stab, a thrown dagger, a killing spell) on a piece with clash gear is
+        // not instant: the actor has to beat it in a clash, as for a capture (사용자 요청). Only in a
+        // special action (not chaos), by an actor of another side.
+        const striker = ctx.clash && actorAt !== undefined && actorAt !== e.at ? board[actorAt] : null;
+        let killExit: Exit | undefined;
+        if (striker && actorAt !== undefined && striker.color !== piece.color && hasClashGear(piece)) {
+          const from = actorAt;
+          const strike = ctx.means === 'ranged' || ctx.means === 'magic' ? 'ranged' : 'melee';
+          const attack = clashMultiplier(striker);
+          const defense = clashMultiplier(piece);
+          let winner: 'attacker' | 'defender' = 'attacker';
+          if (ctx.clash!.mode === 'play') {
+            const rolls = ctx.clash!.rolls.slice(rollAt);
+            if (rolls.length < 4) return { ok: false, detail: `${where}: 합 주사위가 없음`, code: 'clashRollsNeeded' };
+            const result = resolveClash(attack, defense, rolls);
+            rollAt += result.rounds.length * 4;
+            winner = result.winner;
+            events.push({
+              type: 'clash',
+              attackerId: striker.id,
+              defenderId: piece.id,
+              attacker: striker.color,
+              from,
+              at: e.at,
+              attack,
+              defense,
+              rounds: result.rounds,
+              winner,
+              shield: isShielded(piece),
+              exchanges: result.exchanges,
+              strike,
+            });
+          }
+          if (winner === 'defender') {
+            // Up close the attacker falls where it stands; from afar it only missed. Either way the
+            // rest of the action never happens.
+            if (strike === 'melee') {
+              const exit: Exit | undefined = clashSkill(piece) > 1 ? 'shatter' : undefined;
+              board[from] = null;
+              touched.push(from);
+              events.push({ type: 'removed', piece: striker, at: from, cause: 'clash', ...(exit && { exit }) });
+              throwOff(striker, from, e.at);
+              if (striker.type === 'king') events.push({ type: 'kingCaptured', winner: piece.color, loser: striker.color });
+            }
+            cut = i;
+            break;
+          }
+          if (!isShielded(piece) && clashSkill(striker) > 1) killExit = 'shatter';
+        }
         if (isShielded(piece)) {
           board[e.at] = withoutTag(piece, SHIELD);
           touched.push(e.at);
@@ -256,7 +313,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         }
         board[e.at] = null;
         touched.push(e.at);
-        events.push({ type: 'removed', piece, at: e.at });
+        events.push({ type: 'removed', piece, at: e.at, ...(killExit && { exit: killExit }) });
         throwOff(piece, e.at);
         break;
       }
@@ -284,7 +341,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         const turnsLeft = e.turns === 0 ? null : e.turns;
         const clashMax = ctx.clashMax ?? CLASH_MAX;
         if (e.clash !== undefined && (typeof e.clash !== 'number' || !(e.clash >= CLASH_MIN && e.clash <= clashMax))) {
-          return fail(`합 배율은 ×${CLASH_MIN}~×${clashMax}${clashMax === CLASH_MAX ? ' (희생이 있으면 ×2.5까지)' : ''}`);
+          return fail(`합 배율은 ×${CLASH_MIN}~×${clashMax} (희생이 있으면 시스템이 제물 값만큼 더함)`);
         }
         const MOVE_KINDS: readonly PieceType[] = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'];
         if (e.moveAs !== undefined && (!Array.isArray(e.moveAs) || !e.moveAs.every((k) => MOVE_KINDS.includes(k)))) {
@@ -319,7 +376,13 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           turnsLeft,
           appliedOnTurn: ctx.turnNumber,
           ...(e.aura && { aura: e.aura }),
-          ...(e.clash !== undefined && { clash: Math.round(e.clash * 10) / 10 }),
+          // A sacrifice for it makes one given to the declarer's own piece stronger (modifiers.ts).
+          ...(e.clash !== undefined && {
+            clash:
+              ctx.clashBonus && piece.color === ctx.color
+                ? Math.min(SACRIFICE_CLASH_CAP, Math.round((e.clash + ctx.clashBonus) * 10) / 10)
+                : Math.round(e.clash * 10) / 10,
+          }),
           ...(prop && { prop }),
           ...(moveAs.length > 0 && { moveAs }),
           ...(e.moveTimes !== undefined && e.moveTimes > 1 && { moveTimes: e.moveTimes }),

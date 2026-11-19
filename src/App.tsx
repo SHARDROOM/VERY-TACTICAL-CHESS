@@ -9,9 +9,10 @@ import { GuestSession } from './session/guestSession';
 import { inviteLink, joinRoom, normalizeRoomCode, openRoom } from './session/peerTransport';
 import { simulateFalls } from './scene/boardPhysics';
 import type { FallSimulator } from './session/authority';
-import { browserId, clearSavedGame, gmForSave, gmFromSave, loadSavedGame, rememberGm, rememberedGm, saveGame, savedName, type SavedGame } from './session/storage';
+import { browserId, clearSavedGame, gmForSave, gmFromSave, loadSavedGame, rememberBrains, rememberGm, rememberedBrains, rememberedGm, saveGame, savedName, type AiBrains, type SavedGame } from './session/storage';
 import type { Session, SessionView } from './session/types';
-import { isAiOnly } from './engine';
+import { isAiOnly, type Color } from './engine';
+import type { GameMaster } from './gm/types';
 import { WaitingRoom } from './ui/WaitingRoom';
 import { rollDie } from './dice';
 import { playSfx, unlockAudio } from './audio/sfx';
@@ -48,6 +49,23 @@ export default function App() {
   const saveTarget = useRef<SaveTarget>(null);
   const gmRef = useRef(gmConfig);
   gmRef.current = gmConfig;
+  // Each AI seat's own model for its special actions (AI의 두뇌), kept on this browser like the GM's key.
+  const [brains, setBrains] = useState<AiBrains>(() => rememberedBrains());
+  useEffect(() => {
+    if (!session) return;
+    const made: Partial<Record<Color, GameMaster>> = {};
+    for (const [seat, config] of Object.entries(brains)) if (config) made[seat as Color] = createGm(config);
+    session.setBrains(made);
+  }, [session, brains]);
+  const changeBrain = (seat: 'white' | 'black' | 'red', config: GmConfig | null) => {
+    setBrains((b) => {
+      const next = { ...b };
+      if (config) next[seat] = config;
+      else delete next[seat];
+      rememberBrains(next);
+      return next;
+    });
+  };
 
   const start = (s: Session, target: SaveTarget, notice: string | null = null) => {
     setError(null);
@@ -249,6 +267,8 @@ export default function App() {
       session={session}
       gmConfig={gmConfig}
       onGmConfig={changeGm}
+      brains={brains}
+      onBrain={changeBrain}
       onLeave={leave}
       openGmSettings={askForKey}
       startNotice={startNotice}
@@ -257,7 +277,16 @@ export default function App() {
 }
 
 /** The waiting room or the game, whichever phase the room is in. */
-function RoomScreen(props: { session: Session; gmConfig: GmConfig; onGmConfig: (c: GmConfig) => void; onLeave: () => void; openGmSettings: boolean; startNotice: string | null }) {
+function RoomScreen(props: {
+  session: Session;
+  gmConfig: GmConfig;
+  onGmConfig: (c: GmConfig) => void;
+  brains: AiBrains;
+  onBrain: (seat: 'white' | 'black' | 'red', config: GmConfig | null) => void;
+  onLeave: () => void;
+  openGmSettings: boolean;
+  startNotice: string | null;
+}) {
   const { session } = props;
   const [view, setView] = useState<SessionView>(() => session.view());
   const [gameNo, setGameNo] = useState(0);
@@ -278,7 +307,15 @@ function RoomScreen(props: { session: Session; gmConfig: GmConfig; onGmConfig: (
   if (phase === 'waiting') {
     return (
       <>
-        <WaitingRoom session={session} view={view} onLeave={props.onLeave} onGmSettings={() => setGmSettings(true)} />
+        <WaitingRoom
+          session={session}
+          view={view}
+          onLeave={props.onLeave}
+          onGmSettings={() => setGmSettings(true)}
+          brains={props.brains}
+          gmConfig={props.gmConfig}
+          onBrain={props.onBrain}
+        />
         {gmSettings && (
           <GmSettings
             current={props.gmConfig}

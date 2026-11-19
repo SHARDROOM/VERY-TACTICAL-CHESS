@@ -379,7 +379,7 @@ describe('skills, wills and mental actions through the GM boundary', () => {
 });
 
 describe('sacrifice through the GM boundary', () => {
-  it('reads the offered squares, and lets a sacrificing ruling carry a stronger multiplier', () => {
+  it('reads the offered squares; the multiplier stays within ×2 either way (the system adds the offering)', () => {
     const base = {
       interpretation: 'x',
       actor: 'd4',
@@ -397,7 +397,7 @@ describe('sacrifice through the GM boundary', () => {
     const offered = parseGmRuling({ ...base, sacrifice: ['e3', 'e3', 'c4'] });
     if (!offered.ok) throw new Error(offered.error);
     expect(offered.ruling.sacrifice).toEqual([parseSquare('e3'), parseSquare('c4')]);
-    expect(offered.ruling.effects[0]).toMatchObject({ clash: 2.4 });
+    expect(offered.ruling.effects[0]).toMatchObject({ clash: 2 });
     const plain = parseGmRuling({ ...base, sacrifice: [] });
     if (!plain.ok) throw new Error(plain.error);
     expect(plain.ruling).not.toHaveProperty('sacrifice');

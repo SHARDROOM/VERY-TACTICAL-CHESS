@@ -292,9 +292,20 @@ function bend(g: BufferGeometry, leaf: Leaf) {
 
 /**
  * The book on the table. `onHold` says when a hand takes a leaf and lets it go (the table's camera
- * holds still meanwhile).
+ * holds still meanwhile). A second finger on the screen while a leaf is held lets the leaf go and
+ * turns the two into a pinch: `onPinch` gets how much they spread (>1: apart) and how far their
+ * middle moved (pixels), for the camera to zoom and slide (a book filling the screen leaves no
+ * table to pinch on).
  */
-export function RuleBook({ control, onHold }: { control: BookControl; onHold?: (on: boolean) => void }) {
+export function RuleBook({
+  control,
+  onHold,
+  onPinch,
+}: {
+  control: BookControl;
+  onHold?: (on: boolean) => void;
+  onPinch?: (spread: number, dx: number, dy: number) => void;
+}) {
   // A new place for the book (the table seen from another side).
   const [pose, setPose] = useState(control.pose);
   useEffect(() => control.subscribe(() => setPose(control.pose)), [control]);
@@ -341,8 +352,12 @@ export function RuleBook({ control, onHold }: { control: BookControl; onHold?: (
   const coverRef = useRef<Group>(null);
   const bookRef = useRef<Group>(null);
 
-  // A finger on a leaf: which, where it started, whether it moved.
-  const drag = useRef<{ leaf: number; startTh: number; moved: boolean; startX: number } | null>(null);
+  // A finger on a leaf: which finger, which leaf, where it started, whether it moved.
+  const drag = useRef<{ pointer: number; leaf: number; startTh: number; moved: boolean; startX: number } | null>(null);
+  // The fingers (and mouse) on the screen, by pointer id: where each is now.
+  const fingers = useRef(new Map<number, { x: number; y: number }>());
+  // Two fingers pinching (begun on a held leaf): their distance and middle at the last move.
+  const pinch = useRef<{ a: number; b: number; dist: number; mx: number; my: number } | null>(null);
   const plane = useMemo(() => new Plane(new Vector3(0, 1, 0), -(TABLE_TOP_Y + 0.1)), []);
   const hit = useMemo(() => new Vector3(), []);
 
@@ -376,9 +391,51 @@ export function RuleBook({ control, onHold }: { control: BookControl; onHold?: (
     leaf.held = true;
     if (Math.abs(leaf.target - d.startTh) > 0.12) d.moved = true;
   };
-  const release = () => {
+  const pair = (a: number, b: number) => {
+    const p = fingers.current.get(a);
+    const q = fingers.current.get(b);
+    if (!p || !q) return null;
+    return { dist: Math.max(1, Math.hypot(p.x - q.x, p.y - q.y)), mx: (p.x + q.x) / 2, my: (p.y + q.y) / 2 };
+  };
+  const press = (e: PointerEvent) => {
+    fingers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const d = drag.current;
-    if (!d) return;
+    if (!d || e.pointerId === d.pointer) return;
+    // A second finger: the leaf is let go where it is (it falls the way it leans), and the two pinch.
+    drag.current = null;
+    const leaf = leaves.current[d.leaf];
+    leaf.held = false;
+    leaf.w = 0;
+    const now = pair(d.pointer, e.pointerId);
+    if (now) pinch.current = { a: d.pointer, b: e.pointerId, ...now };
+    else onHold?.(false);
+  };
+  const move = (e: PointerEvent) => {
+    if (fingers.current.has(e.pointerId)) fingers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const p = pinch.current;
+    if (p) {
+      if (e.pointerId !== p.a && e.pointerId !== p.b) return;
+      const now = pair(p.a, p.b);
+      if (!now) return;
+      onPinch?.(now.dist / p.dist, now.mx - p.mx, now.my - p.my);
+      Object.assign(p, now);
+      return;
+    }
+    if (drag.current?.pointer === e.pointerId) follow(e.clientX, e.clientY);
+  };
+  const release = (e: PointerEvent) => {
+    fingers.current.delete(e.pointerId);
+    const p = pinch.current;
+    if (p) {
+      // Either finger lifted ends the pinch; the camera is the table's again.
+      if (e.pointerId === p.a || e.pointerId === p.b) {
+        pinch.current = null;
+        onHold?.(false);
+      }
+      return;
+    }
+    const d = drag.current;
+    if (!d || e.pointerId !== d.pointer) return;
     drag.current = null;
     onHold?.(false);
     const leaf = leaves.current[d.leaf];
@@ -389,11 +446,14 @@ export function RuleBook({ control, onHold }: { control: BookControl; onHold?: (
     else leaf.w += (leaf.th > Math.PI / 2 ? 1 : -1) * 2.2;
   };
   useEffect(() => {
-    const move = (e: PointerEvent) => follow(e.clientX, e.clientY);
+    // Fingers are counted before the scene sees them (capture), so a leaf is not taken by a
+    // finger that joins one already on the screen.
+    window.addEventListener('pointerdown', press, true);
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', release);
     window.addEventListener('pointercancel', release);
     return () => {
+      window.removeEventListener('pointerdown', press, true);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', release);
       window.removeEventListener('pointercancel', release);
@@ -404,9 +464,11 @@ export function RuleBook({ control, onHold }: { control: BookControl; onHold?: (
     const { right, left } = tops();
     if (i !== right && i !== left) return;
     if (!control.open && i !== 0) return;
+    // Another finger is already down (the camera is being pinched or turned): not a leaf.
+    if (pinch.current || [...fingers.current.keys()].some((id) => id !== e.nativeEvent.pointerId)) return;
     e.stopPropagation();
     onHold?.(true);
-    drag.current = { leaf: i, startTh: leaves.current[i].th, moved: false, startX: e.nativeEvent.clientX };
+    drag.current = { pointer: e.nativeEvent.pointerId, leaf: i, startTh: leaves.current[i].th, moved: false, startX: e.nativeEvent.clientX };
   };
 
   useFrame((_, delta) => {

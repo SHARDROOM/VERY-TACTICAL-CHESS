@@ -120,6 +120,7 @@ export class GuestSession implements Session {
   }
 
   setGm(): void {}
+  setBrains(): void {}
   setRules(): void {}
   start(): void {}
   restart(): void {}

@@ -18,6 +18,8 @@ import {
   clashMultiplier,
   clashScore,
   clashWinChance,
+  hasClashGear,
+  sacrificeClashBonus,
   type Color,
   type Fx,
   type GameEvent,
@@ -267,6 +269,10 @@ interface Props {
   startNotice?: string | null;
 }
 
+/** A phone-sized screen (the watch bar and the panel start folded there). */
+const narrowScreen = () => typeof matchMedia === 'function' && matchMedia('(max-width: 700px)').matches;
+const WATCH_FOLD_KEY = 'vtc.watchFolded';
+
 export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSettings = false, startNotice = null }: Props) {
   const [view, setView] = useState<SessionView>(() => session.view());
   // Every square helper (names, the scene's geometry) follows the board this game is played on.
@@ -312,8 +318,27 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const [showGmSettings, setShowGmSettings] = useState(openGmSettings);
   const [promotionChoice, setPromotionChoice] = useState<{ from: Square; to: Square } | null>(null);
   const [tab, setTab] = useState<'log' | 'chat'>('log');
-  // A folded panel keeps only the input row, leaving the table in view.
-  const [collapsed, setCollapsed] = useState(false);
+  // A folded panel keeps only the input row, leaving the table in view (watching AIs: only its tabs).
+  // On a phone, watching starts folded (사용자 요청: the panel and the watch bar took the screen).
+  const [collapsed, setCollapsed] = useState(() => narrowScreen() && isAiOnly(view.state));
+  // The watch bar folded to its standing line (remembered on this browser).
+  const [watchFolded, setWatchFolded] = useState(() => {
+    try {
+      const v = localStorage.getItem(WATCH_FOLD_KEY);
+      if (v !== null) return v === '1';
+    } catch {
+      // no storage: the screen decides
+    }
+    return narrowScreen();
+  });
+  const foldWatch = (folded: boolean) => {
+    setWatchFolded(folded);
+    try {
+      localStorage.setItem(WATCH_FOLD_KEY, folded ? '1' : '0');
+    } catch {
+      // not remembered
+    }
+  };
   const tabRef = useRef(tab);
   tabRef.current = tab;
   const chat = view.chat;
@@ -863,6 +888,18 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
     () => (exileChoices.length ? exileChoices : selected === null ? [] : legalTargets(game, selected).map((t) => t.to)),
     [game, selected, exileChoices],
   );
+  // The pending ruling's instant kills on pieces with clash gear: clashes instead (사용자 요청), with the actor's odds.
+  const strikeClashes = useMemo(() => {
+    const ruling = game.pending?.ruling;
+    const actor = ruling?.actor != null ? game.board[ruling.actor] : null;
+    if (!ruling || !actor) return [];
+    return ruling.effects.flatMap((e) => {
+      const target = e.type === 'remove' ? game.board[e.at] : null;
+      if (e.type !== 'remove' || !target || target.color === actor.color || target.type === 'king' || !hasClashGear(target)) return [];
+      const chance = clashWinChance(clashMultiplier(actor), clashMultiplier(target));
+      return [{ at: e.at, name: PIECE_NAME[target.type], chance, ranged: ruling.means === 'ranged' || ruling.means === 'magic' }];
+    });
+  }, [game]);
   // Captures that would be clashes (합), with the selected piece's chance of winning each.
   const clashOdds = useMemo(() => {
     const mover = selected === null ? null : game.board[selected];
@@ -984,6 +1021,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const rollCost = pending ? (retry ? game.rules.rerollCost : pending.ruling.cost) : 0;
   // What the system adds to the dice for this ruling (skills, will, ...), as the engine will count it.
   const pendingMods = pending ? pendingModifiers(game.board, pending, game.remains, game.terrain) : [];
+  // A sacrifice for a clash multiplier: how much it adds to the multiplier (modifiers.ts).
+  const sacrificeBoost = sacrificeClashBonus(pendingMods);
   const pendingBonus = modifierTotal(pendingMods);
   const canAfford = pending ? game.ap[pending.color] >= rollCost : false;
   const canActOnPending = !!pending && ((seat === 'both' && !aiOf(pending.color)) || seat === pending.color) && connected;
@@ -1083,13 +1122,28 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
       </header>
 
       {watching && shares && (
-        <section className="watch-bar" aria-label="AI 관전">
+        <section className={`watch-bar ${watchFolded ? 'folded' : ''}`} aria-label="AI 관전">
           <div className="standing" role="img" aria-label={`판세: ${players.map((c) => `${COLOR_NAME[c]} ${Math.round((shares[c] ?? 0) * 100)}%`).join(', ')}`}>
             {players.map((c) => (
               <span key={c} className={`standing-seg seg-${c}`} style={{ width: `${(shares[c] ?? 0) * 100}%` }} />
             ))}
           </div>
-          <div className="watch-row">
+          {watchFolded && (
+            <span className="watch-score" aria-label="전적">
+              {players.map((c) => watch.tally.find((t) => t.color === c)?.wins ?? 0).join(' : ')}
+            </span>
+          )}
+          <button
+            type="button"
+            className="watch-fold"
+            onClick={() => foldWatch(!watchFolded)}
+            aria-expanded={!watchFolded}
+            title={watchFolded ? '관전 막대 펼치기 (전적, 멈춤, 속도)' : '관전 막대 접기'}
+            aria-label={watchFolded ? '관전 막대 펼치기' : '관전 막대 접기'}
+          >
+            {watchFolded ? '▾' : '▴'}
+          </button>
+          {!watchFolded && <div className="watch-row">
             <span className="watch-tally">
               {players.map((c, i) => {
                 const e = watch.tally.find((t) => t.color === c);
@@ -1118,7 +1172,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             ) : (
               watch.paused && playing && <span className="badge muted-badge">일시정지</span>
             )}
-          </div>
+          </div>}
         </section>
       )}
 
@@ -1197,7 +1251,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         return piece ? <PieceInfo piece={piece} square={sq!} /> : null;
       })()}
 
-      <aside className={`hud panel ${collapsed ? 'collapsed' : ''}`}>
+      <aside className={`hud panel ${collapsed ? 'collapsed' : ''} ${watching ? 'watching' : ''}`}>
         <div className="panel-tabs" role="tablist">
           <button role="tab" aria-selected={tab === 'log'} className={tab === 'log' ? 'active' : ''} onClick={() => setTab('log')}>
             게임
@@ -1216,8 +1270,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
           <button
             className="collapse"
             onClick={() => setCollapsed((c) => !c)}
-            title={collapsed ? '기록 펼치기' : '기록 접기'}
-            aria-label={collapsed ? '기록 펼치기' : '기록 접기'}
+            title={collapsed ? '기록과 채팅 펼치기' : '기록과 채팅 접기'}
+            aria-label={collapsed ? '기록과 채팅 펼치기' : '기록과 채팅 접기'}
           >
             {collapsed ? '▴' : '▾'}
           </button>
@@ -1405,6 +1459,15 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
                   {!!pending.ruling.sacrifice?.length && !pending.offered && (
                     <li className="sacrifice-note">주사위를 굴리는 순간 제물({pending.ruling.sacrifice.map((s) => squareName(s)).join(', ')})이 성공과 상관없이 사라집니다.</li>
                   )}
+                  {sacrificeBoost > 0 && (
+                    <li className="sacrifice-note">제물의 힘이 합 배율로 갑니다: 내 기물에 주는 배율 +{sacrificeBoost} (주사위 보정은 1/3).</li>
+                  )}
+                  {strikeClashes.map((c) => (
+                    <li key={c.at} className="clash-note">
+                      {squareName(c.at)} {c.name}에게 배율이 있어 즉사 대신 합(이길 확률 {Math.round(c.chance * 100)}%): 지면{' '}
+                      {c.ranged ? '빗나갈 뿐 주체는 무사합니다.' : '주체가 쓰러집니다.'}
+                    </li>
+                  ))}
                   <li>1·1(합 2)이 나오면 대실패: {pending.ruling.critFailureEffects?.length ? '역효과가 있습니다.' : '아무 일도 일어나지 않습니다.'}</li>
                 </ul>
                 {!canAfford && <p className="infeasible">AP가 부족해서 {retry ? '다시 굴릴' : '시도할'} 수 없습니다.</p>}

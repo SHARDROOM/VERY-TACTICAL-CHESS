@@ -1,4 +1,4 @@
-import { CLASH_MAX, CLASH_MIN, MAX_MOVE_TIMES, SACRIFICE_CLASH_MAX, parseSquare, type ChaosEvent, type Effect, type Means, type PieceType, type Ruling, type Square } from '../engine';
+import { CLASH_MAX, CLASH_MIN, MAX_MOVE_TIMES, parseSquare, type ChaosEvent, type Effect, type Means, type PieceType, type Ruling, type Square } from '../engine';
 import { GmChaosReplySchema, GmRulingReplySchema } from './schema';
 import { cleanAura, cleanRulingStaging, cleanStaging } from './staging';
 import { propFromGm } from './props';
@@ -39,8 +39,8 @@ export function parseGmRuling(raw: unknown): ParseResult {
     if (s === null) return { ok: false, error: `건물 칸 이름 "${n}"이(가) 올바르지 않음` };
     if (!buildings.includes(s)) buildings.push(s);
   }
-  // With a sacrifice a tag may carry a stronger clash multiplier.
-  const clashMax = sacrifice.length ? SACRIFICE_CLASH_MAX : CLASH_MAX;
+  // The GM picks a clash multiplier as without a sacrifice; the system adds what one is worth.
+  const clashMax = CLASH_MAX;
 
   const lists: Record<string, Effect[]> = {};
   for (const [key, label, list] of [

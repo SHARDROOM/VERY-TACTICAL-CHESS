@@ -59,7 +59,8 @@ export const DEFAULT_RULES: RuleConfig = {
   apPerTurn: 1,
   apMax: 5,
   costMin: 1,
-  costMax: 3,
+  // At most 2 (사용자 요청: with 5 AP at most, 2~3 a try was too heavy): most actions cost 1, the decisive ones 2.
+  costMax: 2,
   dcMin: 3,
   dcMax: 12,
   actionMaxLength: 200,
@@ -75,6 +76,9 @@ export const DEFAULT_RULES: RuleConfig = {
 /** Rules from a save or another version: anything missing takes the default. */
 export function withDefaultRules(rules: Partial<RuleConfig> | undefined): RuleConfig {
   const out = { ...DEFAULT_RULES, ...(rules ?? {}) };
+  // Games saved under the old costs (up to 3) play by the new ones.
+  out.costMax = Math.min(out.costMax, DEFAULT_RULES.costMax);
+  out.costMin = Math.min(out.costMin, out.costMax);
   if (out.map !== 'hex3') out.map = 'classic';
   const ai = cleanAiSeats(out.ai, out.map);
   if (ai) out.ai = ai;

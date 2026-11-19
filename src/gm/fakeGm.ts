@@ -102,21 +102,21 @@ export function fakeDeclaration(
   const options: { text: string; dc: number; cost: number; value: number }[] = [];
   for (const m of mine) {
     if (playersOf().some((c) => c !== color && isAttacked(state.board, m.sq, c, state.terrain))) {
-      options.push({ text: `${who(m)} 스스로 보호막을 두른다`, dc: 7, cost: 2, value: WORTH[m.type] * 0.6 });
+      options.push({ text: `${who(m)} 스스로 보호막을 두른다`, dc: 7, cost: 1, value: WORTH[m.type] * 0.6 });
     }
     for (const t of theirs) {
       const far = distance(m.sq, t.sq);
       // A shot (DC 8), the system's distance modifier on top: the farther, the harder; a cannon next to the shooter helps.
-      options.push({ text: `${who(m)} 활을 쏘아 ${whom(t)} 저격한다`, dc: 8 - distancePenalty(far <= 1 ? 'touch' : 'ranged', far) - buildingHelp(m.sq, 'cannon'), cost: 2, value: WORTH[t.type] });
+      options.push({ text: `${who(m)} 활을 쏘아 ${whom(t)} 저격한다`, dc: 8 - distancePenalty(far <= 1 ? 'touch' : 'ranged', far) - buildingHelp(m.sq, 'cannon'), cost: 1, value: WORTH[t.type] });
       // A stun by a spell (DC 7): cheap; best on a piece that threatens one of its own.
       const threat = mine.some((x) => isAttacked(state.board.map((p, i) => (i === t.sq || p?.color !== t.color ? p : null)), x.sq, t.color, state.terrain));
       options.push({ text: `${who(m)} 주문으로 ${whom(t)} 기절시킨다`, dc: 7 - distancePenalty(far <= 1 ? 'touch' : 'magic', far), cost: 1, value: WORTH[t.type] * (threat ? 0.5 : 0.2) });
     }
   }
-  // Arms for a piece that would then win a clash it would lose now (this GM: 검술 ×1.5 for good, DC 9, AP 3).
+  // Arms for a piece that would then win a clash it would lose now (this GM: 검술 ×1.5 for good, DC 9, AP 2).
   for (const c of clashBuffs(state, color, 1.5)) {
     const m = mine.find((x) => x.sq === c.from);
-    if (m) options.push({ text: `${who(m)} 검술을 익힌다`, dc: 9 - buildingHelp(m.sq, 'forge'), cost: 3, value: c.buffedGain - Math.max(0, c.gain) + 0.75 });
+    if (m) options.push({ text: `${who(m)} 검술을 익힌다`, dc: 9 - buildingHelp(m.sq, 'forge'), cost: 2, value: c.buffedGain - Math.max(0, c.gain) + 0.75 });
   }
   const fit = options.filter((o) => o.cost <= ap && o.dc <= maxDc);
   if (!fit.length) return null;
@@ -322,7 +322,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
       dc: 8,
-      cost: 2,
+      cost: 1,
       effects: [tag(last, name, 3, will ? { mind: 2, aura: 'light', auraStrength: 1 } : { skill: { about: `${name}다운 행동`, bonus: 2 } })],
       look: look({ fx: [fx('light', 'burst', last, { strength: 2, withEffect: 1 })], acts: [{ at: last, act: 'hop', delay: 0.1 }] }),
       narration: { success: will ? `${last}의 기물의 눈빛이 단단해졌다.` : `${last}의 기물이 ${name}의 요령을 깨쳤다!`, failure: '가르침이 귀에 들어오지 않았다.' },
@@ -344,7 +344,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       mental: true,
       feasible: true,
       dc: 9,
-      cost: 3,
+      cost: 2,
       effects: [{ type: 'convert', at: last, color }],
       look: look({ fx: [fx('arcane', 'beam', actor, { to: last, strength: 2, withEffect: 0 })] }),
       narration: { success: `${last}의 기물이 마음을 돌렸다!`, failure: '상대 기물은 흔들리지 않았다.' },
@@ -376,7 +376,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       means: 'magic',
       feasible: true,
       dc: 8,
-      cost: 2,
+      cost: 1,
       effects: [{ type: 'swap', a, b }],
       look: look({ beats: [beat(1)], fx: [fx('arcane', 'burst', a, { strength: 3, radius: 0.7 }), fx('arcane', 'burst', b, { strength: 3, radius: 0.7 })] }),
       narration: { success: `두 기물이 서로를 향해 날아올라 ${josa(a, '와/과')} ${b}의 자리가 뒤바뀌었다!`, failure: '두 기물이 엇갈리려다 서로 부딪혀 제자리로 튕겨 났다.' },
@@ -431,7 +431,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
       dc: strong ? 9 : 8,
-      cost: strong ? 3 : 2,
+      cost: strong ? 2 : 1,
       effects: [tag(last, `${kinds}의 걸음`, 2, { moveAs, aura: 'wind', auraStrength: 1 })],
       look: look({ fx: [fx('wind', 'burst', last, { strength: 3, radius: 0.7, withEffect: 1 })], acts: [{ at: last, act: 'spin', delay: 0.2 }] }),
       narration: { success: `${last}의 기물이 ${kinds}의 걸음을 익혔다!`, failure: '발이 꼬여 제자리에서 비틀거렸다.' },
@@ -448,7 +448,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
       dc: times === 3 ? 10 : 9,
-      cost: times === 3 ? 3 : 2,
+      cost: times === 3 ? 2 : 1,
       effects: [tag(last, '질주', 1, { moveTimes: times, aura: 'wind', auraStrength: 2 })],
       look: look({ fx: [fx('wind', 'burst', last, { strength: 3, radius: 0.8, withEffect: 1 })], acts: [{ at: last, act: 'hop', delay: 0.2 }] }),
       narration: { success: `${last}의 기물이 바람처럼 몸을 풀었다. 한 번에 ${times}걸음!`, failure: '숨이 차서 멈춰 섰다.' },
@@ -465,7 +465,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
       dc: 9,
-      cost: 3,
+      cost: 2,
       effects: [tag(last, spear ? '창술' : '검술', 0, { clash: 1.5, prop: look3d(spear ? 'spear' : 'sword', 'rightHand') })],
       look: look({ fx: [fx('light', 'burst', last, { strength: 3, radius: 0.7, withEffect: 1 })], acts: [{ at: last, act: 'spin', delay: 0.3 }] }),
       narration: { success: `${last}의 기물이 ${spear ? '창' : '검'}을 쥐고 자세를 잡았다! 함부로 덤비면 베인다.`, failure: '휘두르던 막대기가 손에서 미끄러졌다.' },
@@ -503,7 +503,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
       dc: 8,
-      cost: 3,
+      cost: 2,
       effects: [{ type: 'terrain', at: last, kind: 'wall', turns: 0, prop: look3d(), building: { kind, name: '', about: '', bonus: 2 } }],
       look: look({ shake: 1, fx: [fx('earth', 'burst', last, { strength: 3, radius: 0.8, withEffect: 1 })] }),
       narration: { success: `망치 소리가 울리더니 ${last}에 ${josa(name, '이/가')} 우뚝 섰다!`, failure: '재료가 모자라 터만 닦아 두었다.' },
@@ -536,7 +536,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
       dc: 8,
-      cost: 2,
+      cost: 1,
       effects: [{ type: 'terrain', at: last, kind: 'pit', turns: 2, prop: look3d(), building: NO_BUILDING }],
       look: look({ shake: 2, beats: [beat(1, { exit: 'sink' })], fx: [fx('earth', 'burst', last, { strength: 4, radius: 0.9, withEffect: 1 })] }),
       narration: { success: `${last}의 땅이 꺼지며 시커먼 구덩이가 입을 벌렸다!`, failure: '땅에 금이 갔지만 꺼지지는 않았다.' },
@@ -555,7 +555,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       means: 'touch',
       feasible: true,
       dc: Math.min(12, dc),
-      cost: kind === 'pawn' ? 1 : kind === 'queen' || kind === 'rook' ? 3 : 2,
+      cost: kind === 'queen' || kind === 'rook' ? 2 : 1,
       effects: [{ type: 'fuse', body: actor, material: last }],
       look: look({ shake: 1, fx: [fx('arcane', 'burst', actor, { strength: 3, radius: 1, withEffect: 1 })] }),
       narration: { success: `${last}의 기물이 소용돌이치며 ${actor}의 기물과 하나가 되었다!`, failure: '두 기물이 부딪혔다가 튕겨 나갔다.' },
@@ -599,7 +599,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
       dc: special === '인질' || special === '행동대장' ? 9 : 8,
-      cost: special === '행동대장' ? 3 : 2,
+      cost: special === '행동대장' ? 2 : 1,
       effects: [tag(at, special, turns, { aura: special === '혼란' ? 'arcane' : special === '행동대장' ? 'light' : 'none', auraStrength: special === '혼란' || special === '행동대장' ? 1 : 0 })],
       look: look({ fx: [fx(special === '혼란' ? 'arcane' : 'light', 'burst', at, { strength: 2, withEffect: 1 })], acts: [{ at, act: special === '혼란' ? 'shiver' : 'hop', delay: 0.2 }] }),
       narration: { success: `${at}의 기물에 ${special}의 기운이 깃들었다.`, failure: '아무 일도 일어나지 않았다.' },
@@ -636,7 +636,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
       dc: 7,
-      cost: 2,
+      cost: 1,
       effects: [tag(last, '보호막', 0, { prop: look3d('shield', 'leftHand') })],
       look: look({ fx: [fx('light', 'burst', last, { strength: 3, radius: 1, withEffect: 1 })] }),
       narration: { success: `푸른 결계가 ${last}의 기물을 감쌌다!`, failure: '결계가 형태를 이루지 못하고 흩어졌다.' },
@@ -652,7 +652,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
       dc: 9,
-      cost: 2,
+      cost: 1,
       effects: [{ type: 'untag', at: last, tag: '공중부양' }],
       look: look({ fx: [fx('wind', 'burst', last, { strength: 3, radius: 0.8, withEffect: 1 })] }),
       narration: { success: `${last}의 기물이 힘을 잃고 곤두박질친다!`, failure: '떠 있는 기물은 꿈쩍도 하지 않았다.' },
@@ -691,7 +691,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       ...r,
       feasible: true,
       dc: shot ? 7 : 6,
-      cost: 2,
+      cost: 1,
       effects: [tag(last, '화상', 3, { aura: 'fire', auraStrength: 2 })],
       look: look({
         fx: [...(shot ? [fx('fire', 'beam', first, { to: last, strength: 3, duration: 0.7 })] : []), fx('fire', 'burst', last, { strength: 3, radius: 0.8, withEffect: 1, delay: shot ? 0.5 : 0 })],
@@ -767,7 +767,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       means: shot ? 'ranged' : 'touch',
       feasible: true,
       dc: 8,
-      cost: 2,
+      cost: 1,
       effects: [{ type: 'remove', at: last }],
       look: look({
         shake: 2,

@@ -126,13 +126,16 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         break;
       case 'clash': {
         const rounds = e.rounds.map((r) => `${score(r.attack, e.attack)} 대 ${score(r.defense, e.defense)}`).join(', 동점 → ');
+        if (e.strike) add(`${josa(name(e.defenderId), '은/는')} 배율이 있어 단번에 쓰러뜨릴 수 없다: 합으로 겨룬다`);
         add(`⚔ 합! ${name(e.attackerId)}(${squareName(e.from)}) ×${e.attack} 대 ${name(e.defenderId)}(${squareName(e.at)}) ×${e.defense}: ${rounds}`, 'roll');
         add(
           e.winner === 'attacker'
             ? e.shield
               ? `${josa(name(e.attackerId), '이/가')} 이겨 보호막을 깨뜨렸다`
               : `${josa(name(e.attackerId), '이/가')} 합에서 이겼다`
-            : `${josa(name(e.defenderId), '이/가')} 버텨 냈다. 공격한 ${josa(name(e.attackerId), '이/가')} 쓰러짐`,
+            : e.strike === 'ranged'
+              ? `${josa(name(e.defenderId), '이/가')} 버텨 냈다. ${name(e.attackerId)}의 공격은 빗나갔다 (멀리서 쳐서 무사함)`
+              : `${josa(name(e.defenderId), '이/가')} 버텨 냈다. 공격한 ${josa(name(e.attackerId), '이/가')} 쓰러짐`,
           e.winner === 'attacker' ? 'normal' : 'warn',
         );
         break;

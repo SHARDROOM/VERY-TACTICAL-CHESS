@@ -98,6 +98,13 @@ export class Authority {
   private aiDropped: Partial<Record<Color, string>> = {};
   /** A game only AIs play: paused or not, how fast, the score of the series (docs/SPEC.md, "AI 관전"). */
   watch: WatchState = WATCH_DEFAULT;
+  /** AI seats with a model of their own for their special actions (AI의 두뇌); the others use the GM's. */
+  brains: Partial<Record<Color, GameMaster>> = {};
+
+  /** Who writes this AI's declarations: its own model, or the GM's. */
+  private brainOf(color: Color): GameMaster {
+    return this.brains[color] ?? this.gm;
+  }
 
   constructor(
     public gm: GameMaster,
@@ -423,20 +430,20 @@ export class Authority {
 
   /** Whether the AI tries a special action this turn: if the GM can make one up and its AP and habit say so. */
   private aiWantsSpecial({ color, seat }: { color: Color; seat: AiSeat }): boolean {
-    if (seat.specials === 'off' || !this.gm.act) return false;
+    if (seat.specials === 'off' || !this.brainOf(color).act) return false;
     if ((this.aiRestUntil[color] ?? 0) > this.state.turnNumber) return false;
     const ap = this.state.ap[color] ?? 0;
     if (seat.specials === 'often') return ap >= 1;
     return ap >= 2 && this.chance() < 0.5;
   }
 
-  /** The AI's declaration, made up by the GM's model as that player (null: none came). */
+  /** The AI's declaration, made up by its model (its own, or the GM's) as that player (null: none came). */
   private async aiCompose({ color, seat }: { color: Color; seat: AiSeat }): Promise<string | null> {
     const generation = this.generation;
     this.setBusy(true);
     try {
       const style = seat.level === 'hard' || seat.level === 'master' ? 'sharp' : 'playful';
-      const raw = await this.gm.act!({ state: this.state, color, style, hints: aiHints(this.state, color), maxDc: aiMaxDc(seat.level) });
+      const raw = await this.brainOf(color).act!({ state: this.state, color, style, hints: aiHints(this.state, color), maxDc: aiMaxDc(seat.level) });
       const action = parsePlayerAction(raw, this.state.rules.actionMaxLength);
       return action && action === this.aiDropped[color] ? null : action;
     } catch {

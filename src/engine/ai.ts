@@ -1,3 +1,4 @@
+import { rulingContext } from './game';
 import { CLASH_ROLLS, canResist, clashMultiplier, clashWinChance } from './clash';
 import { saverFor } from './guard';
 import { legalTargets, movesFrom } from './moves';
@@ -504,7 +505,7 @@ export function aiHints(state: GameState, me: Color): string[] {
   const planLines = [...plans.values()].slice(0, 2).map((c) => `${name(c.from)}에 합 배율 태그를 주면 ${name(c.to)}을(를) 잡을 확률 ${pct(c.chance)} → ${c.odds.join(', ')}`);
   if (planLines.length) {
     out.push(
-      `합 계획(특수 행동으로 배율을 얻고 같은 턴에 바로 잡으러 갈 수 있음. 이번 턴만 쓸 1턴짜리 배율이 영구보다 DC가 2 낮고 쌈. 합이 없는 원거리 제거와 비교해 고르세요): ${planLines.join('; ')}`,
+      `합 계획(특수 행동으로 배율을 얻고 같은 턴에 바로 잡으러 갈 수 있음. 이번 턴만 쓸 1턴짜리 배율이 영구보다 DC가 2 낮고 쌈. 배율 있는 기물은 즉사(remove)도 합이 됨: 원거리·마법으로 치면 져도 주체는 무사): ${planLines.join('; ')}`,
     );
   }
   const near = targetsFor(board, me, 3);
@@ -585,16 +586,8 @@ export function aiShouldRoll(state: GameState, level: AiLevel, now: () => number
   // A sacrifice is made whatever the dice say (once): the effects happen without those pieces.
   const start = [...state.board];
   if (!pending.offered) for (const at of pending.ruling.sacrifice ?? []) start[at] = null;
-  const ctx = {
-    turnNumber: state.turnNumber,
-    nextSpawnId: state.nextSpawnId,
-    color: me,
-    terrain: state.terrain ?? [],
-    captured: state.captured ?? [],
-    remains: state.remains ?? [],
-    clash: { mode: 'check' as const },
-    ...(pending.ruling.actor != null && { actor: pending.ruling.actor }),
-  };
+  // As the game applies them: the actor and its means, a sacrifice's stronger limits.
+  const ctx = { ...rulingContext(state, pending.ruling), color: me, clash: { mode: 'check' as const } };
   type Outcome = { board: Board; terrain: readonly TerrainCell[] | undefined; p: number };
   // The effects tried out on the board. One that walks into a clash (합) can go either way: both are
   // played out (the dice forced), weighed by the clash's odds as the effects stand at that point.

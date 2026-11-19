@@ -71,7 +71,7 @@ describe('AI rolls for its ruling (aiShouldRoll)', () => {
 
   it('쉬움 rolls whatever comes, if it can pay', () => {
     expect(aiShouldRoll(pending(11, 2, [stun('h7')]), 'easy')).toBe(true);
-    expect(aiShouldRoll(pending(7, 3, [stun('b4')], 2), 'easy')).toBe(false);
+    expect(aiShouldRoll(pending(7, 2, [stun('b4')], 1), 'easy')).toBe(false);
   });
 
   it('보통 rolls at 42% (DC 8), not at 28% (DC 9)', () => {
@@ -150,8 +150,8 @@ describe('clashes in what the AI is told (clashCaptures, clashBuffs, aiHints)', 
     const sword: Effect = { type: 'tag', at: sq('e5'), tag: '검술', turns: 0, clash: 1.5 };
     // The pawn charges first (×0.8 against ×1.8: 7%), the sword comes after: not worth it.
     expect(aiShouldRoll(propose([{ type: 'move', from: sq('d4'), to: sq('e5') }, sword]), 'hard')).toBe(false);
-    // Shot from afar: no clash at all.
-    expect(aiShouldRoll(propose([{ type: 'remove', at: sq('e5') }]), 'hard')).toBe(true);
+    // A stab is no way round it: an instant kill on a piece with clash gear is the same clash (사용자 요청).
+    expect(aiShouldRoll(propose([{ type: 'remove', at: sq('e5') }]), 'hard')).toBe(false);
   });
 
   it('the hints never call such a rook a free capture, and give the odds and the plan', () => {

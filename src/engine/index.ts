@@ -1,6 +1,6 @@
 export * from './types';
-export { applyCommand, clashEventFor, exitsOf, hasAnyMove, wanderTargets } from './game';
-export { BASE_CLASH, CLASH_MAX, CLASH_MIN, CLASH_ROLLS, DUEL_TIMING, duelSeconds, canResist, clashMultiplier, clashScore, clashSkill, clashWinChance, exchangesFor, resolveClash } from './clash';
+export { applyCommand, clashEventFor, exitsOf, hasAnyMove, rulingContext, wanderTargets } from './game';
+export { BASE_CLASH, CLASH_MAX, CLASH_MIN, CLASH_ROLLS, DUEL_TIMING, duelSeconds, canResist, clashMultiplier, hasClashGear, clashScore, clashSkill, clashWinChance, exchangesFor, resolveClash } from './clash';
 export { capturedAfter } from './captured';
 export { FOOTPRINT, footprint, restingPlace } from './levitation';
 export { blockedSquares, dropFromBridges, terrainAt, terrainBlocks, tickTerrain, MAX_TERRAIN, BUILDING_INFO, BUILDING_REACH, BUILDING_BONUS, BUILDING_BONUS_MAX, cleanBuilding } from './terrain';
@@ -18,4 +18,4 @@ export { DEFAULT_RULES, DIE_SIDES, DICE_PER_ROLL, ROLL_MAX, ROLL_MIN, withDefaul
 export * from './staging';
 export { buildTimeline, effectDuration, moveDuration, ACT_DURATION, EXIT_DURATION, REVIVE_DURATION, SWAP_DURATION, type Timeline } from './timeline';
 export * from './props';
-export { rollModifiers, pendingModifiers, distancePenalty, actionReach, DISTANCE_RULE, modifierTotal, checkSacrifice, sacrificeModifiers, MOD_EACH_MAX, MOD_TOTAL_MAX, SACRIFICE_VALUE, SACRIFICE_MOD_MAX, SACRIFICE_CLASH_MAX, type RollModifier, type ModifierKind } from './modifiers';
+export { rollModifiers, pendingModifiers, distancePenalty, actionReach, DISTANCE_RULE, modifierTotal, checkSacrifice, sacrificeModifiers, MOD_EACH_MAX, MOD_TOTAL_MAX, SACRIFICE_VALUE, SACRIFICE_MOD_MAX, SACRIFICE_CLASH_CAP, SACRIFICE_CLASH_PER_POINT, givesClash, sacrificeClashBonus, type RollModifier, type ModifierKind } from './modifiers';

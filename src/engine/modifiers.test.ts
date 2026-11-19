@@ -101,10 +101,12 @@ describe('sacrifice (희생)', () => {
     return { ...s, board };
   }
   const offering = (over: Partial<Ruling> = {}) =>
-    ruling({ interpretation: '제물을 바쳐 나이트가 강해진다', effects: [{ type: 'tag', at: sq('d4'), tag: '피의 맹세', turns: 2, clash: 2.5 }], sacrifice: [sq('e3'), sq('c4')], ...over });
+    ruling({ interpretation: '제물을 바쳐 나이트가 강해진다', effects: [{ type: 'tag', at: sq('d4'), tag: '피의 맹세', turns: 2, clash: 1.5 }], sacrifice: [sq('e3'), sq('c4')], ...over });
+  /** The same offering for a plain skill (no multiplier): each piece adds its whole worth. */
+  const forSkill = (over: Partial<Ruling> = {}) => offering({ effects: [{ type: 'tag', at: sq('d4'), tag: '광전사', turns: 2, skill: { about: '돌격', bonus: 2 } }], ...over });
 
   it('pieces next to the actor are given up when the dice are thrown, even on a failure, and add their worth', () => {
-    const r = roll(altar(), offering(), 4);
+    const r = roll(altar(), forSkill(), 4);
     const resolved = r.events.find((e) => e.type === 'specialResolved');
     // 4 + (1 + 3) = 8 < 9: a failure, and the offering is gone anyway.
     expect(resolved).toMatchObject({ outcome: 'failure', bonus: 4, mods: [{ kind: 'sacrifice', value: 1 }, { kind: 'sacrifice', value: 3 }] });
@@ -114,21 +116,33 @@ describe('sacrifice (희생)', () => {
     expect(r.state.captured?.map((c) => c.id)).toEqual(expect.arrayContaining(['pe3', 'rc4']));
   });
 
-  it('a second try after a failure keeps the offering without giving anything more', () => {
-    const first = roll(altar(), offering(), 4).state;
-    expect(first.pending?.offered).toHaveLength(2);
-    const again = ok(applyCommand(first, { type: 'attemptSpecial', roll: 6 }));
-    expect(again.events.find((e) => e.type === 'specialResolved')).toMatchObject({ outcome: 'success', bonus: 4 });
-    expect(again.events.some((e) => e.type === 'removed' && e.cause === 'sacrifice')).toBe(false);
-    expect(again.state.board[sq('d4')]?.tags?.[0]).toMatchObject({ clash: 2.5 });
+  it('given up for a clash multiplier, the offering raises it by its worth and helps the roll a third as much (사용자 요청)', () => {
+    // A pawn and a rook (1 + 3 = 4): ×1.5 + 0.4 = ×1.9, and +1 (4 / 3) on the dice.
+    const r = roll(altar(), offering(), 8);
+    expect(r.events.find((e) => e.type === 'specialResolved')).toMatchObject({ outcome: 'success', bonus: 1, mods: [{ kind: 'sacrifice', value: 1, worth: 4 }] });
+    expect(r.state.board[sq('d4')]?.tags?.[0]).toMatchObject({ clash: 1.9 });
+    // A pawn alone: ×1.6. Stronger and more pieces give more.
+    const pawn = roll(altar(), offering({ sacrifice: [sq('e3')] }), 9);
+    expect(pawn.state.board[sq('d4')]?.tags?.[0]).toMatchObject({ clash: 1.6 });
   });
 
-  it('with a sacrifice a buff may be stronger (×2.5, ±4); without one it may not', () => {
+  it('a second try after a failure keeps the offering (and its multiplier) without giving anything more', () => {
+    const first = roll(altar(), offering(), 4).state;
+    expect(first.pending?.offered).toHaveLength(1);
+    const again = ok(applyCommand(first, { type: 'attemptSpecial', roll: 8 }));
+    expect(again.events.find((e) => e.type === 'specialResolved')).toMatchObject({ outcome: 'success', bonus: 1 });
+    expect(again.events.some((e) => e.type === 'removed' && e.cause === 'sacrifice')).toBe(false);
+    expect(again.state.board[sq('d4')]?.tags?.[0]).toMatchObject({ clash: 1.9 });
+  });
+
+  it('with a sacrifice a skill may be stronger (±4); a multiplier stays within ×2 as given (the system adds the offering)', () => {
     const s = altar();
     expect(applyCommand(s, { type: 'proposeSpecial', action: 'x', ruling: offering() }).ok).toBe(true);
-    expect(applyCommand(s, { type: 'proposeSpecial', action: 'x', ruling: offering({ sacrifice: [] }) })).toMatchObject({ ok: false, reason: 'invalidRuling' });
+    const over = offering({ effects: [{ type: 'tag', at: sq('d4'), tag: '피의 맹세', turns: 2, clash: 2.5 }] });
+    expect(applyCommand(s, { type: 'proposeSpecial', action: 'x', ruling: over })).toMatchObject({ ok: false, reason: 'invalidRuling' });
     const skill4 = offering({ effects: [{ type: 'tag', at: sq('d4'), tag: '광전사', turns: 2, skill: { about: '돌격', bonus: 4 } }] });
     expect(applyCommand(s, { type: 'proposeSpecial', action: 'x', ruling: skill4 }).ok).toBe(true);
+    expect(applyCommand(s, { type: 'proposeSpecial', action: 'x', ruling: { ...skill4, sacrifice: [] } })).toMatchObject({ ok: false, reason: 'invalidRuling' });
   });
 
   it("refuses a far piece, a king, the actor itself and someone else's piece", () => {

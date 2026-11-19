@@ -15,6 +15,11 @@ interface Props {
   current: GmConfig;
   onSave: (config: GmConfig) => void;
   onClose: () => void;
+  /**
+   * Choosing an AI seat's own model (AI의 두뇌) instead of the GM: the seat's name, whether it
+   * uses the GM's model now, and how to go back to that.
+   */
+  brain?: { seat: string; usesGm: boolean; onUseGm: () => void };
 }
 
 const EFFORTS: { id: GmEffort; label: string }[] = [
@@ -46,8 +51,15 @@ const KEY_HINT: Record<LlmProvider, { label: string; placeholder: string; where:
   },
 };
 
-export function GmSettings({ current, onSave, onClose }: Props) {
-  const [provider, setProvider] = useState<GmConfig['provider']>(current.provider);
+/** An AI seat's model: the same as the GM, or one of the GM kinds (the fake one being the built-in AI). */
+const BRAIN_PROVIDERS: { id: GmConfig['provider'] | 'same'; name: string; note: string }[] = [
+  { id: 'same', name: 'GM과 같이', note: '방의 GM 모델이 이 AI의 특수 행동 문장도 짓습니다.' },
+  ...PROVIDERS.filter((p) => p.id !== 'fake'),
+  { id: 'fake', name: '내장 AI', note: '키 없이. 보호막, 저격, 기절, 검술 같은 정해진 행동만 고릅니다.' },
+];
+
+export function GmSettings({ current, onSave, onClose, brain }: Props) {
+  const [provider, setProvider] = useState<GmConfig['provider'] | 'same'>(brain?.usesGm ? 'same' : current.provider);
   // Keys and models are kept per provider while the dialog is open, so switching tabs loses nothing.
   // Every key typed in on this browser is filled in again.
   const [keys, setKeys] = useState<Record<LlmProvider, string>>(() => ({
@@ -63,12 +75,14 @@ export function GmSettings({ current, onSave, onClose }: Props) {
   });
   const [effort, setEffort] = useState<GmEffort>(current.provider === 'claude' ? current.effort : 'low');
 
-  const llm = provider === 'fake' ? null : provider;
+  const llm = provider === 'fake' || provider === 'same' ? null : provider;
   const canSave = !llm || (keys[llm].trim().length > 0 && models[llm].trim().length > 0);
 
   const save = () => {
     if (!canSave) return;
-    rememberKeys(keys);
+    if (provider === 'same') return brain?.onUseGm();
+    // A seat's key is kept with that seat (its caller remembers it), not as the GM's.
+    if (!brain) rememberKeys(keys);
     if (!llm) return onSave({ provider: 'fake' });
     const base = { apiKey: keys[llm].trim(), model: models[llm].trim() };
     onSave(llm === 'claude' ? { provider: llm, ...base, effort } : { provider: llm, ...base });
@@ -83,11 +97,15 @@ export function GmSettings({ current, onSave, onClose }: Props) {
           save();
         }}
       >
-        <h2>GM 설정</h2>
-        <p className="settings-lead">특수 행동을 판정하고 혼돈을 일으킬 GM을 고르세요.</p>
+        <h2>{brain ? `${brain.seat} AI의 두뇌` : 'GM 설정'}</h2>
+        <p className="settings-lead">
+          {brain
+            ? '이 AI가 특수 행동 문장을 지을 모델과 키를 고르세요. 일반 수는 엔진이 두고(난이도대로), 판정은 방의 GM이 합니다.'
+            : '특수 행동을 판정하고 혼돈을 일으킬 GM을 고르세요.'}
+        </p>
         <fieldset className="provider-grid">
-          <legend className="sr-only">GM 종류</legend>
-          {PROVIDERS.map((p) => (
+          <legend className="sr-only">{brain ? '모델 종류' : 'GM 종류'}</legend>
+          {(brain ? BRAIN_PROVIDERS : PROVIDERS).map((p) => (
             <label key={p.id} className={`provider-tile ${provider === p.id ? 'active' : ''}`}>
               <input type="radio" name="provider" checked={provider === p.id} onChange={() => setProvider(p.id)} />
               <span className="provider-name">{p.name}</span>
@@ -145,8 +163,17 @@ export function GmSettings({ current, onSave, onClose }: Props) {
               </label>
             )}
             <ul className="notes">
-              <li>키는 이 브라우저에만 기억되어 새로고침해도 다시 넣지 않아도 됩니다. 상대 플레이어에게는 전송되지 않습니다. 지우려면 칸을 비우고 다른 GM(예: 가짜 GM)으로 저장하세요. 같이 쓰는 컴퓨터라면 다 쓴 뒤 지워 주세요.</li>
-              <li>판정을 요청할 때마다 이 키로 API 요금이 청구됩니다.</li>
+              {brain ? (
+                <>
+                  <li>키는 이 자리의 AI 몫으로 이 브라우저에만 기억됩니다. 다른 사람에게는 전송되지 않습니다. 지우려면 "GM과 같이"로 바꾸세요.</li>
+                  <li>이 AI가 특수 행동을 지을 때마다 이 키로 API 요금이 청구됩니다. 판정은 GM의 키로 따로 청구됩니다.</li>
+                </>
+              ) : (
+                <>
+                  <li>키는 이 브라우저에만 기억되어 새로고침해도 다시 넣지 않아도 됩니다. 상대 플레이어에게는 전송되지 않습니다. 지우려면 칸을 비우고 다른 GM(예: 가짜 GM)으로 저장하세요. 같이 쓰는 컴퓨터라면 다 쓴 뒤 지워 주세요.</li>
+                  <li>판정을 요청할 때마다 이 키로 API 요금이 청구됩니다.</li>
+                </>
+              )}
               <li>{KEY_HINT[llm].where}</li>
             </ul>
           </>
@@ -154,7 +181,7 @@ export function GmSettings({ current, onSave, onClose }: Props) {
 
         <div className="choice-row">
           <button type="submit" className="primary" disabled={!canSave}>
-            {llm && !keys[llm].trim() ? 'API 키를 넣어 주세요' : '이 GM으로 정하기'}
+            {llm && !keys[llm].trim() ? 'API 키를 넣어 주세요' : brain ? '이 두뇌로 정하기' : '이 GM으로 정하기'}
           </button>
           <button type="button" onClick={onClose}>닫기</button>
         </div>
