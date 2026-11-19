@@ -423,3 +423,24 @@ describe('a chaos hostage named in the reply', () => {
     expect(r.chaos.effects[1]).not.toHaveProperty('by');
   });
 });
+
+describe('buildings with the fake GM', () => {
+  it('builds a forge, and names a cannon next to a shooter', () => {
+    let s = { ...createInitialState(), ap: { white: 6, black: 6, red: 0, gray: 0 } };
+    const built = parseGmRuling(fakeRuling('e2 폰이 e3에 대장간을 짓는다', 'white', s.board, s.terrain));
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.ruling.effects).toEqual([expect.objectContaining({ type: 'terrain', at: parseSquare('e3'), kind: 'wall', turns: 0, building: expect.objectContaining({ kind: 'forge' }) })]);
+    // Put up the forge (and a cannon on d3) for real, then shoot from d2 next to the cannon.
+    for (const [at, kind] of [['e3', 'forge'], ['d3', 'cannon']] as const) {
+      const r = applyCommand(s, { type: 'chaos', chaos: { title: 't', narration: 'n', effects: [{ type: 'terrain', at: parseSquare(at)!, kind: 'wall', turns: 0, building: { kind, name: '', about: '', bonus: 2 } }] } });
+      if (!r.ok) throw new Error(r.detail);
+      s = { ...r.state, turn: 'white' };
+    }
+    const shot = parseGmRuling(fakeRuling('d2 폰이 활을 쏘아 d7 폰을 저격한다', 'white', s.board, s.terrain));
+    expect(shot.ok && shot.ruling.buildings).toEqual([parseSquare('d3')]);
+    // Not for a stun (a cannon does not help with that).
+    const stun = parseGmRuling(fakeRuling('d2 폰이 주문으로 d7 폰을 기절시킨다', 'white', s.board, s.terrain));
+    expect(stun.ok && stun.ruling.buildings).toBeFalsy();
+  });
+});

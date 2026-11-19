@@ -15,9 +15,9 @@ export const PROP_MATERIALS = ['wood', 'stone', 'iron', 'gold', 'cloth', 'rope',
 export type PropMaterial = (typeof PROP_MATERIALS)[number];
 export const PROP_MATERIAL_NAME: Record<PropMaterial, string> = { wood: '나무', stone: '돌', iron: '쇠', gold: '금', cloth: '천', rope: '밧줄', glass: '유리', glow: '빛남' };
 
-export const PROP_PRESETS = ['sword', 'spear', 'shield', 'ladder', 'bridge', 'flag', 'crown', 'barricade'] as const;
+export const PROP_PRESETS = ['sword', 'spear', 'shield', 'ladder', 'bridge', 'flag', 'crown', 'barricade', 'cannon', 'chapel', 'forge'] as const;
 export type PropPreset = (typeof PROP_PRESETS)[number];
-export const PROP_PRESET_NAME: Record<PropPreset, string> = { sword: '검', spear: '창', shield: '방패', ladder: '사다리', bridge: '다리', flag: '깃발', crown: '왕관', barricade: '바리케이드' };
+export const PROP_PRESET_NAME: Record<PropPreset, string> = { sword: '검', spear: '창', shield: '방패', ladder: '사다리', bridge: '다리', flag: '깃발', crown: '왕관', barricade: '바리케이드', cannon: '대포', chapel: '예배당', forge: '대장간' };
 
 /** Where a prop goes on a piece. */
 export const ATTACH_POINTS = ['rightHand', 'leftHand', 'head', 'back', 'feet'] as const;
@@ -164,6 +164,34 @@ export const PRESET_PARTS: Record<PropPreset, PropPart[]> = {
     part('box', [0, 0.28, 0], [0.86, 0.08, 0.08], 'wood', [0, 0, 28]),
     part('box', [0, 0.28, 0], [0.86, 0.08, 0.08], 'wood', [0, 0, -28]),
     ...[-0.3, 0, 0.3].map((x) => part('cone', [x, 0.32, 0.12], [0.06, 0.28, 0.06], 'iron', [70, 0, 0])),
+  ],
+  // The buildings (건물): a cannon on its carriage, a little chapel with a cross, a smithy with its anvil.
+  cannon: [
+    part('box', [0, 0.13, -0.04], [0.34, 0.12, 0.5], 'wood'),
+    ...[-0.21, 0.21].map((x) => part('cylinder', [x, 0.15, -0.08], [0.3, 0.06, 0.3], 'wood', [0, 0, 90])),
+    ...[-0.25, 0.25].map((x) => part('cylinder', [x, 0.15, -0.08], [0.08, 0.02, 0.08], 'iron', [0, 0, 90])),
+    part('cylinder', [0, 0.3, 0.06], [0.15, 0.62, 0.15], 'iron', [72, 0, 0]),
+    part('torus', [0, 0.39, 0.35], [0.17, 0.05, 0.17], 'iron', [72, 0, 0]),
+    part('sphere', [0, 0.27, -0.32], [0.12, 0.12, 0.12], 'iron'),
+    ...[-0.14, 0.14].map((x) => part('sphere', [x, 0.06, -0.33], [0.11, 0.11, 0.11], 'iron')),
+  ],
+  chapel: [
+    part('box', [0, 0.22, 0], [0.56, 0.44, 0.66], 'stone'),
+    part('wedge', [0, 0.56, 0], [0.64, 0.26, 0.74], 'wood', [0, 0, 0], '#5a3a2a'),
+    part('box', [0, 0.15, 0.335], [0.15, 0.3, 0.02], 'wood'),
+    part('box', [0, 0.36, 0.335], [0.1, 0.1, 0.02], 'glass', [0, 0, 0], '#f2c86a'),
+    part('box', [0, 0.85, 0.22], [0.045, 0.26, 0.045], 'gold'),
+    part('box', [0, 0.89, 0.22], [0.16, 0.045, 0.045], 'gold'),
+  ],
+  forge: [
+    part('box', [-0.06, 0.17, -0.08], [0.5, 0.34, 0.46], 'stone'),
+    part('wedge', [-0.06, 0.43, -0.08], [0.56, 0.18, 0.52], 'wood', [0, 0, 0], '#4a3020'),
+    part('cylinder', [0.15, 0.5, -0.2], [0.12, 0.56, 0.12], 'stone'),
+    part('sphere', [-0.06, 0.1, 0.16], [0.18, 0.1, 0.06], 'glow', [0, 0, 0], '#ff7a1a'),
+    part('box', [0.2, 0.06, 0.28], [0.08, 0.12, 0.08], 'iron'),
+    part('box', [0.2, 0.15, 0.28], [0.22, 0.06, 0.1], 'iron'),
+    part('sphere', [0.16, 0.85, -0.18], [0.13, 0.11, 0.13], 'cloth', [0, 0, 0], '#8c8a86'),
+    part('sphere', [0.2, 0.98, -0.14], [0.17, 0.13, 0.17], 'cloth', [0, 0, 0], '#a3a19c'),
   ],
 };
 

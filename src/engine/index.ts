@@ -3,7 +3,7 @@ export { applyCommand, clashEventFor, exitsOf, hasAnyMove, wanderTargets } from 
 export { BASE_CLASH, CLASH_MAX, CLASH_MIN, CLASH_ROLLS, DUEL_TIMING, duelSeconds, canResist, clashMultiplier, clashScore, clashSkill, clashWinChance, exchangesFor, resolveClash } from './clash';
 export { capturedAfter } from './captured';
 export { FOOTPRINT, footprint, restingPlace } from './levitation';
-export { blockedSquares, dropFromBridges, terrainAt, terrainBlocks, tickTerrain, MAX_TERRAIN } from './terrain';
+export { blockedSquares, dropFromBridges, terrainAt, terrainBlocks, tickTerrain, MAX_TERRAIN, BUILDING_INFO, BUILDING_REACH, BUILDING_BONUS, BUILDING_BONUS_MAX, cleanBuilding } from './terrain';
 export { createInitialState, createStateFrom, withAir } from './setup';
 export { movesFrom, legalTargets, isAttacked, isInCheck, findKing, type Target } from './moves';
 export { parseMoveText } from './notation';

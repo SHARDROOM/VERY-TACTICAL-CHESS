@@ -40,7 +40,7 @@ export function ShieldBubble({ height }: { height: number }) {
   );
 }
 
-export type ChipTone = 'free' | 'stun' | 'shield' | 'burn' | 'burnLast' | 'terrain';
+export type ChipTone = 'free' | 'stun' | 'shield' | 'burn' | 'burnLast' | 'terrain' | 'building';
 
 /** One label in a row above a piece: a tag (with the turns it has left) or a wall's or pit's turns. */
 export interface Chip {
@@ -56,6 +56,8 @@ const TONE: Record<ChipTone, { bg: string; dot: string | null; fg: string }> = {
   // The last turn to move a burning piece: hard to miss.
   burnLast: { bg: 'rgba(178, 38, 30, 0.95)', dot: '#ffd54a', fg: '#ffffff' },
   terrain: { bg: 'rgba(52, 46, 40, 0.9)', dot: '#b9ad9c', fg: '#efe6d8' },
+  // A building's name and what it helps with.
+  building: { bg: 'rgba(40, 33, 20, 0.92)', dot: '#e2b45a', fg: '#f6e2b0' },
 };
 
 /**

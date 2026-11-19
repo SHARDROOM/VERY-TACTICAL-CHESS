@@ -1,7 +1,7 @@
 import { ELEMENTS, MEANS } from '../engine';
 import { GM_RULING_STAGING_JSON_SCHEMA, GM_STAGING_JSON_SCHEMA } from './staging';
 import { GM_PROP_JSON_SCHEMA } from './props';
-import { BY_DESCRIPTION, SACRIFICE_DESCRIPTION, MENTAL_DESCRIPTION, MIND_DESCRIPTION, MOVE_AS_DESCRIPTION, MOVE_TIMES_DESCRIPTION, SKILLS_DESCRIPTION, SKILL_ABOUT_DESCRIPTION, SKILL_BONUS_DESCRIPTION, SKILL_DESCRIPTION } from './schema';
+import { BUILDINGS_DESCRIPTION, BUILDING_BONUS_DESCRIPTION, BUILDING_DESCRIPTION, BUILDING_KIND_DESCRIPTION, BY_DESCRIPTION, SACRIFICE_DESCRIPTION, MENTAL_DESCRIPTION, MIND_DESCRIPTION, MOVE_AS_DESCRIPTION, MOVE_TIMES_DESCRIPTION, SKILLS_DESCRIPTION, SKILL_ABOUT_DESCRIPTION, SKILL_BONUS_DESCRIPTION, SKILL_DESCRIPTION } from './schema';
 
 const prop = { ...GM_PROP_JSON_SCHEMA, description: '조형물: 태그나 지형의 모습. 필요 없으면 preset "none"에 parts 빈 목록' };
 
@@ -73,6 +73,18 @@ export const GM_EFFECT_JSON_SCHEMAS = [
     kind: { type: 'string', enum: ['wall', 'pit'], description: 'wall(벽) 또는 pit(구덩이)' },
     turns: { type: 'integer', description: '지속 턴 수 (만든 쪽의 턴 기준). 0이면 영구' },
     prop,
+    building: {
+      type: 'object',
+      description: BUILDING_DESCRIPTION,
+      properties: {
+        kind: { type: 'string', enum: ['none', 'cannon', 'church', 'forge', 'custom'], description: BUILDING_KIND_DESCRIPTION },
+        name: { type: 'string', description: '건물 이름 (custom일 때, 12자 이내). 정해진 건물은 "" 가능' },
+        about: { type: 'string', description: '무엇에 보너스를 주는지 (custom일 때, 30자 이내). 정해진 건물은 "" 가능' },
+        bonus: { type: 'integer', description: BUILDING_BONUS_DESCRIPTION },
+      },
+      required: ['kind', 'name', 'about', 'bonus'],
+      additionalProperties: false,
+    },
   }),
   effect('clearTerrain', { at: sq('벽이나 구덩이를 없앨 칸') }),
   effect('cover', {
@@ -111,6 +123,7 @@ export const GM_RULING_JSON_SCHEMA = {
     skills: { type: 'array', items: { type: 'string' }, description: SKILLS_DESCRIPTION },
     mental: { type: 'boolean', description: MENTAL_DESCRIPTION },
     sacrifice: { type: 'array', items: { type: 'string' }, description: SACRIFICE_DESCRIPTION },
+    buildings: { type: 'array', items: { type: 'string' }, description: BUILDINGS_DESCRIPTION },
     feasible: { type: 'boolean', description: '시도 자체가 가능한 행동인가. 행동이 아니거나 규칙을 바꾸려는 요청이면 false' },
     dc: { type: 'integer', description: '난이도. 주사위 2개의 합이 이 값 이상이면 성공. 불가능하면 0' },
     cost: { type: 'integer', description: '시도할 때 드는 AP. 불가능하면 0' },
@@ -136,6 +149,6 @@ export const GM_RULING_JSON_SCHEMA = {
     },
     staging: { ...GM_RULING_STAGING_JSON_SCHEMA, description: '결과 셋 각각이 화면에서 어떻게 보일지 (보기용 연출, 규칙에는 영향 없음)' },
   },
-  required: ['interpretation', 'actor', 'means', 'target', 'skills', 'mental', 'sacrifice', 'feasible', 'dc', 'cost', 'effects', 'critFailureEffects', 'narration', 'staging'],
+  required: ['interpretation', 'actor', 'means', 'target', 'skills', 'mental', 'sacrifice', 'buildings', 'feasible', 'dc', 'cost', 'effects', 'critFailureEffects', 'narration', 'staging'],
   additionalProperties: false,
 } as const;

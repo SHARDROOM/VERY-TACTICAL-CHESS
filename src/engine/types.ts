@@ -135,9 +135,27 @@ export interface TerrainCover {
 }
 
 /** A wall or pit on one square. Only a bridged pit ever holds a piece. */
+/**
+ * A building (건물, docs/SPEC.md "건물"): a wall that also helps actions done next to it. Three
+ * ready-made kinds, or the GM's own ('custom', with its own name and what it helps with).
+ */
+export type BuildingKind = 'cannon' | 'church' | 'forge' | 'custom';
+export const BUILDING_KINDS: readonly BuildingKind[] = ['cannon', 'church', 'forge', 'custom'];
+export interface Building {
+  kind: BuildingKind;
+  /** "대포", "교회", "대장간", or the GM's ("도서관"). */
+  name: string;
+  /** What kind of action it helps with ("원거리 공격"). */
+  about: string;
+  /** Added to the dice of such an action by a piece next to it: 1..3. */
+  bonus: number;
+}
+
 export interface TerrainCell {
   at: Square;
   kind: TerrainKind;
+  /** A wall that is a building (대포, 교회, 대장간, ...). */
+  building?: Building;
   /** Turns of `owner` left; null = permanent. Counts down like a tag (see tags.ts). */
   turnsLeft: number | null;
   /** Whose turns it lasts: the side whose turn it was made on. */
@@ -189,7 +207,7 @@ export type Effect =
   /** The most recently taken piece of that colour and kind comes back onto the empty square `at`. */
   | { type: 'revive'; at: Square; color: Color; piece: PieceType }
   /** A wall (empty square only) or a pit (swallows whatever stands there) on `at`; turns 0 = permanent. */
-  | { type: 'terrain'; at: Square; kind: TerrainKind; turns: number; prop?: Prop }
+  | { type: 'terrain'; at: Square; kind: TerrainKind; turns: number; prop?: Prop; building?: Building }
   /** A bridge over the pit on `at`, or a ladder on the wall there; turns 0 = permanent. */
   | { type: 'cover'; at: Square; kind: CoverKind; turns: number; prop?: Prop }
   /** Cuts the bridge or takes the ladder away (whoever stands on a bridge falls). */
@@ -225,6 +243,8 @@ export interface Ruling {
   target?: Square | null;
   /** Pieces of the declarer's next to the actor, given up when the dice are thrown (희생, see modifiers.ts). */
   sacrifice?: Square[];
+  /** Buildings next to the actor that help with this action (건물, see modifiers.ts), by square. */
+  buildings?: Square[];
   /** False when the action cannot be attempted at all. */
   feasible: boolean;
   /** Difficulty: the d6 roll must be at least this. */
@@ -450,7 +470,7 @@ export type GameEvent =
   | { type: 'converted'; pieceId: string; at: Square; to: Color }
   | { type: 'swapped'; aId: string; bId: string; a: Square; b: Square }
   | { type: 'revived'; piece: Piece; at: Square }
-  | { type: 'terrainMade'; at: Square; kind: TerrainKind; turns: number | null }
+  | { type: 'terrainMade'; at: Square; kind: TerrainKind; turns: number | null; building?: string }
   /** `expired`: its turns ran out (otherwise an effect took it away). */
   | { type: 'terrainCleared'; at: Square; kind: TerrainKind; expired: boolean }
   | { type: 'coverMade'; at: Square; kind: CoverKind; turns: number | null }

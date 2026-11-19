@@ -9,6 +9,7 @@ import {
   TERRAIN_KINDS,
   TERRAIN_NAME,
   type Board,
+  type Building,
   type CapturedPiece,
   type RemainsMark,
   type Color,
@@ -26,7 +27,7 @@ import type { RuleConfig } from './config';
 import { SQUARES, airOf, distance, isAir, playersOf, promotesOn, sameLayer, squareName } from './squares';
 import { MAX_MOVE_TIMES, extinguish, isShielded, isStunned, mapStack, unseat, withRiderOnTop, withTag, withoutTag, withoutTopRider } from './tags';
 import { SHIELD } from './types';
-import { MAX_TERRAIN, dropFromBridges } from './terrain';
+import { BUILDING_INFO, BUILDING_REACH, MAX_TERRAIN, cleanBuilding, dropFromBridges } from './terrain';
 import { capturedAfter, remainsAt } from './captured';
 import { checkActor } from './actor';
 import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, clashSkill, resolveClash } from './clash';
@@ -515,12 +516,20 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           throwOff(piece, e.at);
         }
         const turnsLeft = e.turns === 0 ? null : e.turns;
-        const look = e.prop ? cleanProp(e.prop) : null;
+        // A building is a wall that helps actions next to it; a ready-made one wears its own look.
+        let building: Building | undefined;
+        if (e.building) {
+          if (e.kind !== 'wall') return fail('건물은 벽(wall)으로만 지을 수 있음');
+          const b = cleanBuilding(e.building);
+          if (typeof b === 'string') return fail(b);
+          building = b;
+        }
+        const look = e.prop ? cleanProp(e.prop) : building && building.kind !== 'custom' ? cleanProp({ preset: BUILDING_INFO[building.kind].preset, parts: [], attach: 'feet', scale: 1 }) : null;
         terrain = [
           ...terrain.filter((c) => c.at !== e.at),
-          { at: e.at, kind: e.kind, turnsLeft, owner: ctx.color ?? 'white', appliedOnTurn: ctx.turnNumber, ...(look && { prop: look }) },
+          { at: e.at, kind: e.kind, turnsLeft, owner: ctx.color ?? 'white', appliedOnTurn: ctx.turnNumber, ...(look && { prop: look }), ...(building && { building }) },
         ];
-        events.push({ type: 'terrainMade', at: e.at, kind: e.kind, turns: turnsLeft });
+        events.push({ type: 'terrainMade', at: e.at, kind: e.kind, turns: turnsLeft, ...(building && { building: building.name }) });
         break;
       }
       case 'cover': {
@@ -604,4 +613,19 @@ export function validateRuling(board: Board, ruling: Ruling, rules: RuleConfig, 
   }
   // Someone of the declarer's must do it, and a touch only reaches the next square.
   return checkActor(board, ruling, ctx.color ?? 'white', ctx);
+}
+
+/** Why the buildings a ruling names cannot help (null: they can): each must stand there, next to the actor (whoever's it is). */
+export function checkBuildings(ruling: Ruling, terrain: readonly TerrainCell[] | undefined): string | null {
+  if (!ruling.feasible) return null;
+  const named = ruling.buildings ?? [];
+  if (!Array.isArray(named)) return '건물 목록 형식이 올바르지 않음';
+  if (new Set(named).size !== named.length) return '같은 건물을 두 번 적었음';
+  for (const at of named) {
+    const cell = (terrain ?? []).find((c) => c.at === at);
+    if (!cell?.building) return `${onBoard(at) ? squareName(at) : String(at)}에 건물이 없음`;
+    if (ruling.actor == null) return '건물을 쓰는 행동에는 주체가 있어야 함';
+    if (distance(ruling.actor, at) > BUILDING_REACH) return `${cell.building.name}(${squareName(at)})은(는) 주체(${squareName(ruling.actor)})에서 ${BUILDING_REACH}칸 안에 있어야 함`;
+  }
+  return null;
 }

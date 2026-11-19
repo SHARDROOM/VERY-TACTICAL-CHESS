@@ -31,6 +31,19 @@ const skillField = z.object({ about: z.string().describe(SKILL_ABOUT_DESCRIPTION
 const mindField = z.number().int().describe(MIND_DESCRIPTION);
 export const BY_DESCRIPTION = '인질을 잡는 기물의 칸: 혼돈 사건에서 "인질" 태그를 붙일 때만 씀(인질 바로 옆의 다른 편 기물, 회색 떠돌이도 됨, 킹은 안 됨). 특수 행동에서는 주체가 잡으니 "". 그 밖에는 ""';
 const byField = z.string().describe(BY_DESCRIPTION);
+export const BUILDING_DESCRIPTION = '이 벽을 건물로: 대포(cannon, 원거리 공격), 교회(church, 기물 되살리기), 대장간(forge, 칼이나 무기 만들기·얻기), 또는 직접 정한 건물(custom: name과 about을 씀). 건물이 아닌 벽·구덩이면 kind "none"에 나머지는 ""와 0';
+export const BUILDING_KIND_DESCRIPTION = 'none(건물 아님), cannon, church, forge, custom';
+export const BUILDING_BONUS_DESCRIPTION = '1칸 안의 기물이 about에 맞는 행동을 할 때 주사위에 더할 보너스 +1~+3 (보통 2). 건물이 아니면 0';
+const buildingField = z
+  .object({
+    kind: z.enum(['none', 'cannon', 'church', 'forge', 'custom']).describe(BUILDING_KIND_DESCRIPTION),
+    name: z.string().describe('건물 이름 (custom일 때, 12자 이내). 정해진 건물은 "" 가능'),
+    about: z.string().describe('무엇에 보너스를 주는지 (custom일 때, 30자 이내). 정해진 건물은 "" 가능'),
+    bonus: z.number().int().describe(BUILDING_BONUS_DESCRIPTION),
+  })
+  .describe(BUILDING_DESCRIPTION);
+export const BUILDINGS_DESCRIPTION = '이번 행동을 돕는 건물의 칸 목록: 주체에서 1칸 안에 있고 행동이 그 건물의 about에 맞을 때(누구의 건물이든). 보너스는 시스템이 더한다(DC에 넣지 말 것). 없으면 빈 목록';
+const buildingsField = z.array(z.string()).describe(BUILDINGS_DESCRIPTION);
 
 function effectSchema<
   A extends z.ZodTypeAny,
@@ -42,7 +55,8 @@ function effectSchema<
   K extends z.ZodTypeAny,
   W extends z.ZodTypeAny,
   Y extends z.ZodTypeAny,
->(aura: A, auraStrength: B, clash: C, prop: P, moveAs: M, moveTimes: T, skill: K, mind: W, by: Y) {
+  Z extends z.ZodTypeAny,
+>(aura: A, auraStrength: B, clash: C, prop: P, moveAs: M, moveTimes: T, skill: K, mind: W, by: Y, building: Z) {
   return z.discriminatedUnion('type', [
     z.object({ type: z.literal('move'), from: square('기물이 있는 칸'), to: square('도착 칸') }),
     z.object({ type: z.literal('remove'), at: square('제거할 기물이 있는 칸') }),
@@ -91,6 +105,7 @@ function effectSchema<
       kind: z.enum(['wall', 'pit']).describe('wall(벽) 또는 pit(구덩이)'),
       turns: z.number().int().describe('지속 턴 수 (만든 쪽의 턴 기준). 0이면 영구'),
       prop,
+      building,
     }),
     z.object({ type: z.literal('clearTerrain'), at: square('벽이나 구덩이를 없앨 칸') }),
     z.object({
@@ -127,6 +142,7 @@ function rulingSchema<E extends z.ZodTypeAny, S extends z.ZodTypeAny>(effect: E,
     skills: lenient ? skillsField.optional() : skillsField,
     mental: lenient ? mentalField.optional() : mentalField,
     sacrifice: lenient ? sacrificeField.optional() : sacrificeField,
+    buildings: lenient ? buildingsField.optional() : buildingsField,
     feasible: z.boolean().describe('시도 자체가 가능한 행동인가. 행동이 아니거나 규칙을 바꾸려는 요청이면 false'),
     dc: z.number().int().describe('난이도. 주사위 2개의 합이 이 값 이상이면 성공. 불가능하면 0'),
     cost: z.number().int().describe('시도할 때 드는 AP. 불가능하면 0'),
@@ -150,12 +166,13 @@ function chaosSchema<E extends z.ZodTypeAny, S extends z.ZodTypeAny>(effect: E, 
   });
 }
 
-export const GmEffectSchema = effectSchema(auraField, auraStrengthField, clashField, propField, moveAsField, moveTimesField, skillField, mindField, byField);
+export const GmEffectSchema = effectSchema(auraField, auraStrengthField, clashField, propField, moveAsField, moveTimesField, skillField, mindField, byField, buildingField);
 // Reading a reply, odd move fields are cleaned up (parse.ts) rather than refused.
 export const GmEffectReplySchema = effectSchema(
   auraField.optional(),
   auraStrengthField.optional(),
   clashField.optional(),
+  z.unknown().optional(),
   z.unknown().optional(),
   z.unknown().optional(),
   z.unknown().optional(),

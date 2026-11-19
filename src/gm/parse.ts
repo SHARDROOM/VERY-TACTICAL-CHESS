@@ -18,7 +18,7 @@ export function parseGmRuling(raw: unknown): ParseResult {
     const issue = checked.error.issues[0];
     return { ok: false, error: `${issue.path.join('.') || '판정'}: ${issue.message}` };
   }
-  const { effects, critFailureEffects, staging, actor: actorName, means, target: targetName, skills, mental, sacrifice: offeredNames, ...rest } = checked.data;
+  const { effects, critFailureEffects, staging, actor: actorName, means, target: targetName, skills, mental, sacrifice: offeredNames, buildings: buildingNames, ...rest } = checked.data;
   const actorText = (actorName ?? '').trim();
   const actor = actorText ? parseSquare(actorText) : null;
   if (actorText && actor === null) return { ok: false, error: `주체 칸 이름 "${actorText}"이(가) 올바르지 않음` };
@@ -31,6 +31,13 @@ export function parseGmRuling(raw: unknown): ParseResult {
     const s = parseSquare(n.trim());
     if (s === null) return { ok: false, error: `제물 칸 이름 "${n}"이(가) 올바르지 않음` };
     if (!sacrifice.includes(s)) sacrifice.push(s);
+  }
+  const buildings: Square[] = [];
+  for (const n of buildingNames ?? []) {
+    if (!n.trim()) continue;
+    const s = parseSquare(n.trim());
+    if (s === null) return { ok: false, error: `건물 칸 이름 "${n}"이(가) 올바르지 않음` };
+    if (!buildings.includes(s)) buildings.push(s);
   }
   // With a sacrifice a tag may carry a stronger clash multiplier.
   const clashMax = sacrifice.length ? SACRIFICE_CLASH_MAX : CLASH_MAX;
@@ -60,6 +67,7 @@ export function parseGmRuling(raw: unknown): ParseResult {
       ...(skillNames.length > 0 && { skills: skillNames }),
       ...(mental && { mental: true }),
       ...(sacrifice.length > 0 && { sacrifice }),
+      ...(buildings.length > 0 && { buildings }),
       effects: lists.effects,
       critFailureEffects: lists.critFailureEffects,
       staging: cleanRulingStaging(staging, counts),
@@ -127,9 +135,12 @@ function convert(e: GmEffectReplyJson, clashMax = CLASH_MAX): Effect | string {
     } as unknown as Effect;
   }
   if (e.type === 'terrain' || e.type === 'cover') {
-    const { prop, ...rest } = e;
+    const { prop, building, ...rest } = e as typeof e & { building?: unknown };
     const look = propFromGm(prop);
-    return { ...rest, ...squares, ...(look && { prop: look }) } as unknown as Effect;
+    // A building ("none" or nothing: a plain wall or pit); the engine checks the rest.
+    const b = building as { kind?: unknown } | undefined;
+    const isBuilding = e.type === 'terrain' && b && typeof b === 'object' && typeof b.kind === 'string' && b.kind !== 'none';
+    return { ...rest, ...squares, ...(look && { prop: look }), ...(isBuilding && { building }) } as unknown as Effect;
   }
   return { ...e, ...squares } as unknown as Effect;
 }

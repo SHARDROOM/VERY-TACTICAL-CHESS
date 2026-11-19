@@ -509,6 +509,16 @@ export function aiHints(state: GameState, me: Color): string[] {
   }
   const near = targetsFor(board, me, 3);
   if (near.length) out.push(`노릴 만한 표적(값지고 가까운 순): ${near.join(', ')}`);
+  // Buildings: what each helps with, and which of its own pieces stand next to it (anyone's may use one).
+  const buildings = (state.terrain ?? []).filter((c) => c.building).slice(0, 4);
+  if (buildings.length) {
+    const lines = buildings.map((c) => {
+      const b = c.building!;
+      const users = board.flatMap((p, sq) => (p?.color === me && distance(sq, c.at) <= 1 ? [name(sq)] : []));
+      return `${squareName(c.at)} ${b.name}(${b.about} +${b.bonus})${users.length ? `: 옆의 내 기물 ${users.slice(0, 3).join(', ')}` : ': 옆에 내 기물 없음'}`;
+    });
+    out.push(`건물(1칸 안의 기물이 맞는 행동을 하면 보너스, 누구의 건물이든 씀): ${lines.join('; ')}`);
+  }
   out.push(`판세(엔진 점수, +면 유리): ${evaluate(board, me).toFixed(1)}`);
   return out;
 }
@@ -567,7 +577,7 @@ export function aiShouldRoll(state: GameState, level: AiLevel, now: () => number
   if (!pending || !pending.ruling.feasible) return false;
   const cost = pending.retry ? state.rules.rerollCost : pending.ruling.cost;
   if (cost > state.ap[pending.color] || (pending.retry && state.rules.rerollCost <= 0)) return false;
-  const bonus = modifierTotal(pendingModifiers(state.board, pending, state.remains));
+  const bonus = modifierTotal(pendingModifiers(state.board, pending, state.remains, state.terrain));
   const { win, fumble } = odds(pending.ruling.dc, bonus);
   if (level === 'easy') return true;
   if (level === 'normal') return win >= AI_NORMAL_MIN_CHANCE;

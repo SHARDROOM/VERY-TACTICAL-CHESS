@@ -1,4 +1,4 @@
-import { AIR, SQUARE_PATTERN, clashBuffs, distance, distancePenalty, isAttacked, parseSquare, playersOf, squareName, type GameState, type AttachPoint, type Board, type Color, type Means, type PieceType, type PropPreset, type Square } from '../engine';
+import { AIR, BUILDING_REACH, SQUARE_PATTERN, clashBuffs, distance, distancePenalty, type TerrainCell, isAttacked, parseSquare, playersOf, squareName, type GameState, type AttachPoint, type Board, type Color, type Means, type PieceType, type PropPreset, type Square } from '../engine';
 import type { GameMaster, GmRequest, GmRulingJson } from './types';
 import type { ActRequest } from './player';
 import { josa } from '../ui/josa';
@@ -57,7 +57,7 @@ export class FakeGameMaster implements GameMaster {
 
   async rule({ action, state }: GmRequest): Promise<GmRulingJson> {
     if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs));
-    return fakeRuling(action, state.turn, state.board);
+    return fakeRuling(action, state.turn, state.board, state.terrain);
   }
 
   /** An AI player's declaration, from a few the fake GM itself understands (no API, no cost). */
@@ -95,6 +95,9 @@ export function fakeDeclaration(
   const name = (x: Seen) => `${squareName(x.sq)} ${KIND_KO[x.type]}`;
   const who = (x: Seen) => josa(name(x), '이/가');
   const whom = (x: Seen) => josa(name(x), '을/를');
+  // A ready-made building of this kind next to a piece of its: its bonus (the GM names it in the ruling).
+  const buildingHelp = (sq: Square, kind: 'cannon' | 'church' | 'forge') =>
+    Math.max(0, ...(state.terrain ?? []).filter((c) => c.building?.kind === kind && distance(sq, c.at) <= BUILDING_REACH).map((c) => c.building!.bonus));
   // What it could say, with what this GM would ask (DC, AP) and roughly what it is worth.
   const options: { text: string; dc: number; cost: number; value: number }[] = [];
   for (const m of mine) {
@@ -103,8 +106,8 @@ export function fakeDeclaration(
     }
     for (const t of theirs) {
       const far = distance(m.sq, t.sq);
-      // A shot (DC 8), the system's distance modifier on top: the farther, the harder.
-      options.push({ text: `${who(m)} 활을 쏘아 ${whom(t)} 저격한다`, dc: 8 - distancePenalty(far <= 1 ? 'touch' : 'ranged', far), cost: 2, value: WORTH[t.type] });
+      // A shot (DC 8), the system's distance modifier on top: the farther, the harder; a cannon next to the shooter helps.
+      options.push({ text: `${who(m)} 활을 쏘아 ${whom(t)} 저격한다`, dc: 8 - distancePenalty(far <= 1 ? 'touch' : 'ranged', far) - buildingHelp(m.sq, 'cannon'), cost: 2, value: WORTH[t.type] });
       // A stun by a spell (DC 7): cheap; best on a piece that threatens one of its own.
       const threat = mine.some((x) => isAttacked(state.board.map((p, i) => (i === t.sq || p?.color !== t.color ? p : null)), x.sq, t.color, state.terrain));
       options.push({ text: `${who(m)} 주문으로 ${whom(t)} 기절시킨다`, dc: 7 - distancePenalty(far <= 1 ? 'touch' : 'magic', far), cost: 1, value: WORTH[t.type] * (threat ? 0.5 : 0.2) });
@@ -113,7 +116,7 @@ export function fakeDeclaration(
   // Arms for a piece that would then win a clash it would lose now (this GM: 검술 ×1.5 for good, DC 9, AP 3).
   for (const c of clashBuffs(state, color, 1.5)) {
     const m = mine.find((x) => x.sq === c.from);
-    if (m) options.push({ text: `${who(m)} 검술을 익힌다`, dc: 9, cost: 3, value: c.buffedGain - Math.max(0, c.gain) + 0.75 });
+    if (m) options.push({ text: `${who(m)} 검술을 익힌다`, dc: 9 - buildingHelp(m.sq, 'forge'), cost: 3, value: c.buffedGain - Math.max(0, c.gain) + 0.75 });
   }
   const fit = options.filter((o) => o.cost <= ap && o.dc <= maxDc);
   if (!fit.length) return null;
@@ -156,6 +159,30 @@ const beat = (effect: number, extra: Partial<BeatJson> = {}): BeatJson => ({
 type PropJson = { preset: 'none' | PropPreset; color: string; scale: number; attach: AttachPoint; parts: string };
 /** A ready-made prop as the GM writes it ("none" for no prop). */
 const look3d = (preset: 'none' | PropPreset = 'none', attach: AttachPoint = 'rightHand', color = ''): PropJson => ({ preset, color, scale: 1, attach, parts: '' });
+/** A wall or a pit that is no building. */
+const NO_BUILDING = { kind: 'none' as const, name: '', about: '', bonus: 0 };
+const BUILDING_ABOUT_KO: Record<'cannon' | 'church' | 'forge', string> = { cannon: '원거리 공격', church: '되살리기', forge: '무기 만들기·얻기' };
+/** What a ready-made building helps with, as words in a declaration (a custom one: the words of its "about"). */
+const BUILDING_HELPS: Record<'cannon' | 'church' | 'forge', RegExp> = {
+  cannon: /쏘|쏜|쏴|발사|포격|대포|저격|던져|던진|투척|화살|활|석궁/,
+  church: /되살|부활|소생|살려/,
+  forge: /검|칼|창|도끼|무기|갑옷|벼리|대장간|단련/,
+};
+
+/** The buildings next to the actor whose help fits the declaration (any side's, still standing). */
+function helpingBuildings(action: string, actor: string | undefined, terrain: readonly TerrainCell[] | undefined): string[] {
+  const at = actor ? parseSquare(actor) : null;
+  if (at === null) return [];
+  return (terrain ?? [])
+    .filter((c) => c.building && distance(at, c.at) <= BUILDING_REACH)
+    .filter((c) => {
+      const b = c.building!;
+      if (b.kind !== 'custom') return BUILDING_HELPS[b.kind].test(action);
+      return b.about.split(/\s+/).some((w) => w.length >= 2 && action.includes(w.replace(/하기$|하는$|판정$/, '')));
+    })
+    .map((c) => squareName(c.at));
+}
+
 const tag = (
   at: string,
   name: string,
@@ -187,7 +214,7 @@ const MOVE_KIND_KO: Record<PieceType, string> = { king: '킹', ...PIECE_KO };
  * The fake GM's ruling for a declaration by `color`. With the board it checks that the acting
  * piece is really the player's; without it (tests) it takes the first square on trust.
  */
-export function fakeRuling(declared: string, color: Color = 'white', board?: Board): GmRulingJson {
+export function fakeRuling(declared: string, color: Color = 'white', board?: Board, terrain?: readonly TerrainCell[]): GmRulingJson {
   // Pieces given up ("e3 폰을 제물로 바쳐"): taken out of the declaration, then offered (희생).
   const offeredRe = new RegExp(`(${SQUARE_PATTERN().replace('\\^?', '')})\\s*(?:의\\s*)?[가-힣]{0,4}\\s*(?:을|를)?\\s*(?:제물로\\s*(?:바쳐|바치고|삼아)?|희생(?:해|하여|시켜)?)`, 'gi');
   const sacrifice = [...declared.matchAll(offeredRe)].map((m) => m[1].toLowerCase().replace(/\s/g, ''));
@@ -214,6 +241,7 @@ export function fakeRuling(declared: string, color: Color = 'white', board?: Boa
     skills,
     mental: baseMental ?? MENTAL.test(action),
     sacrifice: base.feasible ? sacrifice : [],
+    buildings: base.feasible ? (base.buildings ?? helpingBuildings(action, base.actor, terrain)) : [],
     critFailureEffects: actorSquare ? [tag(actorSquare, '기절', 1)] : [],
     narration: {
       ...base.narration,
@@ -234,12 +262,13 @@ export function fakeRuling(declared: string, color: Color = 'white', board?: Boa
   };
 }
 
-type BaseRuling = Omit<GmRulingJson, 'critFailureEffects' | 'narration' | 'staging' | 'target' | 'skills' | 'mental' | 'sacrifice'> & {
+type BaseRuling = Omit<GmRulingJson, 'critFailureEffects' | 'narration' | 'staging' | 'target' | 'skills' | 'mental' | 'sacrifice' | 'buildings'> & {
   narration: { success: string; failure: string };
   look?: StagingJson;
   target?: string;
   skills?: string[];
   mental?: boolean;
+  buildings?: string[];
 };
 
 const HINT = '예: "e6 폰이 e7 폰에 불을 붙인다", "d1 퀸이 불화살을 쏘아 d7 폰을 맞힌다", "b1 나이트를 투석기로 e5까지 날린다"';
@@ -461,6 +490,26 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
     };
   }
 
+  // A building (건물): "e2 폰이 e3에 대장간을 짓는다".
+  const builds = /(대포|포대|교회|성당|예배당|대장간)\S{0,2}\s*(?:을|를)?\s*(?:짓|세우|세운|건설|올리)/.exec(action);
+  if (builds && squares.length >= 1) {
+    const missing = needsActor();
+    if (missing) return missing;
+    const kind = /대포|포대/.test(builds[1]) ? 'cannon' : /대장간/.test(builds[1]) ? 'forge' : 'church';
+    const name = { cannon: '대포', church: '교회', forge: '대장간' }[kind];
+    return {
+      interpretation: `${who} ${last}에 ${josa(name, '을/를')} 짓는다. 1칸 안의 기물이 ${BUILDING_ABOUT_KO[kind]} 판정을 하면 +2.`,
+      actor: actor!,
+      means: far <= 1 ? 'touch' : 'magic',
+      feasible: true,
+      dc: 8,
+      cost: 3,
+      effects: [{ type: 'terrain', at: last, kind: 'wall', turns: 0, prop: look3d(), building: { kind, name: '', about: '', bonus: 2 } }],
+      look: look({ shake: 1, fx: [fx('earth', 'burst', last, { strength: 3, radius: 0.8, withEffect: 1 })] }),
+      narration: { success: `망치 소리가 울리더니 ${last}에 ${josa(name, '이/가')} 우뚝 섰다!`, failure: '재료가 모자라 터만 닦아 두었다.' },
+    };
+  }
+
   if (/벽|장벽|바리케이드|성벽/.test(action)) {
     const missing = needsActor();
     if (missing) return missing;
@@ -472,7 +521,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       feasible: true,
       dc: Math.min(11, 6 + 2 * at.length),
       cost: at.length > 1 ? 2 : 1,
-      effects: at.map((sq) => ({ type: 'terrain' as const, at: sq, kind: 'wall' as const, turns: 2, prop: look3d() })),
+      effects: at.map((sq) => ({ type: 'terrain' as const, at: sq, kind: 'wall' as const, turns: 2, prop: look3d(), building: NO_BUILDING })),
       look: look({ shake: 1, fx: at.map((sq, i) => fx('earth', 'burst', sq, { strength: 3, radius: 0.7, withEffect: i + 1 })) }),
       narration: { success: `땅이 울리며 ${at.join(', ')}에 돌벽이 솟아올랐다!`, failure: '돌무더기가 조금 들썩이다 말았다.' },
     };
@@ -488,7 +537,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       feasible: true,
       dc: 8,
       cost: 2,
-      effects: [{ type: 'terrain', at: last, kind: 'pit', turns: 2, prop: look3d() }],
+      effects: [{ type: 'terrain', at: last, kind: 'pit', turns: 2, prop: look3d(), building: NO_BUILDING }],
       look: look({ shake: 2, beats: [beat(1, { exit: 'sink' })], fx: [fx('earth', 'burst', last, { strength: 4, radius: 0.9, withEffect: 1 })] }),
       narration: { success: `${last}의 땅이 꺼지며 시커먼 구덩이가 입을 벌렸다!`, failure: '땅에 금이 갔지만 꺼지지는 않았다.' },
     };

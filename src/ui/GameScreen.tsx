@@ -979,7 +979,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
   const retry = pending?.retry;
   const rollCost = pending ? (retry ? game.rules.rerollCost : pending.ruling.cost) : 0;
   // What the system adds to the dice for this ruling (skills, will, ...), as the engine will count it.
-  const pendingMods = pending ? pendingModifiers(game.board, pending, game.remains) : [];
+  const pendingMods = pending ? pendingModifiers(game.board, pending, game.remains, game.terrain) : [];
   const pendingBonus = modifierTotal(pendingMods);
   const canAfford = pending ? game.ap[pending.color] >= rollCost : false;
   const canActOnPending = !!pending && ((seat === 'both' && !aiOf(pending.color)) || seat === pending.color) && connected;

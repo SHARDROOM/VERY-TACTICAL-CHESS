@@ -1,6 +1,7 @@
 import { distance, squareName } from './squares';
 import { stackOf } from './tags';
-import { MEANS, MEANS_NAME, type Board, type Color, type Means, type PendingAction, type PieceType, type RemainsMark, type Ruling } from './types';
+import { MEANS, MEANS_NAME, type Board, type Color, type Means, type PendingAction, type PieceType, type RemainsMark, type Ruling, type TerrainCell } from './types';
+import { BUILDING_REACH } from './terrain';
 import { targetsOf } from './actor';
 import { remainsAt } from './captured';
 
@@ -16,12 +17,14 @@ import { remainsAt } from './captured';
  *   thrown (success or not), worth more the stronger they are; with one, the GM may also hand
  *   out stronger buffs (a clash multiplier up to ×2.5, a skill or will up to ±4);
  * - remains (유해): reviving a piece where it fell, while its remains are still there;
- * - distance (거리): the farther the action reaches from its actor, the harder (DISTANCE_RULE).
+ * - distance (거리): the farther the action reaches from its actor, the harder (DISTANCE_RULE);
+ * - building (건물): a building next to the actor that helps with this kind of action (the GM
+ *   names it in the ruling; anyone's building, as long as it still stands).
  *
  * Each is at most ±3 (±4 with a sacrifice, -4 for distance), the sum at most ±4. Snake eyes still
  * always fails.
  */
-export type ModifierKind = 'skill' | 'mind' | 'sacrifice' | 'remains' | 'distance';
+export type ModifierKind = 'skill' | 'mind' | 'sacrifice' | 'remains' | 'distance' | 'building';
 export interface RollModifier {
   kind: ModifierKind;
   /** Where it comes from: the tag's name, the sacrificed piece, ... */
@@ -113,9 +116,13 @@ export function actionReach(ruling: Ruling): number {
 /** Reviving a piece where its remains (유해) still are. */
 export const REMAINS_BONUS = 2;
 
-/** The modifiers this ruling's roll gets on `board`, declared by `color` (`remains`: the game's 유해). */
-export function rollModifiers(board: Board, ruling: Ruling, color: Color, remains?: readonly RemainsMark[]): RollModifier[] {
+/** The modifiers this ruling's roll gets on `board`, declared by `color` (`remains`: the game's 유해, `terrain`: its buildings). */
+export function rollModifiers(board: Board, ruling: Ruling, color: Color, remains?: readonly RemainsMark[], terrain?: readonly TerrainCell[]): RollModifier[] {
   const mods: RollModifier[] = [...sacrificeModifiers(board, ruling)];
+  for (const at of new Set(ruling.buildings ?? [])) {
+    const b = terrain?.find((c) => c.at === at)?.building;
+    if (b && ruling.actor != null && distance(ruling.actor, at) <= BUILDING_REACH) mods.push({ kind: 'building', label: b.name, value: b.bonus });
+  }
   for (const e of ruling.effects) {
     if (e.type !== 'revive') continue;
     const r = remainsAt(remains, e.at);
@@ -143,9 +150,9 @@ export function rollModifiers(board: Board, ruling: Ruling, color: Color, remain
  * The modifiers of a pending action's next roll. A second try after a failure keeps what was given
  * up for the first (`offered`): the pieces are gone, but the offering still counts.
  */
-export function pendingModifiers(board: Board, pending: PendingAction, remains?: readonly RemainsMark[]): RollModifier[] {
-  if (!pending.offered) return rollModifiers(board, pending.ruling, pending.color, remains);
-  return [...pending.offered, ...rollModifiers(board, { ...pending.ruling, sacrifice: [] }, pending.color, remains)];
+export function pendingModifiers(board: Board, pending: PendingAction, remains?: readonly RemainsMark[], terrain?: readonly TerrainCell[]): RollModifier[] {
+  if (!pending.offered) return rollModifiers(board, pending.ruling, pending.color, remains, terrain);
+  return [...pending.offered, ...rollModifiers(board, { ...pending.ruling, sacrifice: [] }, pending.color, remains, terrain)];
 }
 
 /** What the modifiers add up to, held within ±MOD_TOTAL_MAX. */

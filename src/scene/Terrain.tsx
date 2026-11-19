@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { BoxGeometry, CanvasTexture, CircleGeometry, DodecahedronGeometry, RingGeometry, SRGBColorSpace, type Group } from 'three';
-import { COVER_NAME, type Prop, type Square, type TerrainCell, type TerrainCover, type TerrainKind } from '../engine';
+import { COVER_NAME, type Building, type Prop, type Square, type TerrainCell, type TerrainCover, type TerrainKind } from '../engine';
 import { squareToWorld } from './coords';
 import { TurnBadges, type Chip } from './TagEffects';
 import { PropMesh } from './PropMesh';
@@ -152,14 +152,15 @@ function TerrainPiece({ shown }: { shown: Shown }) {
     }
   });
   const chips: Chip[] = [];
-  if (cell.turnsLeft !== null) chips.push({ text: `${cell.kind === 'wall' ? '벽' : '구덩이'} ${cell.turnsLeft}`, tone: 'terrain' });
+  if (cell.building) chips.push({ text: buildingLabel(cell.building), tone: 'building' });
+  if (cell.turnsLeft !== null) chips.push({ text: `${cell.building ? cell.building.name : cell.kind === 'wall' ? '벽' : '구덩이'} ${cell.turnsLeft}`, tone: 'terrain' });
   if (cell.cover?.turnsLeft != null) chips.push({ text: `${COVER_NAME[cell.cover.kind]} ${cell.cover.turnsLeft}`, tone: 'terrain' });
   const top = cell.kind === 'wall' ? (cell.prop ? 1 : WALL_HEIGHT) + 0.32 : 0.3;
   return (
     <group ref={ref} position={[x, 0, z]}>
       {cell.kind === 'wall' ? (
         // A wall the GM gave a look (a barricade, a statue) is that; otherwise dry stones.
-        cell.prop ? <PropMesh prop={cell.prop} maxReach={0.75} /> : <Wall at={cell.at} />
+        cell.prop ? <PropMesh prop={cell.prop} maxReach={cell.building ? 0.95 : 0.75} /> : <Wall at={cell.at} />
       ) : (
         <>
           <Pit at={cell.at} />
@@ -170,6 +171,13 @@ function TerrainPiece({ shown }: { shown: Shown }) {
       {chips.length > 0 && !shown.gone && <TurnBadges chips={chips} y={top} />}
     </group>
   );
+}
+
+/** A building's label: its name, what it helps with in a word or two, and the bonus ("대포 원거리 +2"). */
+const SHORT_ABOUT: Record<Exclude<Building['kind'], 'custom'>, string> = { cannon: '원거리', church: '소생', forge: '무기' };
+function buildingLabel(b: Building): string {
+  const about = b.kind === 'custom' ? (b.about.length > 8 ? `${b.about.slice(0, 8)}…` : b.about) : SHORT_ABOUT[b.kind];
+  return `${b.name} ${about} +${b.bonus}`;
 }
 
 const BRIDGE: Prop = { preset: 'bridge', parts: [], attach: 'feet', scale: 1 };

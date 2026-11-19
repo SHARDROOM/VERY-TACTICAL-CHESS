@@ -20,7 +20,7 @@ import { enPassantVictim, isInCheck, legalTargets, movesFrom } from './moves';
 import { backRank, setBoardMap, isAir, isHex, pawnForward, pawnStart, playersOf, promotesOn, step } from './squares';
 import { revokeCastling } from './castling';
 import { DIE_SIDES, ROLL_MAX, ROLL_MIN } from './config';
-import { applyEffects, validateRuling, type EffectContext } from './effects';
+import { applyEffects, checkBuildings, validateRuling, type EffectContext } from './effects';
 import { extinguish, hasTag, isShielded, mapStack, moveTimesOf, ridersOf, stackOf, tickTags, unseat, withTag, withoutTag } from './tags';
 import { GRAY, HOOD, HOSTAGE, SHIELD, type Ruling, type Tag } from './types';
 import { checkActor } from './actor';
@@ -638,7 +638,8 @@ function propose(state: GameState, cmd: Extract<Command, { type: 'proposeSpecial
   // The effects happen after the sacrifice, on the board without the pieces given up. The actor is checked on the board as it is.
   const problem =
     validateRuling(withoutSacrifices(state.board, cmd.ruling), { ...cmd.ruling, actor: undefined }, state.rules, { ...rulingContext(state, cmd.ruling), clash: { mode: 'check' } }) ??
-    checkActor(state.board, cmd.ruling, state.turn, effectContext(state));
+    checkActor(state.board, cmd.ruling, state.turn, effectContext(state)) ??
+    checkBuildings(cmd.ruling, state.terrain);
   if (problem) return { ok: false, reason: 'invalidRuling', detail: problem };
 
   const pending = { color: state.turn, action, ruling: cmd.ruling };
@@ -663,7 +664,7 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
   // Two dice added up, plus what the actor's skills and the target's will add (modifiers.ts).
   // Snake eyes (1 and 1) always fails, and backfires, whatever the DC and the modifiers;
   // otherwise the DC decides (there is no critical success).
-  const mods = pendingModifiers(state.board, state.pending!, state.remains);
+  const mods = pendingModifiers(state.board, state.pending!, state.remains, state.terrain);
   const bonus = modifierTotal(mods);
   const outcome: Outcome = roll === ROLL_MIN ? 'critFailure' : roll + bonus >= ruling.dc ? 'success' : 'failure';
   const success = outcome === 'success';

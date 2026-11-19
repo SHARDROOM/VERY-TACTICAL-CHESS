@@ -77,7 +77,7 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - {"type": "fuse", "body": "c3", "material": "d4"}: 융합. 주체(body)가 바로 옆 기물(material)을 흡수한다. 아래 "융합" 참고.
 - {"type": "split", "at": "c3", "to": "c4"}: 융합한 기물의 맨 위 관이 떨어져 나와 바로 옆 빈 칸 to에 선다.
 - {"type": "revive", "at": "c3", "color": "white", "piece": "knight"}: 잡혀서 보드 옆에 있는 그 편, 그 종류의 기물(가장 최근에 잡힌 것)을 빈 칸 at으로 되살린다. 보드 상태의 "잡힌 기물" 목록에 있어야 한다.
-- {"type": "terrain", "at": "d4", "kind": "wall", "turns": 2}: 칸에 벽(wall)이나 구덩이(pit)를 만든다. turns는 만든 쪽(지금 차례인 편)의 턴 기준이고 0이면 영구다. 벽은 빈 칸에만 세운다. 구덩이를 기물이 있는 칸에 파면 그 기물이 빠져서 없어진다. prop으로 모양(바리케이드, 동상, 나무 등)을 줄 수 있다.
+- {"type": "terrain", "at": "d4", "kind": "wall", "turns": 2}: 칸에 벽(wall)이나 구덩이(pit)를 만든다. turns는 만든 쪽(지금 차례인 편)의 턴 기준이고 0이면 영구다. 벽은 빈 칸에만 세운다. 구덩이를 기물이 있는 칸에 파면 그 기물이 빠져서 없어진다. prop으로 모양(바리케이드, 동상, 나무 등)을 줄 수 있다. building으로 벽을 건물(대포, 교회, 대장간, 직접 정한 건물)로 만들 수 있다(아래 "건물"). 건물이 아니면 building의 kind는 "none".
 - {"type": "clearTerrain", "at": "d4"}: 그 칸의 벽이나 구덩이를 없앤다.
 - {"type": "cover", "at": "d4", "kind": "bridge", "turns": 2}: 구덩이 위에 다리(bridge)를 놓거나 벽에 사다리(ladder)를 건다. prop으로 모양을 바꿀 수 있다.
 - {"type": "clearCover", "at": "d4"}: 다리를 끊거나 사다리를 치운다. 다리 위에 있던 기물은 구덩이에 빠진다(킹은 옆 칸으로 비켜남).
@@ -112,6 +112,15 @@ export function buildSystemPrompt(rules: RuleConfig): string {
 - 다리(bridge)를 놓은 구덩이는 평범한 칸처럼 지나가고 설 수 있습니다(양편 모두). 다리가 끝나거나 끊기면 그 위의 기물이 빠집니다.
 - 사다리(ladder)를 건 벽은 지나갈 수만 있고 그 위에 멈출 수는 없습니다(양편 모두, 체크도 넘어감).
 - 다리와 사다리도 만든 쪽의 턴 기준으로 남은 턴을 세고, 1~3턴이 보통입니다. 지형 자체보다 쉽게(DC 5~6, AP 1) 정하세요.
+- 건물(대포, 교회, 대장간 등)은 아래 "건물"을 보세요.
+
+## 건물 (building)
+- terrain 벽(wall)에 building을 붙이면 건물이 됩니다. 들어가거나 지나가지 못하는 것은 벽과 같고(사다리로 넘기, clearTerrain으로 부수기도 같음), 1칸 안에서 하는 특정 행동에 주사위 보너스를 줍니다.
+- 정해진 건물: cannon(대포: 원거리 공격), church(교회: 기물 되살리기·소생), forge(대장간: 칼이나 무기를 만들거나 얻기). 이름과 about은 ""로 두면 시스템이 채우고, 3D 모양도 시스템이 줍니다.
+- 그 밖의 건물은 custom: name(12자 이내, 예: "도서관")과 about(무엇에 보너스를 주는지, 예: "마법 판정")을 직접 쓰고, prop으로 모양을 정해 주세요.
+- bonus는 +1~+3, 보통 +2입니다.
+- 짓기의 기준: DC 8~9·AP 3, 지속은 보통 영구(turns 0). 빈 칸에만 지을 수 있습니다. 혼돈 사건으로도 생길 수 있습니다.
+- 판정할 때: 주체가 건물에서 1칸 안에 있고 행동이 그 건물의 about에 맞으면, buildings 목록에 그 건물의 칸을 적으세요(누구의 건물이든 됩니다). 보너스는 시스템이 주사위에 더하니 DC에 넣지 마세요. 맞지 않으면 빈 목록.
 
 ## 공중 (공중부양)
 - 보드 위에는 같은 모양의 공중 판이 하나 더 떠 있습니다. 공중부양 중인 기물만 공중 판(칸 이름 끝에 ^)에 있습니다.
@@ -313,7 +322,8 @@ function terrainList(state: GameState): string {
     .map((c) => {
       const own = c.turnsLeft === null ? '영구' : `${COLOR[c.owner]}의 턴으로 ${c.turnsLeft}턴 남음`;
       const cover = c.cover ? `, ${COVER_NAME[c.cover.kind]} ${c.cover.turnsLeft === null ? '영구' : `${COLOR[c.cover.owner]}의 턴으로 ${c.cover.turnsLeft}턴 남음`}` : '';
-      return `${TERRAIN_NAME[c.kind]} ${squareName(c.at)} (${own}${cover})`;
+      const building = c.building ? ` 건물 "${c.building.name}"(${c.building.about} +${c.building.bonus}, 1칸 안의 기물이 쓰면 buildings에 이 칸)` : '';
+      return `${TERRAIN_NAME[c.kind]} ${squareName(c.at)}${building} (${own}${cover})`;
     })
     .join(', ');
 }
@@ -436,6 +446,8 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 - 떠돌이 용병단이 합류 → 빈 칸에 폰이나 나이트를 spawn
 - 떠돌이 상인이 전장을 지나감 → 회색(gray) 폰을 spawn하고 tag로 "떠돌이 상인"이라 이름 붙임 (아래 "떠돌이")
 - 마상 시합 소식에 두 기사가 자리를 맞바꿈 → swap
+- 순례자들이 빈 들판에 작은 교회를 세움 → 빈 칸에 church 건물 terrain (영구)
+- 떠돌이 대장장이가 대장간을 차림 → 빈 칸에 forge 건물, 회색 떠돌이와 엮어도 좋음
 - 눈보라에 길을 잃은 기사가 엉뚱한 곳에 나타남 → move
 - 낡은 성탑이 무너져 돌무더기가 길을 막음 → 빈 칸에 벽 terrain
 - 공훈을 세운 농민병이 기사로 서임됨 → transform (폰 → 나이트)
@@ -461,7 +473,7 @@ export function buildChaosSystemPrompt(rules: RuleConfig): string {
 - {"type": "board", ...}, {"type": "unboard", ...}: 탑승과 하차 (같은 편끼리).
 - {"type": "swap", "a": "b1", "b": "g8"}: 두 기물이 자리를 맞바꾼다.
 - {"type": "revive", "at": "c3", "color": "white", "piece": "knight"}: 잡힌 기물 목록에 있는 기물을 빈 칸에 되살린다.
-- {"type": "terrain", "at": "d4", "kind": "wall", "turns": 2}: 벽(wall, 빈 칸만)이나 구덩이(pit, 그 칸의 기물을 삼킴)를 만든다. 아무도 들어가거나 지나가지 못하고(나이트는 뛰어넘음), turns는 지금 차례인 편의 턴 기준.
+- {"type": "terrain", "at": "d4", "kind": "wall", "turns": 2}: 벽(wall, 빈 칸만)이나 구덩이(pit, 그 칸의 기물을 삼킴)를 만든다. 아무도 들어가거나 지나가지 못하고(나이트는 뛰어넘음), turns는 지금 차례인 편의 턴 기준. building으로 벽을 건물로 만들 수 있다: 대포(cannon, 1칸 안의 기물이 원거리 공격 판정 시 보너스), 교회(church, 되살리기), 대장간(forge, 무기 만들기·얻기), 또는 custom(name과 about을 직접). bonus는 +1~+3(보통 2), 지속은 보통 영구(0). 건물이 아니면 building의 kind는 "none".
 - {"type": "clearTerrain", "at": "d4"}: 벽이나 구덩이를 없앤다.
 - {"type": "cover", "at": "d4", "kind": "bridge", "turns": 2}: 구덩이에 다리(bridge, 건너고 설 수 있음)나 벽에 사다리(ladder, 넘어가기만)를 놓는다. {"type": "clearCover", "at": "d4"}로 치운다(다리 위 기물은 빠짐).
 - tag에는 합 배율(clash 1.2~2.0, 싸움 실력)을, tag·terrain·cover에는 prop(모습: 미리 만든 모양 sword, spear, shield, ladder, bridge, flag, crown, barricade 또는 직접 조합)을 줄 수 있다. 필요 없으면 clash 0, prop의 preset "none".

@@ -1,4 +1,5 @@
-import { COVER_NAME, type Board, type Color, type FallingPiece, type GameEvent, type Piece, type Square, type TerrainCell } from './types';
+import { BUILDING_KINDS, COVER_NAME, type Board, type Building, type BuildingKind, type Color, type FallingPiece, type GameEvent, type Piece, type Square, type TerrainCell } from './types';
+import type { PropPreset } from './props';
 import { unseat } from './tags';
 import { byDistance } from './squares';
 
@@ -29,6 +30,32 @@ export function blockedSquares(terrain: readonly TerrainCell[] | undefined): Rea
 
 export const terrainAt = (terrain: readonly TerrainCell[] | undefined, sq: Square): TerrainCell | null =>
   terrain?.find((c) => c.at === sq) ?? null;
+
+/** The ready-made buildings: name, what they help with, and their look (a prop preset). */
+export const BUILDING_INFO: Record<Exclude<BuildingKind, 'custom'>, { name: string; about: string; preset: PropPreset }> = {
+  cannon: { name: '대포', about: '원거리 공격', preset: 'cannon' },
+  church: { name: '교회', about: '기물 되살리기(소생)', preset: 'chapel' },
+  forge: { name: '대장간', about: '칼이나 무기를 만들거나 얻기', preset: 'forge' },
+};
+/** A building's bonus: 1..3 (2 if the GM gives none). */
+export const BUILDING_BONUS_MAX = 3;
+export const BUILDING_BONUS = 2;
+/** How near the actor must stand to use a building (king steps). */
+export const BUILDING_REACH = 1;
+
+/** The building as the rules keep it, or why it cannot be (from a GM's effect). */
+export function cleanBuilding(raw: unknown): Building | string {
+  const b = (raw ?? {}) as Partial<Building>;
+  if (!BUILDING_KINDS.includes(b.kind as BuildingKind)) return '건물 종류는 cannon, church, forge, custom 중 하나';
+  const kind = b.kind as BuildingKind;
+  const info = kind === 'custom' ? null : BUILDING_INFO[kind];
+  const name = (typeof b.name === 'string' ? b.name.trim() : '').slice(0, 12) || info?.name || '';
+  const about = (typeof b.about === 'string' ? b.about.trim() : '').slice(0, 30) || info?.about || '';
+  if (!name || !about) return '자유 건물(custom)에는 이름(name)과 무엇에 보너스를 주는지(about)가 있어야 함';
+  const bonus = typeof b.bonus === 'number' && Number.isFinite(b.bonus) && Math.round(b.bonus) !== 0 ? Math.round(b.bonus) : BUILDING_BONUS;
+  if (bonus < 1 || bonus > BUILDING_BONUS_MAX) return `건물 보너스는 +1~+${BUILDING_BONUS_MAX}`;
+  return { kind, name, about, bonus };
+}
 
 /** Most squares that may hold terrain at once, so the board never walls itself shut. */
 export const MAX_TERRAIN = 12;

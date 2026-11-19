@@ -144,7 +144,8 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         add(`🕯 ${COLOR_NAME[e.piece.color]} ${josa(PIECE_NAME[e.piece.type], '이/가')} ${squareName(e.at)}에 되살아남`);
         break;
       case 'terrainMade':
-        add(`${e.kind === 'wall' ? '🧱' : '🕳'} ${squareName(e.at)}에 ${TERRAIN_NAME[e.kind]} ${e.turns === null ? '(영구)' : `(${e.turns}턴)`}`);
+        if (e.building) add(`🏰 ${squareName(e.at)}에 ${josa(e.building, '이/가')} 세워졌습니다 ${e.turns === null ? '(영구)' : `(${e.turns}턴)`}`);
+        else add(`${e.kind === 'wall' ? '🧱' : '🕳'} ${squareName(e.at)}에 ${TERRAIN_NAME[e.kind]} ${e.turns === null ? '(영구)' : `(${e.turns}턴)`}`);
         break;
       case 'terrainCleared':
         add(e.expired ? `⌛ ${squareName(e.at)}의 ${josa(TERRAIN_NAME[e.kind], '이/가')} 사라짐` : `${squareName(e.at)}의 ${josa(TERRAIN_NAME[e.kind], '이/가')} 없어짐`);
@@ -259,7 +260,7 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
 export const signed = (n: number): string => (n >= 0 ? `+${n}` : `−${-n}`);
 
 /** Where a roll modifier comes from, in words. */
-export const MOD_KIND_NAME: Record<RollModifier['kind'], string> = { skill: '특기', mind: '정신력', sacrifice: '희생', remains: '유해', distance: '거리' };
+export const MOD_KIND_NAME: Record<RollModifier['kind'], string> = { skill: '특기', mind: '정신력', sacrifice: '희생', remains: '유해', distance: '거리', building: '건물' };
 
 /** A tag's skill and will in words, e.g. "특기: 함께 전진하는 행동 +2", "정신력 +2". */
 export function mindAndSkill(t: Tag): string {
