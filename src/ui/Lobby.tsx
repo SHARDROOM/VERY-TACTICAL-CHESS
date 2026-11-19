@@ -9,6 +9,10 @@ import { BOOK_FACES, BookControl } from '../scene/RuleBook';
 
 /** While reading the rule book: the close button above, the page buttons below. */
 const READING_INSET: TourInset = { left: 0, top: 64, bottom: 96 };
+/** A low landscape screen: the page buttons stand at the side, the whole height is the page's. */
+const READING_INSET_LOW: TourInset = { left: 0, top: 0, bottom: 0 };
+/** A screen this low (in landscape) reads one page at a time, with the buttons at the side. */
+const LOW_SCREEN = 600;
 
 function ago(ms: number): string {
   const min = Math.round((Date.now() - ms) / 60000);
@@ -74,9 +78,14 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
   const [, redraw] = useReducer((n: number) => n + 1, 0);
   useEffect(() => book.subscribe(redraw), [book]);
   const reading = book.open;
-  // Narrow (portrait) screens read one page at a time, the camera close on it.
+  // Narrow (portrait) and low (a phone on its side) screens read one page at a time, the camera close on it.
+  const [low, setLow] = useState(false);
   useEffect(() => {
-    const fit = () => book.setSingle(window.innerWidth < window.innerHeight * 1.05);
+    const fit = () => {
+      const isLow = window.innerHeight < LOW_SCREEN && window.innerWidth > window.innerHeight;
+      setLow(isLow);
+      book.setSingle(window.innerWidth < window.innerHeight * 1.05 || isLow);
+    };
     fit();
     window.addEventListener('resize', fit);
     return () => window.removeEventListener('resize', fit);
@@ -102,8 +111,8 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
   };
 
   return (
-    <div className={`lobby ${reading ? 'reading' : ''}`} ref={rootRef}>
-      <LobbyBackdrop inset={reading ? READING_INSET : inset} book={book} />
+    <div className={`lobby ${reading ? 'reading' : ''} ${low ? 'low' : ''}`} ref={rootRef}>
+      <LobbyBackdrop inset={reading ? (low ? READING_INSET_LOW : READING_INSET) : inset} book={book} />
       <div className="lobby-shade" />
       <header className="lobby-title" ref={titleRef}>
         <h1>
@@ -159,15 +168,17 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
             참가
           </button>
         </form>
-        <button className="big" onClick={onVsAi} disabled={!!busy}>
-          AI와 하기
-        </button>
-        <button className="big" onClick={onHotseat} disabled={!!busy}>
-          한 화면에서 둘이 하기 (핫시트)
-        </button>
-        <button className="big" onClick={onWatchAi} disabled={!!busy}>
-          AI끼리 보기
-        </button>
+        <div className="lobby-modes">
+          <button className="big" onClick={onVsAi} disabled={!!busy}>
+            AI와 하기
+          </button>
+          <button className="big" onClick={onHotseat} disabled={!!busy}>
+            한 화면에서 둘이 하기 (핫시트)
+          </button>
+          <button className="big" onClick={onWatchAi} disabled={!!busy}>
+            AI끼리 보기
+          </button>
+        </div>
 
         {busy && <p className="lobby-status">{busy}</p>}
         {error && <p className="lobby-error">{error}</p>}

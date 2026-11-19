@@ -28,6 +28,8 @@ export interface TourFocus {
   width: number;
   depth: number;
   yaw: number;
+  /** Room around it (1: edge to edge). */
+  margin?: number;
 }
 
 interface Props {
@@ -105,7 +107,7 @@ export function TourCamera({ diceSide, inset, onPhase, focus }: Props) {
       const freeAspect = freeW / freeH;
       const hfov = Math.atan(Math.tan(vfov) * freeAspect);
       // A margin: the near corners loom larger in perspective.
-      const dist = Math.max(framed.width / 2 / Math.tan(hfov), (framed.depth * Math.sin(FOCUS_TILT)) / 2 / Math.tan(vfov)) * 1.22;
+      const dist = Math.max(framed.width / 2 / Math.tan(hfov), (framed.depth * Math.sin(FOCUS_TILT)) / 2 / Math.tan(vfov)) * (framed.margin ?? 1.22);
       const [cx, cy, cz] = framed.center;
       // From the near side of the rectangle (its +z, turned by its yaw), looking down at it.
       const back = Math.cos(FOCUS_TILT) * dist;

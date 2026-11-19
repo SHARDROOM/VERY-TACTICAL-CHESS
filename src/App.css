@@ -431,13 +431,17 @@ select option { background: var(--walnut); }
 .lobby-menu-button { position: absolute; top: 12px; right: 12px; z-index: 2; background: var(--panel); }
 .lobby-scroll {
   position: absolute; inset: 0; z-index: 1; overflow-y: auto; pointer-events: none;
-  display: flex; align-items: center; padding: 150px 16px 24px 48px;
+  /* The card is centred by auto margins, not by alignment: when it is taller than the screen the
+     margins give way and all of it can be scrolled to (centring would push its top off-screen). */
+  display: flex; align-items: flex-start; padding: 150px 16px 24px 48px;
 }
 .lobby-scroll > * { pointer-events: auto; }
 .lobby-card {
+  margin-block: auto;
   width: min(380px, 100%); background: var(--panel); border: 1px solid var(--line); border-top: 2px solid var(--accent); border-radius: 12px;
   padding: 20px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--shadow);
 }
+.lobby-modes { display: flex; flex-direction: column; gap: inherit; }
 .tagline { margin: 0 0 4px; font-family: var(--font-voice); font-size: 1.0625rem; line-height: 1.6; color: var(--text); }
 .join-row { display: flex; gap: 8px; }
 .join-row input { padding: 10px 12px; letter-spacing: 0.2em; text-transform: uppercase; }
@@ -451,7 +455,8 @@ select option { background: var(--walnut); }
 .saved-actions { display: flex; align-items: center; gap: 8px; }
 @media (max-width: 900px) {
   /* Card under the scene, title over it. */
-  .lobby-scroll { align-items: flex-end; justify-content: center; padding: 45vh 16px 16px; }
+  .lobby-scroll { justify-content: center; padding: 45vh 16px 16px; }
+  .lobby-card { margin-block: auto 0; }
   .lobby-shade { background: linear-gradient(to bottom, rgba(14, 8, 4, 0.8), rgba(14, 8, 4, 0) 24%, rgba(14, 8, 4, 0) 50%, rgba(14, 8, 4, 0.72)); }
 }
 @media (max-width: 600px) {
@@ -460,6 +465,25 @@ select option { background: var(--walnut); }
   .lobby-title p { letter-spacing: 0.1em; }
   .lobby-menu-button .label { display: none; }
   .lobby-card { padding: 16px; gap: 10px; }
+}
+
+/* Low landscape screens (a phone on its side): the menu on the left at full height, compact; the
+   title over the scene on the right (the camera frames the scene in the space the menu leaves). */
+@media (orientation: landscape) and (max-height: 600px) {
+  .lobby-title { left: min(436px, 50%); right: 0; padding: 14px 96px 0 12px; }
+  .lobby-title h1 { font-size: clamp(1.3rem, 3.4vw, 2.6rem); letter-spacing: 0.02em; }
+  .lobby-title p { letter-spacing: 0.08em; font-size: 0.9375rem; }
+  .lobby-scroll { justify-content: flex-start; padding: 12px 16px; }
+  .lobby-card { margin-block: auto; width: min(400px, 48vw); padding: 14px; gap: 8px; }
+  .lobby-card .tagline { display: none; }
+  .lobby-card .big { padding-block: 8px; font-size: 0.9375rem; }
+  .lobby-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .lobby-modes > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .lobby-shade {
+    background:
+      linear-gradient(to right, rgba(14, 8, 4, 0.7), rgba(14, 8, 4, 0) 55%),
+      linear-gradient(to bottom, rgba(14, 8, 4, 0.7), rgba(14, 8, 4, 0) 30%);
+  }
 }
 
 /* ---- waiting room ---- */
@@ -633,3 +657,6 @@ select option { background: var(--walnut); }
 .book-page { min-width: 70px; text-align: center; font-family: var(--font-voice); font-weight: 700; font-variant-numeric: tabular-nums; }
 .book-hint { position: absolute; left: 0; right: 0; bottom: 8px; margin: 0; text-align: center; font-size: 0.8125rem; color: var(--muted); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .book-ui { animation: none; } }
+/* A low landscape screen: the page buttons stand in a column at the right, the page gets the height. */
+.lobby.low .book-nav { left: auto; right: 12px; bottom: auto; top: 50%; transform: translateY(-50%); flex-direction: column; padding: 10px 8px; }
+.lobby.low .book-hint { display: none; }

@@ -120,7 +120,7 @@ export class BookControl {
    * What the camera should frame, in world space: the open spread, or on a narrow screen the page
    * being read. Null while the book is shut.
    */
-  focus(): { center: [number, number, number]; width: number; depth: number; yaw: number } | null {
+  focus(): { center: [number, number, number]; width: number; depth: number; yaw: number; margin: number } | null {
     if (!this.open) return null;
     const local = this.single ? (this.side === 0 ? -BOOK.w / 2 : BOOK.w / 2) : 0;
     const c = Math.cos(BOOK.yaw);
@@ -130,6 +130,8 @@ export class BookControl {
       width: this.single ? BOOK.w * 1.04 : BOOK.w * 2.08,
       depth: BOOK.d * 1.04,
       yaw: BOOK.yaw,
+      // A whole spread needs room for its near corners (they loom in perspective); one page less.
+      margin: this.single ? 1.13 : 1.22,
     };
   }
 }
