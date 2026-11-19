@@ -217,6 +217,7 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         const who = `${squareName(e.from)}의 ${name(e.pieceId)}`;
         if (e.to === null) add(`🚩 ${josa(who, '이/가')} 판세를 읽고 자리를 지킵니다.`);
         else if (e.kind === 'confused') add(`😵 ${josa(who, '이/가')} 혼란에 빠져 ${josa(squareName(e.to), '으로/로')} 비틀거립니다.`);
+        else if (e.by) add(`🚩 행동대장 ${name(e.by)}의 지휘로 ${josa(who, '이/가')} ${josa(squareName(e.to), '으로/로')} 나섭니다.`);
         else add(`🚩 ${josa(who, '이/가')} 판세를 읽고 ${josa(squareName(e.to), '으로/로')} 나섭니다.`);
         break;
       }

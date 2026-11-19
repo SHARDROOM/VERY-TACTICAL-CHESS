@@ -1,14 +1,13 @@
-import { canResist, clashMultiplier, clashWinChance } from './clash';
 import { isInCheck, movesFrom } from './moves';
-import { planeOf, playersOf } from './squares';
-import { hasTag } from './tags';
-import { CONFUSED, VANGUARD, type Board, type Color, type GameState, type PieceType, type Square } from './types';
+import { distance } from './squares';
+import { hasTag, isStunned } from './tags';
+import { CONFUSED, VANGUARD, type Board, type GameState, type Square } from './types';
 
 /*
  * Pieces that move of their own accord at the end of their owner's turn (docs/SPEC.md, "혼란과
- * 행동대장"): a 혼란 piece staggers to a random free square it could move to; a 행동대장 piece makes
- * the best move it sees, looking at the reply. The runner of the game picks (randomly, or with
- * vanguardChoice) and sends an 'impulse' command; the engine checks it against impulseTargets.
+ * 행동대장"): a 혼란 piece staggers to a random free square it could move to; a 행동대장 orders the
+ * best move among itself and its own pieces next to it (the AI's 보통 look, ai.ts vanguardOrder).
+ * The runner of the game picks and sends an 'impulse' command; the engine checks it here.
  */
 
 export type ImpulseKind = 'confused' | 'vanguard';
@@ -47,71 +46,20 @@ export function impulseTargets(state: GameState, from: Square, kind: ImpulseKind
   });
 }
 
-const VALUE: Record<PieceType, number> = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9, king: 0 };
-
-/** Material for `me` against everyone else (kings count only as being in danger). */
-function material(board: Board, me: Color): number {
-  let sum = 0;
-  for (const p of board) if (p && p.color !== 'gray') sum += p.color === me ? VALUE[p.type] : -VALUE[p.type] / Math.max(1, playersOf().length - 1);
-  return sum;
-}
-
-/** The most `by` can win with one capture on `board` (what it takes, as material). */
-function bestCapture(board: Board, by: Color, terrain: GameState['terrain']): number {
-  let best = 0;
-  for (let sq = 0; sq < board.length; sq++) {
-    const p = board[sq];
-    if (p?.color !== by) continue;
-    for (const to of movesFrom(board, sq, terrain)) {
-      const there = board[to];
-      if (!there || there.color === by) continue;
-      // Taking a king ends it: as bad as it gets.
-      const worth = there.type === 'king' ? 50 : VALUE[there.type];
-      if (worth > best) best = worth;
-    }
-  }
-  return best;
-}
-
-/** How the board looks for `me` after the reply: material, minus the worst capture an opponent can make, a little for the centre. */
-function judge(board: Board, me: Color, at: Square | null, terrain: GameState['terrain']): number {
-  const others = playersOf().filter((c) => c !== me && board.some((p) => p?.color === c));
-  const threat = Math.max(0, ...others.map((c) => bestCapture(board, c, terrain)));
-  const exposed = isInCheck(board, me, terrain) ? 30 : 0;
-  let centre = 0;
-  if (at !== null) {
-    const { x, y } = planeOf(at);
-    // The classic board's centre is (3.5, 3.5); the hexagon's plane is centred on 0.
-    centre = -0.04 * (playersOf().length > 2 ? Math.hypot(x, y) : Math.hypot(x - 3.5, y - 3.5));
-  }
-  return material(board, me) - threat - exposed + centre;
-}
-
 /**
- * The 행동대장's choice: the move whose result is best for its side after the opponents' best
- * capture in reply (a capture into a clash counted by its chances), or null to hold its ground
- * when no move beats standing still.
+ * The pieces a 행동대장 on `by` may order at its side's turn's end: itself and its own pieces next
+ * to it (1 square), not kings, not 혼란 pieces (they stagger on their own), only those that can move.
+ * The order itself (the best of their moves) is the AI's: see ai.ts vanguardOrder.
  */
-export function vanguardChoice(state: GameState, from: Square): Square | null {
-  const { board, terrain } = state;
-  const piece = board[from];
-  if (!piece) return null;
-  const me = piece.color;
-  let best: { to: Square | null; score: number } = { to: null, score: judge(board, me, from, terrain) + 0.01 };
-  for (const to of impulseTargets(state, from, 'vanguard')) {
-    const victim = board[to];
-    const after = [...board];
-    after[to] = piece;
-    after[from] = null;
-    let score = judge(after, me, to, terrain);
-    if (victim && canResist(victim)) {
-      // A clash: lost, our piece falls instead and theirs stays.
-      const lost = [...board];
-      lost[from] = null;
-      const p = clashWinChance(clashMultiplier(piece), clashMultiplier(victim));
-      score = p * score + (1 - p) * judge(lost, me, null, terrain);
-    }
-    if (score > best.score) best = { to, score };
-  }
-  return best.to;
+export function commandable(state: GameState, by: Square): Square[] {
+  const { board } = state;
+  const leader = board[by];
+  if (!leader || impulseOf(board, by) !== 'vanguard' || isStunned(leader)) return [];
+  const out: Square[] = [];
+  board.forEach((p, sq) => {
+    if (!p || p.color !== leader.color || p.type === 'king' || distance(by, sq) > 1) return;
+    if (impulseOf(board, sq) === 'confused') return;
+    if (impulseTargets(state, sq, 'vanguard').length) out.push(sq);
+  });
+  return out;
 }

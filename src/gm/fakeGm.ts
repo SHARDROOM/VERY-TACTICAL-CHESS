@@ -549,7 +549,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
       means: far <= 1 ? 'touch' : 'magic',
       feasible: true,
       dc: special === '인질' || special === '행동대장' ? 9 : 8,
-      cost: 2,
+      cost: special === '행동대장' ? 3 : 2,
       effects: [tag(at, special, turns, { aura: special === '혼란' ? 'arcane' : special === '행동대장' ? 'light' : 'none', auraStrength: special === '혼란' || special === '행동대장' ? 1 : 0 })],
       look: look({ fx: [fx(special === '혼란' ? 'arcane' : 'light', 'burst', at, { strength: 2, withEffect: 1 })], acts: [{ at, act: special === '혼란' ? 'shiver' : 'hop', delay: 0.2 }] }),
       narration: { success: `${at}의 기물에 ${special}의 기운이 깃들었다.`, failure: '아무 일도 일어나지 않았다.' },

@@ -1,6 +1,7 @@
 import { CLASH_ROLLS, canResist, clashMultiplier, clashWinChance } from './clash';
 import { saverFor } from './guard';
 import { legalTargets, movesFrom } from './moves';
+import { commandable, impulseTargets } from './vanguard';
 import { planeOf, playersOf, promotesOn, rankOf, isAir, setBoardMap, isHex } from './squares';
 import { BURN, CONFUSED, GUARD, HOSTAGE, LEVITATE, SHIELD, STUN, VANGUARD, type Board, type Color, type GameState, type Piece, type PieceType, type Square, type TerrainCell } from './types';
 import { hasTag, withoutTag } from './tags';
@@ -98,7 +99,9 @@ function worth(p: Piece): number {
     if (t.moveTimes) v += 0.4 * (t.moveTimes - 1);
     if (t.skill) v += 0.15 * t.skill.bonus;
     if (t.mind) v += 0.1 * t.mind;
-    if (t.name === LEVITATE || t.name === GUARD || t.name === VANGUARD) v += 0.2;
+    if (t.name === LEVITATE || t.name === GUARD) v += 0.2;
+    // A 행동대장 moves its neighbours too: an extra move at every turn's end.
+    if (t.name === VANGUARD) v += 0.6;
   }
   v -= VALUE[p.type] * lost;
   if (p.rider) v += worth(p.rider);
@@ -322,6 +325,43 @@ export function chooseMove(state: GameState, level: AiLevel, random: () => numbe
     if (near.length) return near[Math.floor(random() * near.length) % near.length].m;
   }
   return ranked[0].m;
+}
+
+/**
+ * A 행동대장's order at its side's turn's end (docs/SPEC.md, "혼란과 행동대장"): the best move, as
+ * the AI's 보통 sees it (2 plies, captures followed), among itself and its own pieces next to it
+ * (`commandable`), leaving out pieces already moved by an order this turn's end (`moved`, by id).
+ * Null: no move beats standing still (or there is none).
+ */
+export function vanguardOrder(state: GameState, by: Square, moved: ReadonlySet<string> = new Set(), now: () => number = () => performance.now()): { from: Square; to: Square } | null {
+  setBoardMap(state.map);
+  const { board } = state;
+  const leader = board[by];
+  if (!leader) return null;
+  const me = leader.color;
+  const roots = commandable(state, by)
+    .filter((from) => !moved.has(board[from]!.id))
+    .flatMap((from) => impulseTargets(state, from, 'vanguard').map((to) => ({ from, to })));
+  if (!roots.length) return null;
+  const cfg = LEVEL.normal;
+  const ctx: Ctx = { me, terrain: state.terrain, deadline: now() + 600, quiet: cfg.quiet, nodes: 0 };
+  // Captures first, so a deadline mid-way has already looked at them.
+  roots.sort((a, b) => (board[b.to] ? 1 : 0) - (board[a.to] ? 1 : 0));
+  let best: { from: Square; to: Square } | null = null;
+  try {
+    let bestValue = search(board, nextTurn(board, me), cfg.depth - 1, -Infinity, Infinity, ctx, 1) + 0.05;
+    for (const m of roots) {
+      let v = 0;
+      for (const o of play(board, m.from, m.to)) v += o.p * search(o.board, nextTurn(o.board, me), cfg.depth - 1, -Infinity, Infinity, ctx, 1);
+      if (v > bestValue) {
+        bestValue = v;
+        best = m;
+      }
+    }
+  } catch (e) {
+    if (!(e instanceof OutOfTime)) throw e;
+  }
+  return best;
 }
 
 /** A surrendering AI keeps its strongest piece (3인 육각 맵: the one that goes into exile). */

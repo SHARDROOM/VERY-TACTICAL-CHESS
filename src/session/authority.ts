@@ -1,4 +1,4 @@
-import { AI_LEVEL_NAME, CLASH_ROLLS, aiExile, aiHints, aiMaxDc, cleanAiSeats, isAiOnly, isAir, playersOf, promotesOn, type AiSeat, applyCommand, impulseOf, impulseTargets, isStunned as isStunnedPiece, vanguardChoice, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
+import { AI_LEVEL_NAME, CLASH_ROLLS, aiExile, aiHints, aiMaxDc, cleanAiSeats, isAiOnly, isAir, playersOf, promotesOn, type AiSeat, applyCommand, impulseOf, impulseTargets, isStunned as isStunnedPiece, vanguardOrder, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
@@ -498,6 +498,8 @@ export class Authority {
    */
   private impulses(color: Color): void {
     const ids = this.state.board.flatMap((p, sq) => (p && p.color === color && impulseOf(this.state.board, sq) ? [p.id] : []));
+    // A piece moves once at a turn's end, whoever orders it.
+    const moved = new Set<string>();
     for (const id of ids) {
       const s = this.state;
       if (s.status.kind !== 'playing' || s.surrender || s.falling?.length || s.pending) return;
@@ -506,10 +508,18 @@ export class Authority {
       if (!kind || isStunnedPiece(s.board[from])) continue;
       if (kind === 'confused') {
         const options = impulseTargets(s, from, 'confused');
-        if (!options.length) continue;
+        if (!options.length || moved.has(id)) continue;
+        moved.add(id);
         this.apply({ type: 'impulse', from, to: options[Math.floor(this.chance() * options.length) % options.length] }, 'all');
       } else {
-        this.apply({ type: 'impulse', from, to: vanguardChoice(s, from) }, 'all');
+        // A 행동대장 orders the best move among itself and its own pieces next to it (or holds).
+        const order = vanguardOrder(s, from, moved);
+        if (!order) {
+          this.apply({ type: 'impulse', from, to: null }, 'all');
+          continue;
+        }
+        moved.add(s.board[order.from]!.id);
+        this.apply({ type: 'impulse', from: order.from, to: order.to, ...(order.from !== from && { by: from }) }, 'all');
       }
     }
   }

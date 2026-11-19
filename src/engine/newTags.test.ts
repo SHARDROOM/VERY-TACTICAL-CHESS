@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCommand, applyEffects, createStateFrom, impulseTargets, legalTargets, squareName, vanguardChoice, type GameState, type Piece, type Tag } from './index';
+import { applyCommand, applyEffects, commandable, createStateFrom, impulseTargets, legalTargets, squareName, vanguardOrder, type GameState, type Piece, type Tag } from './index';
 import { ok, sq } from './testUtil';
 
 type Spec = { color: 'white' | 'black'; type: Piece['type']; tags?: Tag[] };
@@ -90,23 +90,41 @@ describe('혼란 and 행동대장 (moving of their own accord)', () => {
 
   it('a vanguard takes a free queen, and may hold its ground; a plain piece has no impulse', () => {
     const s = scene({ d4: { color: 'white', type: 'knight', tags: [tag('행동대장')] }, c6: { color: 'black', type: 'queen' } }, 'black');
-    expect(vanguardChoice(s, sq('d4'))).toBe(sq('c6'));
+    expect(vanguardOrder(s, sq('d4'))).toEqual({ from: sq('d4'), to: sq('c6') });
     const r = ok(applyCommand(s, { type: 'impulse', from: sq('d4'), to: sq('c6') }));
     expect(r.state.board[sq('c6')]).toMatchObject({ type: 'knight', color: 'white' });
     expect(ok(applyCommand(s, { type: 'impulse', from: sq('d4'), to: null })).events).toEqual([expect.objectContaining({ type: 'impulse', to: null })]);
     expect(applyCommand(scene({ d4: { color: 'white', type: 'knight' } }), { type: 'impulse', from: sq('d4'), to: sq('f3') }).ok).toBe(false);
   });
 
+  it('a vanguard orders the best move among itself and its own pieces next to it', () => {
+    // The knight on d4 leads; its rook on c4 can take the black queen on c7 for free, the knight cannot.
+    const s = scene({ d4: { color: 'white', type: 'knight', tags: [tag('행동대장')] }, c4: { color: 'white', type: 'rook' }, c7: { color: 'black', type: 'queen' }, a2: { color: 'white', type: 'bishop' } }, 'black');
+    expect(commandable(s, sq('d4')).sort()).toEqual([sq('c4'), sq('d4')].sort());
+    expect(vanguardOrder(s, sq('d4'))).toEqual({ from: sq('c4'), to: sq('c7') });
+    const r = ok(applyCommand(s, { type: 'impulse', from: sq('c4'), to: sq('c7'), by: sq('d4') }));
+    expect(r.state.board[sq('c7')]).toMatchObject({ type: 'rook', color: 'white' });
+    expect(r.events[0]).toMatchObject({ type: 'impulse', kind: 'vanguard', from: sq('c4'), to: sq('c7'), by: 'white-knight-d4' });
+    // Not a piece farther away (the bishop on a2), not without a 행동대장 next to it.
+    expect(applyCommand(s, { type: 'impulse', from: sq('a2'), to: sq('b3'), by: sq('d4') }).ok).toBe(false);
+    expect(applyCommand(s, { type: 'impulse', from: sq('c4'), to: sq('c7') }).ok).toBe(false);
+    // Once moved, a piece is not ordered again at the same turn's end.
+    expect(vanguardOrder(s, sq('d4'), new Set(['white-rook-c4']))?.from).not.toBe(sq('c4'));
+  });
+
+  it('a vanguard never orders a king, or a 혼란 piece', () => {
+    const s = scene({ d2: { color: 'white', type: 'knight', tags: [tag('행동대장')] }, d3: { color: 'white', type: 'pawn', tags: [tag('혼란')] } }, 'black');
+    expect(commandable(s, sq('d2'))).toEqual([sq('d2')]);
+    expect(applyCommand(s, { type: 'impulse', from: sq('e1'), to: sq('f1'), by: sq('d2') }).ok).toBe(false);
+  });
+
   it('a vanguard does not step where it is simply taken', () => {
     // From a1 the rook could go up the file; a3 and beyond are covered by the black pawn b4 and rook h3.
     const s = scene({ a1: { color: 'white', type: 'rook', tags: [tag('행동대장')] }, h2: { color: 'black', type: 'rook' }, b3: { color: 'black', type: 'pawn' } }, 'black');
-    const to = vanguardChoice(s, sq('a1'));
-    if (to !== null) {
-      const after = [...s.board];
-      after[to] = after[sq('a1')];
-      after[sq('a1')] = null;
+    const order = vanguardOrder(s, sq('a1'));
+    if (order) {
       // Wherever it goes, the black rook on h2 cannot simply take it there.
-      expect([sq('a2'), sq('b1'), sq('c1'), sq('d1')].includes(to) ? true : squareName(to)).toBe(true);
+      expect([sq('a2'), sq('b1'), sq('c1'), sq('d1')].includes(order.to) ? true : squareName(order.to)).toBe(true);
     }
   });
 });

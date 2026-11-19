@@ -25,7 +25,7 @@ import { extinguish, hasTag, isShielded, mapStack, moveTimesOf, ridersOf, stackO
 import { GRAY, HOOD, HOSTAGE, SHIELD, type Ruling, type Tag } from './types';
 import { checkActor } from './actor';
 import { intercept, releaseHostages, saverFor } from './guard';
-import { impulseOf, impulseTargets } from './vanguard';
+import { commandable, impulseOf, impulseTargets } from './vanguard';
 import { dropFromBridges, tickTerrain } from './terrain';
 import { capturedAfter, remainsAfter, tickRemains } from './captured';
 import { playFalls, startFalls } from './levitation';
@@ -141,15 +141,21 @@ function applyOne(state: GameState, cmd: Command): CommandResult {
  */
 function impulse(state: GameState, cmd: Extract<Command, { type: 'impulse' }>): CommandResult {
   const piece = Number.isInteger(cmd.from) ? state.board[cmd.from] : null;
-  const kind = piece ? impulseOf(state.board, cmd.from) : null;
+  // Ordered by a 행동대장 next to it (or by itself): one of the pieces that 행동대장 may order.
+  const by = cmd.by ?? cmd.from;
+  const ordered = by !== cmd.from;
+  if (ordered && (!Number.isInteger(by) || !commandable(state, by).includes(cmd.from) || cmd.to === null)) return { ok: false, reason: 'illegalMove' };
+  const kind = !piece ? null : ordered ? 'vanguard' : impulseOf(state.board, cmd.from);
   if (!piece || !kind) return { ok: false, reason: 'illegalMove' };
   if (cmd.to === null) {
     if (kind !== 'vanguard') return { ok: false, reason: 'illegalMove' };
     return { ok: true, state, events: [{ type: 'impulse', pieceId: piece.id, kind, from: cmd.from, to: null }] };
   }
+  // The leader may order itself only where it may go of its own accord (a king never goes).
+  if (!ordered && kind === 'vanguard' && !commandable(state, cmd.from).includes(cmd.from)) return { ok: false, reason: 'illegalMove' };
   if (!impulseTargets(state, cmd.from, kind).includes(cmd.to)) return { ok: false, reason: 'illegalMove' };
   const board: (Piece | null)[] = [...state.board];
-  const events: GameEvent[] = [{ type: 'impulse', pieceId: piece.id, kind, from: cmd.from, to: cmd.to }];
+  const events: GameEvent[] = [{ type: 'impulse', pieceId: piece.id, kind, from: cmd.from, to: cmd.to, ...(ordered && { by: state.board[by]!.id }) }];
   const victim = board[cmd.to];
   const done = (falls: GameState['falling'], touched: Square[]): CommandResult => {
     for (const c of playersOf()) if (isInCheck(board, c, state.terrain)) events.push({ type: 'check', color: c });

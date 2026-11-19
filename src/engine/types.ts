@@ -389,7 +389,8 @@ export type Command =
    * A piece moves of its own accord at the end of its owner's turn (혼란: at random, 행동대장: its
    * best move; `to` null: it holds its ground). The game's runner picks and sends it.
    */
-  | { type: 'impulse'; from: Square; to: Square | null; clashRolls?: number[] };
+  /** A piece moving of its own accord at its side's turn's end; `by`: the 행동대장 next to it that orders it (if not itself). */
+  | { type: 'impulse'; from: Square; to: Square | null; by?: Square; clashRolls?: number[] };
 
 export type MoveSpecial =
   | { kind: 'castle'; side: 'king' | 'queen' }
@@ -483,7 +484,7 @@ export type GameEvent =
   /** The newest crown of the fused piece on `from` stands again on `to`. */
   | { type: 'split'; bodyId: string; pieceId: string; from: Square; to: Square }
   /** A piece moved of its own accord (혼란 / 행동대장); `to` null: it held its ground. The move itself follows as 'moved'. */
-  | { type: 'impulse'; pieceId: string; kind: 'confused' | 'vanguard'; from: Square; to: Square | null }
+  | { type: 'impulse'; pieceId: string; kind: 'confused' | 'vanguard'; from: Square; to: Square | null; by?: string }
   /**
    * Someone was about to be taken and another went down in its place: a 원호 friend that threw
    * itself in (`guard`), or the hostage its holder hid behind (`hostage`). `by`: the attacker's square.
