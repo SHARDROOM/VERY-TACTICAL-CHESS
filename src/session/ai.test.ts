@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createInitialState, createStateFrom, withDefaultRules, type GameState } from '../engine';
 import { FakeGameMaster } from '../gm/fakeGm';
 import { LocalSession } from './localSession';
@@ -72,6 +72,83 @@ describe('AI players (hotseat)', () => {
     expect(asked).not.toContain('gm');
     local.dispose();
   }, 20000);
+
+  it('asks its model again when it is busy or too slow, up to three more times (사용자 요청)', async () => {
+    const { GmError } = await import('../gm/errors');
+    const s = game({ black: { level: 'easy', specials: 'often' } });
+    const gm = new FakeGameMaster(0);
+    const brain = new FakeGameMaster(0);
+    const act = brain.act.bind(brain);
+    let calls = 0;
+    // Busy twice, then slow (never answers), then fine.
+    brain.act = (r) => {
+      calls++;
+      if (calls <= 2) return Promise.reject(new GmError('busy', 'busy'));
+      if (calls === 3) return new Promise(() => {});
+      return act(r);
+    };
+    const notices: string[] = [];
+    const local = new LocalSession(gm, { initialState: { ...s, ap: { ...s.ap, black: 4 } }, phase: 'playing', aiPace: 0, chance: () => 0.3 });
+    local.setBrains({ black: brain });
+    local.subscribe((e: SessionEvent) => e.kind === 'notice' && notices.push(e.text));
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      local.request({ type: 'move', from: 12, to: 28 });
+      // The slow try times out (45 s) on the fake clock.
+      await vi.advanceTimersByTimeAsync(60_000);
+      await until(() => local.view().state.turn === 'white', 15000);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(calls).toBe(4);
+    expect(notices.filter((t) => t.includes('다시 요청합니다'))).toHaveLength(3);
+    local.dispose();
+  }, 30000);
+
+  it('gives up on its model after three more tries and just plays chess; a bad key is not asked again', async () => {
+    const { GmError } = await import('../gm/errors');
+    const s = game({ black: { level: 'easy', specials: 'often' } });
+    for (const [kind, expected] of [['busy', 4], ['other', 1]] as const) {
+      const brain = new FakeGameMaster(0);
+      let calls = 0;
+      brain.act = () => (calls++, Promise.reject(new GmError('x', kind)));
+      const local = new LocalSession(new FakeGameMaster(0), { initialState: { ...s, ap: { ...s.ap, black: 4 } }, phase: 'playing', aiPace: 0, chance: () => 0.3 });
+      local.setBrains({ black: brain });
+      local.request({ type: 'move', from: 12, to: 28 });
+      await until(() => local.view().state.turn === 'white', 15000);
+      expect(calls).toBe(expected);
+      local.dispose();
+    }
+  }, 30000);
+
+  it('writes its declaration anew when the GM finds it impossible, telling its model why (two more times at most)', async () => {
+    const s = game({ black: { level: 'easy', specials: 'often' } });
+    const gm = new FakeGameMaster(0);
+    const brain = new FakeGameMaster(0);
+    const problems: (string | undefined)[] = [];
+    let n = 0;
+    // Its first two declarations name no piece of its own (impossible), the third is a real one.
+    brain.act = (r) => {
+      problems.push(r.problem);
+      n++;
+      return Promise.resolve({ declaration: n <= 2 ? `하늘에서 번개가 떨어진다 ${n}` : 'd8 퀸이 주문으로 d1 퀸을 기절시킨다' });
+    };
+    const seen: string[] = [];
+    const local = new LocalSession(gm, { initialState: { ...s, ap: { ...s.ap, black: 4 } }, phase: 'playing', aiPace: 0, chance: () => 0.3 });
+    local.setBrains({ black: brain });
+    local.subscribe((e: SessionEvent) => e.kind === 'events' && e.events.forEach((ev) => seen.push(ev.type)));
+    local.request({ type: 'move', from: 12, to: 28 });
+    await until(() => local.view().state.turn === 'white', 15000);
+    expect(n).toBe(3);
+    expect(problems[0]).toBeUndefined();
+    // The GM's answer (impossible, and why) goes back to its model.
+    expect(problems[1]).toMatch(/하늘에서 번개가 떨어진다 1.*불가능하다고 판정했습니다: 가짜 GM은 칸 좌표가/);
+    expect(problems[2]).toMatch(/하늘에서 번개가 떨어진다 2/);
+    // Each got a ruling: the two impossible ones were let go (costing nothing), the third stands.
+    expect(seen.filter((t) => t === 'specialProposed')).toHaveLength(3);
+    expect(seen.filter((t) => t === 'specialCancelled').length).toBeGreaterThanOrEqual(2);
+    local.dispose();
+  }, 30000);
 
   it('a saved game with the AI to move picks up where it was (the AI is in the rules)', async () => {
     const first = new LocalSession(new FakeGameMaster(0), { initialState: game({ black: { level: 'easy', specials: 'off' } }), phase: 'playing', aiPace: 0, chance: () => 0.4 });

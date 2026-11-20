@@ -352,6 +352,12 @@ export interface GameState {
   /** True once the current player has attempted any special action this turn. */
   usedApThisTurn: boolean;
   pending: PendingAction | null;
+  /**
+   * Just after a turn passes: the pieces of the side whose turn ended that now move of their own
+   * accord (혼란, 행동대장), taken before its tags counted down, so one that ran out at that very
+   * end still moves (it lasted through the turn). Gone with the next command that is not an impulse.
+   */
+  impulseDue?: { id: string; kind: 'confused' | 'vanguard' }[];
   /** Every attempted special action this game, oldest first. */
   precedents: Precedent[];
   /** Pieces taken off the board (captured or removed), oldest first, as plain pieces. */

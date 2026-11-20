@@ -145,4 +145,25 @@ describe('the runner plays them when a turn ends', () => {
     expect(events.filter((t) => t === 'impulse')).toHaveLength(2);
     expect(st.turn).toBe('black');
   });
+
+  // 사용자 요청: do two (or more) confused pieces all stagger? They did; one whose 혼란 had 1 turn left did not
+  // (the tag ran out at that turn's end before the stagger). Now every one moves, a 1-turn one too.
+  for (const turnsLeft of [1, 2, null]) {
+    it(`three confused pieces all stagger, their 혼란 with ${turnsLeft ?? '∞'} turns left; then a 1-turn one is over`, async () => {
+      const { LocalSession } = await import('../session/localSession');
+      const confused = tag('혼란', { turnsLeft });
+      const s = scene({ d4: { color: 'white', type: 'knight', tags: [confused] }, b2: { color: 'white', type: 'bishop', tags: [confused] }, g3: { color: 'white', type: 'rook', tags: [confused] }, h8: { color: 'black', type: 'rook' } });
+      const gm = { name: 't', rule: async () => ({}) } as never;
+      let n = 0;
+      const local = new LocalSession(gm, { initialState: s, phase: 'playing', chance: () => (n++ * 0.37) % 1, roll: () => 3 });
+      const moved: string[] = [];
+      local.subscribe((e) => e.kind === 'events' && e.events.forEach((ev) => ev.type === 'impulse' && ev.to !== null && moved.push(ev.pieceId)));
+      local.request({ type: 'move', from: sq('e1'), to: sq('f1') });
+      expect(moved.sort()).toEqual(['white-bishop-b2', 'white-knight-d4', 'white-rook-g3']);
+      const st = local.view().state;
+      const still = st.board.filter((p) => p?.tags?.some((t) => t.name === '혼란')).length;
+      expect(still).toBe(turnsLeft === 1 ? 0 : 3);
+      local.dispose();
+    });
+  }
 });

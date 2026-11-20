@@ -4,7 +4,7 @@ import { GM_PLAYER_JSON_SCHEMA, GmPlayerSchema, buildPlayerSystemPrompt, buildPl
 import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
 import { GM_CHAOS_JSON_SCHEMA, GM_RULING_JSON_SCHEMA } from './jsonSchema';
 import { GmChaosReplySchema, GmRulingReplySchema } from './schema';
-import { GmError, describeHttpError, describeNetworkError, fetchWithRetry } from './errors';
+import { GmError, fetchWithRetry, httpError, networkError } from './errors';
 import { REFUSED, TRUNCATED, jsonFromLooseText, jsonFromText } from './llmReply';
 
 /** Suggestions only: the settings field accepts any model id. */
@@ -87,7 +87,7 @@ export class OpenAiGameMaster implements GameMaster {
       try {
         res = await fetchWithRetry(doFetch, url, request(this.mode), this.options.retryDelayMs ?? 1500);
       } catch (err) {
-        throw new GmError(describeNetworkError(this.label, err));
+        throw networkError(this.label, err);
       }
       body = (await res.json().catch(() => ({}))) as ChatCompletion;
       // Another service that will not take this way of asking for JSON: the next, plainer one.
@@ -97,11 +97,11 @@ export class OpenAiGameMaster implements GameMaster {
       }
       break;
     }
-    if (!res.ok) throw new GmError(describeHttpError(this.label, res.status, body.error?.message ?? ''));
+    if (!res.ok) throw httpError(this.label, res.status, body.error?.message ?? '');
 
     const choice = body.choices?.[0];
     if (choice?.message?.refusal) throw new GmError(REFUSED);
-    if (choice?.finish_reason === 'length') throw new GmError(TRUNCATED);
+    if (choice?.finish_reason === 'length') throw new GmError(TRUNCATED, 'format');
     if (choice?.finish_reason === 'content_filter') throw new GmError(REFUSED);
     const text = choice?.message?.content ?? '';
     return this.options.lenient ? jsonFromLooseText(text, schema) : jsonFromText(text, schema);

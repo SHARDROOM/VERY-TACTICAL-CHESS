@@ -10,7 +10,7 @@ export { parseMoveText } from './notation';
 export { squareName, parseSquare, fileOf, rankOf, squareAt, opponent, AIR, SQUARES, isAir, groundOf, airOf, sameLayer, setBoardMap, boardMap, isHex, playersOf, homeHalf, halfOf, backRank, step, planeOf, squareAtPoint, pawnForward, promotesOn, SQUARE_PATTERN, byDistance, type BoardMap } from './squares';
 export { applyEffects, validateRuling, type EffectContext } from './effects';
 export { checkActor, distance, targetsOf } from './actor';
-export { impulseOf, impulseTargets, commandable, type ImpulseKind } from './vanguard';
+export { impulseOf, impulseKindOf, impulseTargets, commandable, type ImpulseKind } from './vanguard';
 export { saverFor } from './guard';
 export { chooseMove, vanguardOrder, isAiOnly, standing, clashCaptures, clashBuffs, type ClashCapture, aiExile, aiHints, aiShouldRoll, aiMaxDc, evaluate, AI_LEVELS, AI_LEVEL_NAME, AI_SPECIALS, AI_SPECIALS_NAME, type AiLevel, type AiSpecials, type AiSeat, type AiMove } from './ai';
 export { hasTag, isStunned, isShielded, isBurning, isFloating, CORE_TAGS, MAX_MOVE_TIMES, movePatterns, movesReplaced, moveTimesOf, ridersOf, stackOf } from './tags';

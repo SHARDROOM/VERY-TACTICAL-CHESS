@@ -25,7 +25,7 @@ import { extinguish, hasTag, isShielded, mapStack, moveTimesOf, ridersOf, stackO
 import { GRAY, HOOD, HOSTAGE, SHIELD, type Ruling, type Tag } from './types';
 import { checkActor } from './actor';
 import { intercept, releaseHostages, saverFor } from './guard';
-import { commandable, impulseOf, impulseTargets } from './vanguard';
+import { commandable, impulseKindOf, impulsesDue, impulseTargets } from './vanguard';
 import { dropFromBridges, tickTerrain } from './terrain';
 import { capturedAfter, remainsAfter, tickRemains } from './captured';
 import { playFalls, startFalls } from './levitation';
@@ -64,6 +64,12 @@ function withoutSacrifices(board: Board, ruling: Ruling): Board {
 
 /** The single entry point for changing game state. Pure: no I/O, no randomness. */
 export function applyCommand(state: GameState, cmd: Command): CommandResult {
+  // The impulses due at a turn's end are played right after it; anything else ends that moment.
+  if (state.impulseDue && cmd.type !== 'impulse') {
+    const { impulseDue: _due, ...rest } = state;
+    void _due;
+    state = rest;
+  }
   const result = promoteStranded(applyOne(state, cmd));
   // A hostage whose holder is gone or moved away is let go, whatever moved it.
   if (!result.ok || !result.state.board.some((p) => p?.tags?.some((t) => t.name === HOSTAGE))) return result;
@@ -153,7 +159,7 @@ function impulse(state: GameState, cmd: Extract<Command, { type: 'impulse' }>): 
   const by = cmd.by ?? cmd.from;
   const ordered = by !== cmd.from;
   if (ordered && (!Number.isInteger(by) || !commandable(state, by).includes(cmd.from) || cmd.to === null)) return { ok: false, reason: 'illegalMove' };
-  const kind = !piece ? null : ordered ? 'vanguard' : impulseOf(state.board, cmd.from);
+  const kind = !piece ? null : ordered ? 'vanguard' : impulseKindOf(state, cmd.from);
   if (!piece || !kind) return { ok: false, reason: 'illegalMove' };
   if (cmd.to === null) {
     if (kind !== 'vanguard') return { ok: false, reason: 'illegalMove' };
@@ -433,6 +439,8 @@ function passTurn(
   const { apMax, apPerTurn } = state.rules;
   const apNext = Math.min(apMax, state.ap[next] + apPerTurn);
   const turnNumber = state.turnNumber + 1;
+  // Who moves of their own accord now: taken before the tags count down (a 1-turn 혼란 lasted through this turn).
+  const due = impulsesDue(board, state.turn);
   const tagged = tickTags(board, state.turn, state.turnNumber);
   const remains = tickRemains(state.remains, state.turn, state.turnNumber);
   const land = tickTerrain(state.terrain, state.turn, state.turnNumber);
@@ -463,6 +471,7 @@ function passTurn(
       usedApThisTurn: false,
       pending: null,
       ...withFalls(state, falls),
+      ...(due.length && { impulseDue: due }),
     },
     events: [...events, { type: 'turnPassed', turn: next, turnNumber, apGained: apNext - state.ap[next], ended: state.turn }],
   };

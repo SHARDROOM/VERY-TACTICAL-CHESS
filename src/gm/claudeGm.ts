@@ -5,7 +5,7 @@ import type { ChaosRequest, GameMaster, GmRequest } from './types';
 import { GmPlayerSchema, buildPlayerSystemPrompt, buildPlayerUserMessage, type ActRequest } from './player';
 import { GmChaosReplySchema, GmChaosSchema, GmRulingReplySchema, GmRulingSchema } from './schema';
 import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
-import { GmError } from './errors';
+import { GmError, type GmErrorKind } from './errors';
 import { REFUSED, TRUNCATED, jsonFromText } from './llmReply';
 
 export { GmError };
@@ -74,15 +74,24 @@ export class ClaudeGameMaster implements GameMaster {
         messages: [{ role: 'user', content: user }],
       });
     } catch (err) {
-      throw new GmError(describeApiError(err));
+      throw new GmError(describeApiError(err), claudeErrorKind(err));
     }
 
     if (response.stop_reason === 'refusal') throw new GmError(REFUSED);
-    if (response.stop_reason === 'max_tokens') throw new GmError(TRUNCATED);
+    if (response.stop_reason === 'max_tokens') throw new GmError(TRUNCATED, 'format');
     // Read content only after the stop reason says it is complete.
     const text = response.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
     return jsonFromText(text, reply);
   }
+}
+
+/** Whether asking again may help: busy (rate limit, overload, server error), slow, unreachable. */
+function claudeErrorKind(err: unknown): GmErrorKind {
+  if (err instanceof Anthropic.RateLimitError || err instanceof Anthropic.InternalServerError) return 'busy';
+  if (err instanceof Anthropic.APIConnectionTimeoutError) return 'slow';
+  if (err instanceof Anthropic.APIConnectionError) return 'network';
+  if (err instanceof Anthropic.APIError && (err.status === 529 || (err.status ?? 0) >= 500)) return 'busy';
+  return 'other';
 }
 
 function describeApiError(err: unknown): string {

@@ -8,10 +8,10 @@ export function jsonFromText<T extends z.ZodTypeAny>(text: string, schema: T): z
   try {
     json = JSON.parse(text);
   } catch {
-    throw new GmError('GM의 응답을 해석하지 못했습니다. 다시 시도해 주세요.');
+    throw new GmError('GM의 응답을 해석하지 못했습니다. 다시 시도해 주세요.', 'format');
   }
   const checked = schema.safeParse(json);
-  if (!checked.success) throw new GmError('GM의 응답 형식이 올바르지 않습니다. 다시 시도해 주세요.');
+  if (!checked.success) throw new GmError('GM의 응답 형식이 올바르지 않습니다. 다시 시도해 주세요.', 'format');
   return checked.data;
 }
 

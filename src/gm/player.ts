@@ -20,6 +20,8 @@ export interface ActRequest {
   hints: string[];
   /** The hardest DC it would roll for (null: it rolls whatever comes). */
   maxDc?: number | null;
+  /** Why its last declaration this turn did not work (it writes another). */
+  problem?: string;
 }
 
 export const GmPlayerSchema = z.object({ declaration: z.string().describe('이번 턴에 시도할 특수 행동 선언 한 문장 (한국어, 60자 이내, 주체 칸을 먼저)') });
@@ -68,7 +70,7 @@ function chancePct(dc: number): number {
   return Math.round((n / 36) * 100);
 }
 
-export function buildPlayerUserMessage({ state, color, style, hints, maxDc }: ActRequest): string {
+export function buildPlayerUserMessage({ state, color, style, hints, maxDc, problem }: ActRequest): string {
   const ap = state.ap[color] ?? 0;
   const { costMin, costMax } = state.rules;
   const budget = [
@@ -93,7 +95,9 @@ ${hints.map((h) => `- ${h}`).join('\n') || '- (특별한 것 없음)'}
 
 ${situationText(state)}
 ## 지금 할 일
-${COLOR[color]}의 이번 턴 특수 행동 선언을 한 문장으로. ${aim}`;
+${COLOR[color]}의 이번 턴 특수 행동 선언을 한 문장으로. ${aim}${
+    problem ? `\n\n## 다시 쓰기\n직전 선언이 통하지 않았습니다: ${problem}\n같은 선언을 되풀이하지 말고, 그 이유를 피해 규칙에 맞는 다른 선언을 쓰세요(주체 칸을 맨 앞에, 근접은 1칸 안, 킹은 노리지 않기).` : ''
+  }`;
 }
 
 /** The declaration from a reply, trimmed to fit (null if there is none). */

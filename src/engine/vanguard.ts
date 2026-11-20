@@ -21,6 +21,25 @@ export function impulseOf(board: Board, from: Square): ImpulseKind | null {
   return null;
 }
 
+/**
+ * The same in a game state: also a piece whose 혼란 or 행동대장 ran out at the end of the turn that
+ * just ended (it moves this once more, see GameState.impulseDue).
+ */
+export function impulseKindOf(state: GameState, from: Square): ImpulseKind | null {
+  const own = impulseOf(state.board, from);
+  if (own) return own;
+  const id = state.board[from]?.id;
+  return (id && state.impulseDue?.find((d) => d.id === id)?.kind) || null;
+}
+
+/** The pieces of `color` on `board` that move of their own accord at its turn's end (stunned ones do not). */
+export function impulsesDue(board: Board, color: GameState['turn']): NonNullable<GameState['impulseDue']> {
+  return board.flatMap((p, sq) => {
+    const kind = p && p.color === color && !isStunned(p) ? impulseOf(board, sq) : null;
+    return kind ? [{ id: p!.id, kind }] : [];
+  });
+}
+
 /** A king never walks into an attack of its own accord. */
 function kingSafeAfter(board: Board, from: Square, to: Square, terrain: GameState['terrain']): boolean {
   const piece = board[from]!;
@@ -54,11 +73,11 @@ export function impulseTargets(state: GameState, from: Square, kind: ImpulseKind
 export function commandable(state: GameState, by: Square): Square[] {
   const { board } = state;
   const leader = board[by];
-  if (!leader || impulseOf(board, by) !== 'vanguard' || isStunned(leader)) return [];
+  if (!leader || impulseKindOf(state, by) !== 'vanguard' || isStunned(leader)) return [];
   const out: Square[] = [];
   board.forEach((p, sq) => {
     if (!p || p.color !== leader.color || p.type === 'king' || distance(by, sq) > 1) return;
-    if (impulseOf(board, sq) === 'confused') return;
+    if (impulseKindOf(state, sq) === 'confused') return;
     if (impulseTargets(state, sq, 'vanguard').length) out.push(sq);
   });
   return out;

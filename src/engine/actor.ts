@@ -52,7 +52,8 @@ function squareOf(board: Board, id: string): Square | null {
  * (no `actor` at all) are left alone. Returns the problem, or null.
  */
 export function checkActor(board: Board, ruling: Ruling, color: Color, ctx: EffectContext): string | null {
-  if (ruling.actor === undefined) return null;
+  // An impossible action needs no one to do it: the GM says why (often that no one was named).
+  if (ruling.actor === undefined || !ruling.feasible) return null;
   if (ruling.actor === null) return '행동하는 내 기물(주체)이 없음: 누가 하는지 정해야 함';
   const at = ruling.actor;
   const piece = board[at];

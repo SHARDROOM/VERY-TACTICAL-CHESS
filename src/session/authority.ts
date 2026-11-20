@@ -1,9 +1,10 @@
-import { AI_LEVEL_NAME, CLASH_ROLLS, aiExile, aiHints, aiMaxDc, cleanAiSeats, isAiOnly, isAir, playersOf, promotesOn, type AiSeat, applyCommand, impulseOf, impulseTargets, isStunned as isStunnedPiece, vanguardOrder, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
+import { AI_LEVEL_NAME, CLASH_ROLLS, aiExile, aiHints, aiMaxDc, cleanAiSeats, isAiOnly, isAir, playersOf, promotesOn, type AiSeat, applyCommand, impulseOf, impulseKindOf, impulseTargets, isStunned as isStunnedPiece, vanguardOrder, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
-import { GmError } from '../gm/errors';
-import { REJECT_MESSAGE } from '../ui/messages';
+import { GmError, isTransient } from '../gm/errors';
+import { COLOR_NAME, REJECT_MESSAGE } from '../ui/messages';
+import { AI_RETRIES, RETRY_REASON, withRetries } from './retry';
 import { parsePlayerAction } from '../gm/player';
 import { chooseMoveAsync, shouldRollAsync } from './aiCompute';
 import { WATCH_DEFAULT, WATCH_SPEEDS, type Entrant, type NoticeTone, type Phase, type Request, type TimerSnapshot, type WatchSpeed, type WatchState } from './types';
@@ -51,6 +52,11 @@ const AI_MIN_MS = 900;
 /** Watching AIs: the pause after a show, slow and fast. */
 const AI_SLOW_MS = 2400;
 const AI_FAST_MS = 120;
+/** An AI's declaration found impossible (or not ruled within the rules) is written anew this many more times. */
+const AI_REWRITES = 2;
+/** How long one try may take: the AI writing a sentence, the GM ruling on it (a long reply). */
+const AI_COMPOSE_TIMEOUT_MS = 45_000;
+const AI_RULING_TIMEOUT_MS = 100_000;
 
 /** How long a fall plays on screen; the clock does not run during it. */
 export const FALL_SHOW_MS = 3200;
@@ -303,7 +309,8 @@ export class Authority {
         }
         return;
       case 'declare':
-        return this.declare(req.action, actor);
+        await this.declare(req.action, actor);
+        return;
     }
   }
 
@@ -405,12 +412,31 @@ export class Authority {
       // A special action, now and then (once a turn).
       if (!s.chain && this.aiTried !== s.turnNumber && this.aiWantsSpecial(who)) {
         this.aiTried = s.turnNumber;
-        const action = await this.aiCompose(who);
-        if (generation !== this.generation) return;
-        if (action) {
-          await this.declare(action, who.color);
-          return;
+        // A declaration the GM finds impossible, or cannot rule on within the rules, is let go and
+        // written anew with the reason, up to AI_REWRITES more times (사용자 요청).
+        let problem: string | undefined;
+        for (let n = 0; n <= AI_REWRITES; n++) {
+          const action = await this.aiCompose(who, problem);
+          if (generation !== this.generation) return;
+          if (!action) break;
+          const outcome = await this.declare(action, who.color, true);
+          if (generation !== this.generation) return;
+          // The GM cannot be reached (even after asking again): it just plays chess this turn.
+          if (outcome === 'unreachable') break;
+          const p = this.state.pending;
+          if (p?.color === who.color) {
+            if (p.ruling.feasible) return;
+            problem = `"${action}" → GM이 불가능하다고 판정했습니다: ${p.ruling.interpretation}`;
+            this.aiDropped[who.color] = action;
+            await this.handle({ type: 'cancel' }, who.color);
+            if (generation !== this.generation) return;
+          } else {
+            problem = `"${action}" → 규칙에 맞는 판정이 나오지 않았습니다(주체, 거리, 대상을 확인하세요).`;
+          }
+          if (n < AI_REWRITES) this.emit({ kind: 'notice', to: 'all', text: `🤖 ${COLOR_NAME[who.color]} AI가 선언을 고쳐 씁니다 (${n + 1}/${AI_REWRITES})`, tone: 'normal' });
         }
+        // Whatever happened, the board may have moved on: the move is chosen afresh.
+        if (this.state !== s) return;
       }
       // Its move.
       const move = await chooseMoveAsync(s, who.seat.level, Math.floor(this.chance() * 2 ** 31));
@@ -437,21 +463,39 @@ export class Authority {
     return ap >= 2 && this.chance() < 0.5;
   }
 
-  /** The AI's declaration, made up by its model (its own, or the GM's) as that player (null: none came). */
-  private async aiCompose({ color, seat }: { color: Color; seat: AiSeat }): Promise<string | null> {
+  /**
+   * The AI's declaration, made up by its model (its own, or the GM's) as that player (null: none
+   * came). A busy, slow or unreachable model, or a reply without a declaration, is asked again
+   * (retry.ts); `problem` says why its last declaration did not work.
+   */
+  private async aiCompose({ color, seat }: { color: Color; seat: AiSeat }, problem?: string): Promise<string | null> {
     const generation = this.generation;
     this.setBusy(true);
     try {
       const style = seat.level === 'hard' || seat.level === 'master' ? 'sharp' : 'playful';
-      const raw = await this.brainOf(color).act!({ state: this.state, color, style, hints: aiHints(this.state, color), maxDc: aiMaxDc(seat.level) });
-      const action = parsePlayerAction(raw, this.state.rules.actionMaxLength);
-      return action && action === this.aiDropped[color] ? null : action;
+      const brain = this.brainOf(color);
+      return await withRetries(
+        async () => {
+          const raw = await brain.act!({ state: this.state, color, style, hints: aiHints(this.state, color), maxDc: aiMaxDc(seat.level), ...(problem && { problem }) });
+          const action = parsePlayerAction(raw, this.state.rules.actionMaxLength);
+          // No declaration, or the one it just let go: write one again.
+          if (!action || action === this.aiDropped[color]) throw new GmError('선언이 없습니다.', 'format');
+          return action;
+        },
+        { timeoutMs: AI_COMPOSE_TIMEOUT_MS, pace: this.aiPace, stillWanted: () => generation === this.generation, onRetry: (kind, n) => this.retryNotice(color, kind, n) },
+      );
     } catch {
-      // The model would not: the AI just plays chess this turn.
+      // The model would not, even asked again: the AI just plays chess this turn.
       return null;
     } finally {
       if (generation === this.generation) this.setBusy(false);
     }
+  }
+
+  /** Everyone sees that an AI's model is being asked again (not for a malformed reply: that is quick). */
+  private retryNotice(color: Color, kind: keyof typeof RETRY_REASON, n: number): void {
+    if (kind === 'format') return;
+    this.emit({ kind: 'notice', to: 'all', text: `🤖 ${COLOR_NAME[color]} AI: ${RETRY_REASON[kind]} 다시 요청합니다 (${n}/${AI_RETRIES})`, tone: 'warn' });
   }
 
   /** Falling pieces come down: the physics (if any) says where they rest, then `land` plays it. */
@@ -504,14 +548,15 @@ export class Authority {
    * One at a time, in board order, each on the board the ones before it left.
    */
   private impulses(color: Color): void {
-    const ids = this.state.board.flatMap((p, sq) => (p && p.color === color && impulseOf(this.state.board, sq) ? [p.id] : []));
+    // Taken as the turn ended, before its tags counted down (a 혼란 that ran out then still staggers).
+    const ids = this.state.impulseDue?.map((d) => d.id) ?? this.state.board.flatMap((p, sq) => (p && p.color === color && impulseOf(this.state.board, sq) ? [p.id] : []));
     // A piece moves once at a turn's end, whoever orders it.
     const moved = new Set<string>();
     for (const id of ids) {
       const s = this.state;
       if (s.status.kind !== 'playing' || s.surrender || s.falling?.length || s.pending) return;
       const from = s.board.findIndex((p) => p?.id === id);
-      const kind = from >= 0 ? impulseOf(s.board, from) : null;
+      const kind = from >= 0 ? impulseKindOf(s, from) : null;
       if (!kind || isStunnedPiece(s.board[from])) continue;
       if (kind === 'confused') {
         const options = impulseTargets(s, from, 'confused');
@@ -564,8 +609,16 @@ export class Authority {
     }
   }
 
-  private async declare(action: string, actor: Color | 'any'): Promise<void> {
-    const notice = (text: string) => this.emit({ kind: 'notice', to: actor, text, tone: 'error' });
+  /**
+   * A declaration to the GM; its ruling goes on the table as pending. `patient` (an AI's): a busy,
+   * slow or unreachable GM is asked again (retry.ts). What came of it: a ruling proposed, the GM
+   * not reachable, or no ruling the rules accept.
+   */
+  private async declare(action: string, actor: Color | 'any', patient = false): Promise<'proposed' | 'unreachable' | 'refused'> {
+    const notice = (text: string) => {
+      this.emit({ kind: 'notice', to: actor, text, tone: 'error' });
+      return 'refused' as const;
+    };
     const trimmed = action.trim();
     const s = this.state;
     // Cheap checks first, so a doomed declaration never costs a GM call.
@@ -582,14 +635,21 @@ export class Authority {
       // GM once, with the reason; the second answer stands or falls.
       let problem: string | undefined;
       for (let attempt = 0; attempt < 2; attempt++) {
-        const raw = await this.gm.rule({ action: trimmed, state: s, problem });
-        if (generation !== this.generation) return;
+        const ask = () => this.gm.rule({ action: trimmed, state: s, problem });
+        const raw = patient
+          ? await withRetries(ask, {
+              timeoutMs: AI_RULING_TIMEOUT_MS,
+              pace: this.aiPace,
+              stillWanted: () => generation === this.generation,
+              onRetry: (kind, n) => actor !== 'any' && this.retryNotice(actor, kind, n),
+            })
+          : await ask();
+        if (generation !== this.generation) return 'refused';
         const parsed = parseGmRuling(raw);
         if (!parsed.ok) {
           problem = `응답 형식 오류: ${parsed.error}`;
           if (attempt === 0) continue;
-          notice(`GM 응답 형식이 올바르지 않습니다 (${parsed.error}). AP는 쓰지 않았습니다. 다시 시도해 주세요.`);
-          return;
+          return notice(`GM 응답 형식이 올바르지 않습니다 (${parsed.error}). AP는 쓰지 않았습니다. 다시 시도해 주세요.`);
         }
         const command = { type: 'proposeSpecial' as const, action: trimmed, ruling: parsed.ruling };
         const dry = applyCommand(this.state, command);
@@ -599,12 +659,15 @@ export class Authority {
         }
         this.busy = false;
         this.apply(command, actor);
-        return;
+        return dry.ok ? 'proposed' : 'refused';
       }
+      return 'refused';
     } catch (err) {
-      if (generation !== this.generation) return;
+      if (generation !== this.generation) return 'refused';
       const reason = err instanceof GmError ? err.message : `GM 호출 실패: ${err instanceof Error ? err.message : String(err)}`;
       notice(`${reason} (AP는 쓰지 않았습니다. 다시 보낼 수 있습니다.)`);
+      // A malformed reply is the GM's answer; anything else means it could not be reached.
+      return isTransient(err) && err.kind === 'format' ? 'refused' : 'unreachable';
     } finally {
       if (generation === this.generation) this.setBusy(false);
     }

@@ -1,5 +1,33 @@
+/**
+ * What went wrong, for deciding whether to ask again (an AI asks again on its own): the model is
+ * busy (rate limit, overload, a server hiccup), slow (timed out), unreachable, or its reply was
+ * malformed; anything else (a bad key, a refusal) stays as it is.
+ */
+export type GmErrorKind = 'busy' | 'slow' | 'network' | 'format' | 'other';
+
 /** An error whose message is already written for the player. */
-export class GmError extends Error {}
+export class GmError extends Error {
+  constructor(
+    message: string,
+    readonly kind: GmErrorKind = 'other',
+  ) {
+    super(message);
+  }
+}
+
+/** Worth asking again in a moment. */
+export const isTransient = (err: unknown): err is GmError => err instanceof GmError && err.kind !== 'other';
+
+/** An HTTP failure from any LLM provider, as a GmError of the right kind. */
+export function httpError(provider: string, status: number, detail: string): GmError {
+  return new GmError(describeHttpError(provider, status, detail), status === 429 || status >= 500 ? 'busy' : 'other');
+}
+
+/** A fetch that never got an HTTP response, as a GmError of the right kind. */
+export function networkError(provider: string, err: unknown): GmError {
+  const slow = err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError');
+  return new GmError(describeNetworkError(provider, err), slow ? 'slow' : 'network');
+}
 
 /** Player-facing text for an HTTP failure from any LLM provider. */
 export function describeHttpError(provider: string, status: number, detail: string): string {

@@ -4,7 +4,7 @@ import { GM_PLAYER_JSON_SCHEMA, GmPlayerSchema, buildPlayerSystemPrompt, buildPl
 import { buildChaosSystemPrompt, buildChaosUserMessage, buildSystemPrompt, buildUserMessage } from './prompt';
 import { GM_CHAOS_JSON_SCHEMA, GM_RULING_JSON_SCHEMA } from './jsonSchema';
 import { GmChaosReplySchema, GmRulingReplySchema } from './schema';
-import { GmError, describeHttpError, describeNetworkError, fetchWithRetry } from './errors';
+import { GmError, fetchWithRetry, httpError, networkError } from './errors';
 import { REFUSED, TRUNCATED, jsonFromText } from './llmReply';
 
 /** Suggestions only: the settings field accepts any model id. */
@@ -64,7 +64,7 @@ export class GeminiGameMaster implements GameMaster {
         signal: AbortSignal.timeout(90_000),
       }), this.options.retryDelayMs ?? 1500);
     } catch (err) {
-      throw new GmError(describeNetworkError('Gemini', err));
+      throw networkError('Gemini', err);
     }
 
     const body = (await res.json().catch(() => ({}))) as GenerateContentResponse;
@@ -72,13 +72,13 @@ export class GeminiGameMaster implements GameMaster {
       const message = body.error?.message ?? '';
       // Gemini reports a bad key as 400 INVALID_ARGUMENT rather than 401.
       const status = res.status === 400 && /api key/i.test(message) ? 401 : res.status;
-      throw new GmError(describeHttpError('Gemini', status, message));
+      throw httpError('Gemini', status, message);
     }
 
     if (body.promptFeedback?.blockReason) throw new GmError(REFUSED);
     const candidate = body.candidates?.[0];
     const reason = candidate?.finishReason ?? '';
-    if (reason === 'MAX_TOKENS') throw new GmError(TRUNCATED);
+    if (reason === 'MAX_TOKENS') throw new GmError(TRUNCATED, 'format');
     if (BLOCKED.has(reason)) throw new GmError(REFUSED);
     const text = (candidate?.content?.parts ?? [])
       .filter((p) => !p.thought && typeof p.text === 'string')
