@@ -28,7 +28,7 @@ import type { RuleConfig } from './config';
 import { SQUARES, airOf, distance, isAir, playersOf, promotesOn, sameLayer, squareName } from './squares';
 import { MAX_MOVE_TIMES, extinguish, isShielded, isStunned, mapStack, unseat, withRiderOnTop, withTag, withoutTag, withoutTopRider } from './tags';
 import { SHIELD } from './types';
-import { BUILDING_INFO, BUILDING_REACH, MAX_TERRAIN, cleanBuilding, dropFromBridges } from './terrain';
+import { BUILDING_REACH, MAX_TERRAIN, buildingLook, cleanBuilding, dropFromBridges } from './terrain';
 import { capturedAfter, remainsAt } from './captured';
 import { checkActor } from './actor';
 import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, clashSkill, hasClashGear, resolveClash } from './clash';
@@ -587,7 +587,8 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
           if (typeof b === 'string') return fail(b);
           building = b;
         }
-        const look = e.prop ? cleanProp(e.prop) : building && building.kind !== 'custom' ? cleanProp({ preset: BUILDING_INFO[building.kind].preset, parts: [], attach: 'feet', scale: 1 }) : null;
+        const given = e.prop ? cleanProp(e.prop) : null;
+        const look = building ? buildingLook(building, given) : given;
         terrain = [
           ...terrain.filter((c) => c.at !== e.at),
           { at: e.at, kind: e.kind, turnsLeft, owner: ctx.color ?? 'white', appliedOnTurn: ctx.turnNumber, ...(look && { prop: look }), ...(building && { building }) },

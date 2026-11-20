@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { BoxGeometry, CanvasTexture, CircleGeometry, DodecahedronGeometry, RingGeometry, SRGBColorSpace, type Group } from 'three';
-import { COVER_NAME, type Building, type Prop, type Square, type TerrainCell, type TerrainCover, type TerrainKind } from '../engine';
+import { COVER_NAME, buildingLook, type Building, type Prop, type Square, type TerrainCell, type TerrainCover, type TerrainKind } from '../engine';
 import { squareToWorld } from './coords';
 import { TurnBadges, type Chip } from './TagEffects';
 import { PropMesh } from './PropMesh';
@@ -155,12 +155,14 @@ function TerrainPiece({ shown }: { shown: Shown }) {
   if (cell.building) chips.push({ text: buildingLabel(cell.building), tone: 'building' });
   if (cell.turnsLeft !== null) chips.push({ text: `${cell.building ? cell.building.name : cell.kind === 'wall' ? '벽' : '구덩이'} ${cell.turnsLeft}`, tone: 'terrain' });
   if (cell.cover?.turnsLeft != null) chips.push({ text: `${COVER_NAME[cell.cover.kind]} ${cell.cover.turnsLeft}`, tone: 'terrain' });
-  const top = cell.kind === 'wall' ? (cell.prop ? 1 : WALL_HEIGHT) + 0.32 : 0.3;
+  // A building always looks like one (one saved without a look gets its own now).
+  const prop = cell.prop ?? (cell.building ? buildingLook(cell.building) : undefined);
+  const top = cell.kind === 'wall' ? (prop ? 1 : WALL_HEIGHT) + 0.32 : 0.3;
   return (
     <group ref={ref} position={[x, 0, z]}>
       {cell.kind === 'wall' ? (
         // A wall the GM gave a look (a barricade, a statue) is that; otherwise dry stones.
-        cell.prop ? <PropMesh prop={cell.prop} maxReach={cell.building ? 0.95 : 0.75} /> : <Wall at={cell.at} />
+        prop ? <PropMesh prop={prop} maxReach={cell.building ? 0.95 : 0.75} /> : <Wall at={cell.at} />
       ) : (
         <>
           <Pit at={cell.at} />

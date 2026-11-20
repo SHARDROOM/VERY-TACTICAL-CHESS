@@ -491,7 +491,7 @@ function fakeBaseRuling(action: string, color: Color, board?: Board): BaseRuling
   }
 
   // A building (건물): "e2 폰이 e3에 대장간을 짓는다".
-  const builds = /(대포|포대|교회|성당|예배당|대장간)\S{0,2}\s*(?:을|를)?\s*(?:짓|세우|세운|건설|올리)/.exec(action);
+  const builds = /(대포|포대|교회|성당|예배당|대장간)\S{0,2}\s*(?:을|를)?\s*(?:짓|지어|세우|세운|세워|건설|올리|올려|만들|만든|차리|차린|차려)/.exec(action);
   if (builds && squares.length >= 1) {
     const missing = needsActor();
     if (missing) return missing;

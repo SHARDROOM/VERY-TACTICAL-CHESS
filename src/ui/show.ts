@@ -249,9 +249,15 @@ export function directionsFor(show: Show, startedAt: number, from = 0): Map<stri
         break;
       }
       case 'fuse': {
-        // 융합: the piece taken in swirls up from its square into its crown place.
+        // 융합: the piece taken in (and the crowns it wore) swirls up from its square into its crown
+        // place. Each fusion its own: a piece taking in two in one action gets both (사용자 요청).
         const id = after[e.body]?.id;
-        if (id) get(id).fuseFrom = { at: e.material, duration, start: startedAt + (timeline.effectStarts[i] ?? 0) * 1000 };
+        const material = before[e.material];
+        if (id && material) {
+          const ids = [material.id, ...(material.fuse?.crowns ?? []).map((c) => c.id)];
+          const d = get(id);
+          d.fuseFrom = [...(d.fuseFrom ?? []), { at: e.material, duration, start: startedAt + (timeline.effectStarts[i] ?? 0) * 1000, ids }];
+        }
         break;
       }
       case 'split': {

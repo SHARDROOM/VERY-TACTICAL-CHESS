@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { Euler, MeshStandardMaterial, Quaternion, TorusGeometry, Vector2, Vector3, type Group, type Mesh, type MeshPhysicalMaterial } from 'three';
 import { BURN, CORE_TAGS, RIDE, SHIELD, STUN, hasTag, isHex, ridersOf, type Color, type Entrance, type Exit, type MotionStyle, type Piece, type PieceType } from '../engine';
-import { MAX_CROWN_HEADS, PIECE_HEIGHT, crownLayout, featureParts, pieceParts } from './pieceGeometry';
+import { PIECE_HEIGHT, crownLayout, featureParts, pieceParts } from './pieceGeometry';
 import { FoldingBadges, ShieldBubble, StunStars, type Chip } from './TagEffects';
 import { playSfx } from '../audio/sfx';
 import { ballistic, riderTypes, simulatePiece, stackHeight, tumble, type BodyPose, type Obstacle, type PieceRun } from './piecePhysics';
@@ -69,34 +69,41 @@ const CROWN_RING = new TorusGeometry(0.12, 0.018, 8, 28);
 
 /**
  * A fused piece's crowns (융합): the heads of the pieces it took in, each in its own side's colour,
- * stacked on its top with a gold seam under each (see crownLayout); past five, gold rings. The
- * newest may be arriving (`arrive`): it swirls in from where the piece it was stood (`from`, in
- * this piece's frame), growing into place.
+ * stacked on its top with a gold seam under each (see crownLayout); past five, gold rings. Crowns
+ * that come with a fusion in the show (`arrivals`) swirl in from where the piece taken in stood
+ * (`from`, in this piece's frame), growing into place, each on its own clock: several taken in one
+ * after another each finish their flight (사용자 요청: with two at once the first stayed hanging).
+ * Every other crown is put in its place every frame.
  */
-function Crowns({ piece, facing, arrive }: { piece: Piece; facing: number; arrive?: { from: [number, number, number]; start: number; duration: number } }) {
+type Arrival = { ids: string[]; from: [number, number, number]; start: number; duration: number };
+function Crowns({ piece, facing, arrivals }: { piece: Piece; facing: number; arrivals?: Arrival[] }) {
   const crowns = piece.fuse?.crowns ?? [];
   const layout = useMemo(() => crownLayout(piece.type, crowns), [piece.type, crowns]);
-  const newest = useRef<Group>(null);
-  const last = Math.min(crowns.length, MAX_CROWN_HEADS) - 1;
+  const heads = useRef<(Group | null)[]>([]);
   useFrame(() => {
-    const g = newest.current;
-    if (!g || last < 0) return;
-    const place = layout.heads[last];
-    const t = arrive ? Math.min(1, Math.max(0, (performance.now() - arrive.start) / (arrive.duration * 1000))) : 1;
-    if (t >= 1) {
-      g.position.set(0, place.y, 0);
-      g.scale.setScalar(place.scale);
-      g.rotation.set(0, 0, 0);
-      return;
-    }
-    // Up and over in a spiral, shrinking from its own size to its crown's.
-    const e = t * t * (3 - 2 * t);
-    const [fx, fy, fz] = arrive!.from;
-    const spin = (1 - e) * Math.PI * 3;
-    const r = (1 - e) * 0.25;
-    g.position.set(fx * (1 - e) + Math.cos(spin) * r, fy * (1 - e) + place.y * e + Math.sin(Math.PI * e) * 0.9, fz * (1 - e) + Math.sin(spin) * r);
-    g.rotation.set(0, spin * 2, 0);
-    g.scale.setScalar(1 + (place.scale - 1) * e);
+    const now = performance.now();
+    layout.heads.forEach((place, i) => {
+      const g = heads.current[i];
+      const c = crowns[i];
+      if (!g || !c) return;
+      const a = arrivals?.find((x) => x.ids.includes(c.id));
+      // Crowns that came in together follow each other a moment apart.
+      const t = a ? Math.min(1, Math.max(0, (now - a.start - a.ids.indexOf(c.id) * 120) / (a.duration * 1000))) : 1;
+      if (!a || t >= 1) {
+        g.position.set(0, place.y, 0);
+        g.scale.setScalar(place.scale);
+        g.rotation.set(0, 0, 0);
+        return;
+      }
+      // Up and over in a spiral, shrinking from its own size to its crown's.
+      const e = t * t * (3 - 2 * t);
+      const [fx, fy, fz] = a.from;
+      const spin = (1 - e) * Math.PI * 3;
+      const r = (1 - e) * 0.25;
+      g.position.set(fx * (1 - e) + Math.cos(spin) * r, fy * (1 - e) + place.y * e + Math.sin(Math.PI * e) * 0.9, fz * (1 - e) + Math.sin(spin) * r);
+      g.rotation.set(0, spin * 2, 0);
+      g.scale.setScalar(1 + (place.scale - 1) * e);
+    });
   });
   if (!crowns.length) return null;
   return (
@@ -105,7 +112,7 @@ function Crowns({ piece, facing, arrive }: { piece: Piece; facing: number; arriv
         const c = crowns[i];
         const look = LOOK[c.color];
         return (
-          <group key={c.id} ref={i === last ? newest : undefined} position={[0, h.y, 0]} scale={h.scale}>
+          <group key={c.id} ref={(g) => void (heads.current[i] = g)} position={[0, h.y, 0]} scale={h.scale}>
             <mesh geometry={CROWN_RING} material={GOLD} rotation={[Math.PI / 2, 0, 0]} position={[0, 0.01, 0]} />
             {featureParts(c.type).map((part, k) => (
               <mesh key={k} geometry={part.geometry} position={part.position} rotation={part.rotation} castShadow>
@@ -1262,10 +1269,12 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
   const crownsTall = piece.fuse ? crownLayout(piece.type, piece.fuse.crowns).height : 0;
   // A crown arriving (융합): from the square of the piece taken in, in this piece's frame.
   const fuseArrive = useMemo(() => {
-    const f = direction?.fuseFrom;
-    if (!f) return undefined;
-    const [x, y, z] = squareToWorld(f.at);
-    return { from: [x - position[0], y - position[1], z - position[2]] as [number, number, number], start: f.start, duration: f.duration };
+    const list = direction?.fuseFrom;
+    if (!list?.length) return undefined;
+    return list.map((f) => {
+      const [x, y, z] = squareToWorld(f.at);
+      return { ids: f.ids, from: [x - position[0], y - position[1], z - position[2]] as [number, number, number], start: f.start, duration: f.duration };
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [direction?.fuseFrom]);
   // Everyone's tag chips go above the top of the stack, one row each (riders would hide them
@@ -1337,7 +1346,7 @@ export function PieceMesh({ piece, position, selected, captured = false, popIn =
       }}
     >
       {body}
-      {!captured && piece.fuse && <Crowns piece={piece} facing={facing(piece)} arrive={fuseArrive} />}
+      {!captured && piece.fuse && <Crowns piece={piece} facing={facing(piece)} arrivals={fuseArrive} />}
       {captured && (
         // Something to get hold of: what is left beside the board can be small (a relic, a heap).
         <mesh position={[0, 0.4, 0]}>

@@ -160,3 +160,20 @@ describe('clashes in a show', () => {
     expect(later.get(proposed.state.board[sq('b1')]!.id)?.motions ?? []).toHaveLength(1);
   });
 });
+
+describe('two fusions in one action (사용자 요청: the first crown stayed hanging)', () => {
+  it('the body gets a crown flight for each, from its own square, with the ids it brings', () => {
+    const { before, events } = resolve([
+      { type: 'fuse', body: sq('b1'), material: sq('a2') },
+      { type: 'fuse', body: sq('b1'), material: sq('c2') },
+    ]);
+    const show = buildShow(events, before, label)!;
+    const knight = before.board[sq('b1')]!.id;
+    const flights = directionsFor(show, 1000).get(knight)?.fuseFrom;
+    expect(flights).toEqual([
+      { at: sq('a2'), ids: [before.board[sq('a2')]!.id], duration: show.timeline.effectDurations[0], start: 1000 + show.timeline.effectStarts[0] * 1000 },
+      { at: sq('c2'), ids: [before.board[sq('c2')]!.id], duration: show.timeline.effectDurations[1], start: 1000 + show.timeline.effectStarts[1] * 1000 },
+    ]);
+  });
+});
+

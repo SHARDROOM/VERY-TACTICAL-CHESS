@@ -1,5 +1,5 @@
 import { BUILDING_KINDS, COVER_NAME, type Board, type Building, type BuildingKind, type Color, type FallingPiece, type GameEvent, type Piece, type Square, type TerrainCell } from './types';
-import type { PropPreset } from './props';
+import { BUILDING_HUT_PARTS, cleanProp, type Prop, type PropPreset } from './props';
 import { unseat } from './tags';
 import { byDistance } from './squares';
 
@@ -30,6 +30,26 @@ export function blockedSquares(terrain: readonly TerrainCell[] | undefined): Rea
 
 export const terrainAt = (terrain: readonly TerrainCell[] | undefined, sq: Square): TerrainCell | null =>
   terrain?.find((c) => c.at === sq) ?? null;
+
+/** A building's look for a custom one, guessed from its name and what it helps with. */
+const LOOK_BY_WORDS: [RegExp, PropPreset][] = [
+  [/대장|무기|검|칼|창|도끼|갑옷|벼리|단조|병기/, 'forge'],
+  [/교회|성당|예배|신전|사원|기도|소생|되살|부활|수도원/, 'chapel'],
+  [/대포|포대|포격|사격|원거리|투석|화포|요새/, 'cannon'],
+];
+
+/**
+ * How a building looks (사용자 요청: a forge came out as a plain wall): a ready-made one always its
+ * own preset (the GM is told the system gives it); a custom one the GM's look, else one its name or
+ * purpose suggests, else a little house. Never the plain stones of a wall.
+ */
+export function buildingLook(b: Building, given?: Prop | null): Prop {
+  const preset = (p: PropPreset) => cleanProp({ preset: p, parts: [], attach: 'feet', scale: 1 })!;
+  if (b.kind !== 'custom') return preset(BUILDING_INFO[b.kind].preset);
+  if (given) return given;
+  const guess = LOOK_BY_WORDS.find(([words]) => words.test(`${b.name} ${b.about}`));
+  return guess ? preset(guess[1]) : { preset: null, parts: BUILDING_HUT_PARTS, attach: 'feet', scale: 1 };
+}
 
 /** The ready-made buildings: name, what they help with, and their look (a prop preset). */
 export const BUILDING_INFO: Record<Exclude<BuildingKind, 'custom'>, { name: string; about: string; preset: PropPreset }> = {

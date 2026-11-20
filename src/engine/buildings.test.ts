@@ -60,3 +60,24 @@ describe('buildings (건물)', () => {
     expect(pendingModifiers(p.board, p.pending!, p.remains, [])).not.toContainEqual(expect.objectContaining({ kind: 'building' }));
   });
 });
+
+describe('a building always looks like one (사용자 요청: a forge came out as a plain wall)', () => {
+  it('a ready-made one wears its own look whatever the GM gave; a custom one its own, a guessed one, or a little house', async () => {
+    const { buildingLook } = await import('./terrain');
+    const barricade = { preset: 'barricade' as const, parts: [], attach: 'feet' as const, scale: 1 };
+    expect(buildingLook({ kind: 'forge', name: '대장간', about: '무기', bonus: 2 }, barricade).preset).toBe('forge');
+    expect(buildingLook({ kind: 'custom', name: '무기 창고', about: '칼 얻기', bonus: 2 }).preset).toBe('forge');
+    expect(buildingLook({ kind: 'custom', name: '수도원', about: '기도', bonus: 2 }).preset).toBe('chapel');
+    const hut = buildingLook({ kind: 'custom', name: '도서관', about: '마법 판정', bonus: 2 });
+    expect(hut.preset).toBeNull();
+    expect(hut.parts.length).toBeGreaterThan(0);
+    expect(buildingLook({ kind: 'custom', name: '도서관', about: '마법 판정', bonus: 2 }, barricade).preset).toBe('barricade');
+  });
+
+  it('the terrain cell keeps that look', () => {
+    const s = base();
+    const r = applyEffects(s.board, [{ type: 'terrain', at: sq('e4'), kind: 'wall', turns: 0, prop: { preset: 'barricade', parts: [], attach: 'feet', scale: 1 }, building: { kind: 'forge', name: '', about: '', bonus: 2 } } as Effect], { turnNumber: 1, nextSpawnId: 1, color: 'white', terrain: [] });
+    if (!r.ok) throw new Error(r.detail);
+    expect(r.terrain[0]).toMatchObject({ building: { kind: 'forge', name: '대장간' }, prop: { preset: 'forge' } });
+  });
+});

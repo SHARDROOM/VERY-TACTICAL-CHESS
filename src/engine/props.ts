@@ -195,6 +195,14 @@ export const PRESET_PARTS: Record<PropPreset, PropPart[]> = {
   ],
 };
 
+/** A plain little house: a building of the GM's own (custom) that came with no look, nor a name that says which. */
+export const BUILDING_HUT_PARTS: PropPart[] = [
+  part('box', [0, 0.2, 0], [0.6, 0.4, 0.6], 'stone'),
+  part('wedge', [0, 0.52, 0], [0.68, 0.24, 0.68], 'wood', [0, 0, 0], '#6b4528'),
+  part('box', [0, 0.14, 0.305], [0.16, 0.28, 0.02], 'wood'),
+  part('box', [0.18, 0.28, 0.305], [0.1, 0.1, 0.02], 'glass', [0, 0, 0], '#f2d48a'),
+];
+
 /** The parts a prop is drawn with: its own, or its preset's (with its colour on cloth, glass and glow). */
 export function partsOf(prop: Prop): PropPart[] {
   if (!prop.preset) return prop.parts;

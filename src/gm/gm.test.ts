@@ -444,3 +444,38 @@ describe('buildings with the fake GM', () => {
     expect(stun.ok && stun.ruling.buildings).toBeFalsy();
   });
 });
+
+describe('a building said in words but left a plain wall (사용자 요청)', () => {
+  it('the wall becomes the building the ruling names', () => {
+    const reply = {
+      interpretation: 'e2의 폰이 e3에 대장간을 짓는다',
+      actor: 'e2',
+      means: 'touch',
+      target: '',
+      skills: [],
+      mental: false,
+      sacrifice: [],
+      buildings: [],
+      feasible: true,
+      dc: 8,
+      cost: 2,
+      effects: [{ type: 'terrain', at: 'e3', kind: 'wall', turns: 0, building: { kind: 'none', name: '', about: '', bonus: 0 } }],
+      critFailureEffects: [],
+      narration: { success: '대장간이 섰다', failure: 'f', critFailure: 'c' },
+    };
+    const parsed = parseGmRuling(reply);
+    if (!parsed.ok) throw new Error(parsed.error);
+    expect(parsed.ruling.effects[0]).toMatchObject({ type: 'terrain', building: { kind: 'forge' } });
+    // A plain wall stays one.
+    const wall = parseGmRuling({ ...reply, interpretation: 'e3에 벽을 세운다', narration: { success: '벽이 섰다', failure: 'f', critFailure: 'c' } });
+    if (!wall.ok) throw new Error(wall.error);
+    expect(wall.ruling.effects[0]).not.toHaveProperty('building');
+  });
+
+  it('the fake GM builds a forge however it is put ("만든다", "차린다")', () => {
+    for (const verb of ['짓는다', '만든다', '차린다', '세운다']) {
+      const r = fakeRuling(`e2 폰이 e3에 대장간을 ${verb}`, 'white', createInitialState().board);
+      expect(r.effects[0]).toMatchObject({ type: 'terrain', building: { kind: 'forge' } });
+    }
+  });
+});

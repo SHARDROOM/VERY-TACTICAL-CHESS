@@ -55,6 +55,7 @@ export function parseGmRuling(raw: unknown): ParseResult {
     }
     lists[key] = out;
   }
+  lists.effects = withSaidBuilding(lists.effects, `${rest.interpretation ?? ''} ${rest.narration?.success ?? ''}`);
   // Staging is only for show: whatever is wrong in it is dropped, never the ruling.
   const counts = { success: lists.effects.length, failure: 0, critFailure: lists.critFailureEffects.length };
   return {
@@ -73,6 +74,23 @@ export function parseGmRuling(raw: unknown): ParseResult {
       staging: cleanRulingStaging(staging, counts),
     },
   };
+}
+
+/** A ready-made building put up, in the ruling's words ("e3에 대장간을 짓는다"). */
+const BUILT = /(대장간|대포|포대|교회|성당|예배당)\S{0,2}\s*(?:을|를|이|가)?\s*(?:짓|지어|지은|세우|세운|세워|건설|올리|올려|만들|만든|차리|차린|차려|들어서|들어선|생기|생겨)/;
+
+/**
+ * A GM that put a building up in words but left its wall a plain one (building "none", or none at
+ * all: some models skip the field): the first wall it makes becomes that building (사용자 요청: a
+ * forge asked for came out as a wall).
+ */
+function withSaidBuilding(effects: Effect[], words: string): Effect[] {
+  if (effects.some((e) => e.type === 'terrain' && e.building)) return effects;
+  const said = BUILT.exec(words)?.[1];
+  const at = effects.findIndex((e) => e.type === 'terrain' && e.kind === 'wall');
+  if (!said || at < 0) return effects;
+  const kind = said === '대장간' ? 'forge' : said === '대포' || said === '포대' ? 'cannon' : 'church';
+  return effects.map((e, i) => (i === at ? ({ ...e, building: { kind, name: '', about: '', bonus: 2 } } as Effect) : e));
 }
 
 /** Converts one effect, or returns the first bad square name. */
