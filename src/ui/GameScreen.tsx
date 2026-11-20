@@ -1502,7 +1502,24 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
         />
       )}
 
-      {showPrecedents && <PrecedentList precedents={game.precedents} onClose={() => setShowPrecedents(false)} />}
+      {showPrecedents && (
+        <PrecedentList
+          precedents={game.precedents}
+          onClose={() => setShowPrecedents(false)}
+          // Into the action box, to send again or change first (not for watchers: they have none).
+          onUse={
+            watching || spectator
+              ? undefined
+              : (action) => {
+                  setText(action.slice(0, game.rules.actionMaxLength));
+                  setTab('log');
+                  setCollapsed(false);
+                  setWriteHelp(false);
+                  setShowPrecedents(false);
+                }
+          }
+        />
+      )}
 
       {showGmSettings && (
         <GmSettings
