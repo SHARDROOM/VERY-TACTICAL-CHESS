@@ -5,7 +5,8 @@ import type { GmConfig } from '../ui/GmSettings';
 export type SavedGm =
   | { provider: 'fake' }
   | { provider: 'claude'; model: string; effort: 'low' | 'medium' | 'high' }
-  | { provider: 'openai' | 'gemini'; model: string };
+  | { provider: 'openai' | 'gemini'; model: string }
+  | { provider: 'compatible'; model: string; baseUrl: string };
 
 export interface SavedGame {
   version: 1;
@@ -42,6 +43,8 @@ export function gmForSave(config: GmConfig): SavedGm {
       return { provider: 'fake' };
     case 'claude':
       return { provider: 'claude', model: config.model, effort: config.effort };
+    case 'compatible':
+      return { provider: 'compatible', model: config.model, baseUrl: config.baseUrl };
     default:
       return { provider: config.provider, model: config.model };
   }
@@ -49,11 +52,13 @@ export function gmForSave(config: GmConfig): SavedGm {
 
 /** A GM config from a save: same provider and model, with the key this browser remembers for it (if any). */
 export function gmFromSave(gm: SavedGm, keys: ApiKeys = {}): GmConfig {
-  return gm.provider === 'fake' ? gm : { ...gm, apiKey: keys[gm.provider] ?? '' };
+  if (gm.provider === 'fake') return gm;
+  if (gm.provider === 'compatible') return { ...gm, apiKey: keys.compatible?.[gm.baseUrl] ?? '' };
+  return { ...gm, apiKey: keys[gm.provider] ?? '' };
 }
 
-/** API keys typed in on this browser, one per provider. */
-export type ApiKeys = Partial<Record<'claude' | 'openai' | 'gemini', string>>;
+/** API keys typed in on this browser: one per provider, and for other services one per address. */
+export type ApiKeys = Partial<Record<'claude' | 'openai' | 'gemini', string>> & { compatible?: Record<string, string> };
 
 /** The GM last chosen on this browser and every key typed in: kept only here, never sent to anyone. */
 export interface RememberedGm {
@@ -75,7 +80,16 @@ export function rememberedGm(storage?: Storage): RememberedGm {
   if (!isObj(raw) || !isObj(raw.current) || !isObj(raw.keys)) return none;
   const keys: ApiKeys = {};
   for (const p of PROVIDERS) if (typeof raw.keys[p] === 'string' && raw.keys[p]) keys[p] = raw.keys[p] as string;
+  const others = raw.keys.compatible;
+  if (isObj(others)) {
+    const kept: Record<string, string> = {};
+    for (const [url, k] of Object.entries(others)) if (typeof k === 'string' && k) kept[url] = k;
+    if (Object.keys(kept).length) keys.compatible = kept;
+  }
   const c = raw.current;
+  if (c.provider === 'compatible' && typeof c.model === 'string' && typeof c.baseUrl === 'string') {
+    return { current: { provider: 'compatible', model: c.model, baseUrl: c.baseUrl, apiKey: keys.compatible?.[c.baseUrl] ?? '' }, keys };
+  }
   if (c.provider === 'claude' && typeof c.model === 'string' && (c.effort === 'low' || c.effort === 'medium' || c.effort === 'high')) {
     return { current: { provider: 'claude', model: c.model, effort: c.effort, apiKey: keys.claude ?? '' }, keys };
   }
@@ -92,6 +106,9 @@ export function rememberKeys(keys: ApiKeys, storage?: Storage): void {
   const { current } = rememberedGm(storage);
   const kept: ApiKeys = {};
   for (const p of PROVIDERS) if (keys[p]?.trim()) kept[p] = keys[p]!.trim();
+  const others: Record<string, string> = {};
+  for (const [url, k] of Object.entries(keys.compatible ?? {})) if (k.trim()) others[url] = k.trim();
+  if (Object.keys(others).length) kept.compatible = others;
   try {
     s.setItem(GM_KEY, JSON.stringify({ current: gmForSave(current), keys: kept }));
   } catch {
@@ -104,7 +121,12 @@ export function rememberGm(config: GmConfig, storage?: Storage): void {
   const s = store(storage);
   if (!s) return;
   const { keys } = rememberedGm(storage);
-  if (config.provider !== 'fake') {
+  if (config.provider === 'compatible') {
+    const others = { ...keys.compatible };
+    if (config.apiKey) others[config.baseUrl] = config.apiKey;
+    else delete others[config.baseUrl];
+    keys.compatible = others;
+  } else if (config.provider !== 'fake') {
     if (config.apiKey) keys[config.provider] = config.apiKey;
     else delete keys[config.provider];
   }
@@ -132,6 +154,7 @@ function readConfig(c: unknown): GmConfig | null {
     return { provider: 'claude', model: c.model, effort: c.effort, apiKey };
   }
   if ((c.provider === 'openai' || c.provider === 'gemini') && typeof c.model === 'string') return { provider: c.provider, model: c.model, apiKey };
+  if (c.provider === 'compatible' && typeof c.model === 'string' && typeof c.baseUrl === 'string') return { provider: 'compatible', model: c.model, baseUrl: c.baseUrl, apiKey };
   return null;
 }
 

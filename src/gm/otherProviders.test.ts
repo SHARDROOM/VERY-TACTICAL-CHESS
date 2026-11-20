@@ -51,6 +51,62 @@ describe('shared JSON schema', () => {
   });
 });
 
+describe('another OpenAI-compatible service (기타)', () => {
+  it('cleans the address, names the service and finds its endpoint', async () => {
+    const { chatEndpoint, cleanBaseUrl, isLocalUrl, serviceName } = await import('./compatible');
+    expect(cleanBaseUrl(' https://openrouter.ai/api/v1/ ')).toBe('https://openrouter.ai/api/v1');
+    expect(cleanBaseUrl('http://example.com/v1')).toBeNull();
+    expect(cleanBaseUrl('http://localhost:11434/v1')).toBe('http://localhost:11434/v1');
+    expect(cleanBaseUrl('openrouter')).toBeNull();
+    expect(chatEndpoint('https://api.deepseek.com')).toBe('https://api.deepseek.com/chat/completions');
+    expect(chatEndpoint('https://x.example/v1/chat/completions')).toBe('https://x.example/v1/chat/completions');
+    expect(serviceName('https://api.x.ai/v1')).toBe('xAI');
+    expect(serviceName('https://llm.example.org/v1')).toBe('llm.example.org');
+    expect(isLocalUrl('http://localhost:11434/v1')).toBe(true);
+  });
+
+  it('is made from its config: the endpoint, the key (none for this computer), its name', async () => {
+    const { createGm, missingKey } = await import('./createGm');
+    const config = { provider: 'compatible' as const, baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', apiKey: 'sk-ds' };
+    expect(createGm(config).name).toBe('DeepSeek GM (deepseek-chat)');
+    expect(missingKey({ ...config, apiKey: '' })).toBe(true);
+    expect(createGm({ ...config, apiKey: '' }).name).toContain('API 키 필요');
+    expect(missingKey({ ...config, baseUrl: 'http://localhost:11434/v1', apiKey: '' })).toBe(false);
+  });
+
+  it('steps down to a plain JSON object (schema in the instructions) when the strict schema is refused, and keeps that', async () => {
+    const captured: Captured[] = [];
+    const gm = new OpenAiGameMaster({
+      apiKey: 'sk-ds',
+      model: 'deepseek-chat',
+      endpoint: 'https://api.deepseek.com/chat/completions',
+      label: 'DeepSeek',
+      lenient: true,
+      fetch: sequenceFetch([{ status: 400, body: { error: { message: 'response_format json_schema unsupported' } } }, { body: openaiReply('```json\n' + JSON.stringify(ruling) + '\n```') }], captured),
+    });
+    expect(await gm.rule(req)).toEqual(ruling);
+    expect(captured[0].url).toBe('https://api.deepseek.com/chat/completions');
+    expect(captured[0].body.response_format.type).toBe('json_schema');
+    expect(captured[1].body.response_format).toEqual({ type: 'json_object' });
+    expect(captured[1].body.messages[0].content).toContain('응답 형식');
+    // The next request asks the way that worked.
+    await gm.rule(req);
+    expect(captured[2].body.response_format).toEqual({ type: 'json_object' });
+  });
+
+  it('takes the JSON out of a reasoning block or a sentence, and sends no key to a server on this computer', async () => {
+    const captured: Captured[] = [];
+    const gm = new OpenAiGameMaster({ apiKey: '', model: 'qwen', endpoint: 'http://localhost:11434/v1/chat/completions', label: 'Ollama', lenient: true, fetch: fakeFetch({ body: openaiReply(`<think>음…</think>판정입니다: ${JSON.stringify(ruling)} 끝.`) }, captured) });
+    expect(await gm.rule(req)).toEqual(ruling);
+    expect(captured[0].headers.get('authorization')).toBeNull();
+  });
+
+  it('names the service in its errors', async () => {
+    const gm = new OpenAiGameMaster({ apiKey: 'bad', model: 'm', endpoint: 'https://api.groq.com/openai/v1/chat/completions', label: 'Groq', lenient: true, fetch: fakeFetch({ status: 401, body: { error: { message: 'Invalid API Key' } } }) });
+    await expect(gm.rule(req)).rejects.toThrow(/Groq API 키가 올바르지 않습니다/);
+  });
+});
+
 describe('OpenAI GM', () => {
   const gm = (f: typeof fetch) => new OpenAiGameMaster({ apiKey: 'sk-openai', model: 'gpt-test', fetch: f });
 

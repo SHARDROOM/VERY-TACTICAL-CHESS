@@ -15,6 +15,22 @@ export function jsonFromText<T extends z.ZodTypeAny>(text: string, schema: T): z
   return checked.data;
 }
 
+/**
+ * The same, for a model that may wrap its JSON: a reasoning block (<think>…</think>), a code fence
+ * or a sentence around it. The outermost {…} is taken.
+ */
+export function jsonFromLooseText<T extends z.ZodTypeAny>(text: string, schema: T): z.infer<T> {
+  const bare = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  try {
+    return jsonFromText(bare, schema);
+  } catch (err) {
+    const start = bare.indexOf('{');
+    const end = bare.lastIndexOf('}');
+    if (start < 0 || end <= start) throw err;
+    return jsonFromText(bare.slice(start, end + 1), schema);
+  }
+}
+
 export function rulingFromText(text: string): unknown {
   return jsonFromText(text, GmRulingReplySchema);
 }

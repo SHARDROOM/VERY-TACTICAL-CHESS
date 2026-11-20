@@ -14,6 +14,7 @@ import {
 import { saveName, type AiBrains } from '../session/storage';
 import { GmSettings, type GmConfig } from './GmSettings';
 import { CLAUDE_MODELS } from '../gm/claudeGm';
+import { serviceName } from '../gm/compatible';
 import { LobbyBackdrop } from './LobbyBackdrop';
 import { ConnectionOverlay } from './ConnectionOverlay';
 import { SettingsMenu, useFullscreen } from './SettingsMenu';
@@ -38,6 +39,7 @@ interface Props {
 function brainLabel(config: GmConfig | undefined): string {
   if (!config) return 'GM과 같이';
   if (config.provider === 'fake') return '내장 AI';
+  if (config.provider === 'compatible') return `${serviceName(config.baseUrl)} · ${config.model}`;
   const model = config.provider === 'claude' ? (CLAUDE_MODELS.find((m) => m.id === config.model)?.label ?? config.model) : config.model;
   return `${model}${config.apiKey ? '' : ' (키 없음)'}`;
 }

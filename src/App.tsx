@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { GameScreen } from './ui/GameScreen';
 import { Lobby } from './ui/Lobby';
 import { GmSettings, type GmConfig } from './ui/GmSettings';
-import { createGm } from './gm/createGm';
+import { createGm, missingKey } from './gm/createGm';
 import { LocalSession } from './session/localSession';
 import { HostSession } from './session/hostSession';
 import { GuestSession } from './session/guestSession';
@@ -99,12 +99,12 @@ export default function App() {
   const resumeGm = (game: SavedGame | null): GmConfig => {
     const config = game ? gmFromSave(game.gm, rememberedGm().keys) : gmConfig;
     setGmConfig(config);
-    setAskForKey(config.provider !== 'fake' && !config.apiKey);
+    setAskForKey(missingKey(config));
     return config;
   };
 
   const keyNotice = (config: GmConfig) =>
-    config.provider !== 'fake' && !config.apiKey ? ' ⚙ GM 설정에서 API 키를 입력해 주세요.' : '';
+    missingKey(config) ? ' ⚙ GM 설정에서 API 키를 입력해 주세요.' : '';
 
   /** One screen: two people (hotseat), against the AI ('vsAi', on black), or watching two AIs ('watch'). */
   const hotseat = (resume: SavedGame | null = null, mode: 'people' | 'vsAi' | 'watch' = 'people') => {

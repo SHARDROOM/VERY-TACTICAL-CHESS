@@ -3,13 +3,16 @@ import { rememberKeys, rememberedGm } from '../session/storage';
 import { CLAUDE_MODELS, type GmEffort } from '../gm/claudeGm';
 import { OPENAI_MODEL_SUGGESTIONS } from '../gm/openaiGm';
 import { GEMINI_MODEL_SUGGESTIONS } from '../gm/geminiGm';
+import { COMPATIBLE_PRESETS, cleanBaseUrl, isLocalUrl, presetFor } from '../gm/compatible';
 
 type LlmProvider = 'claude' | 'openai' | 'gemini';
 
 export type GmConfig =
   | { provider: 'fake' }
   | { provider: 'claude'; apiKey: string; model: string; effort: GmEffort }
-  | { provider: 'openai' | 'gemini'; apiKey: string; model: string };
+  | { provider: 'openai' | 'gemini'; apiKey: string; model: string }
+  /** Another service speaking OpenAI's Chat Completions (기타): its address, key and model (see compatible.ts). */
+  | { provider: 'compatible'; apiKey: string; model: string; baseUrl: string };
 
 interface Props {
   current: GmConfig;
@@ -32,6 +35,7 @@ const PROVIDERS: { id: GmConfig['provider']; name: string; note: string }[] = [
   { id: 'claude', name: 'Claude', note: 'Anthropic API 키가 필요합니다.' },
   { id: 'openai', name: 'OpenAI', note: 'OpenAI API 키가 필요합니다.' },
   { id: 'gemini', name: 'Gemini', note: 'Google API 키가 필요합니다. 무료 등급 키도 됩니다.' },
+  { id: 'compatible', name: '기타', note: 'OpenRouter, DeepSeek, Groq, xAI, Mistral, 내 컴퓨터의 Ollama 등 OpenAI 호환 API.' },
   { id: 'fake', name: '가짜 GM', note: '키 없이 시험해 볼 때. 칸 좌표가 있는 문장만 알아듣고, 혼돈은 일으키지 않습니다.' },
 ];
 
@@ -62,27 +66,50 @@ export function GmSettings({ current, onSave, onClose, brain }: Props) {
   const [provider, setProvider] = useState<GmConfig['provider'] | 'same'>(brain?.usesGm ? 'same' : current.provider);
   // Keys and models are kept per provider while the dialog is open, so switching tabs loses nothing.
   // Every key typed in on this browser is filled in again.
+  const remembered = rememberedGm().keys;
   const [keys, setKeys] = useState<Record<LlmProvider, string>>(() => ({
-    claude: '',
-    openai: '',
-    gemini: '',
-    ...rememberedGm().keys,
-    ...(current.provider !== 'fake' && current.apiKey && { [current.provider]: current.apiKey }),
+    claude: remembered.claude ?? '',
+    openai: remembered.openai ?? '',
+    gemini: remembered.gemini ?? '',
+    ...(current.provider !== 'fake' && current.provider !== 'compatible' && current.apiKey && { [current.provider]: current.apiKey }),
   }));
   const [models, setModels] = useState<Record<LlmProvider, string>>({
     ...DEFAULT_MODEL,
-    ...(current.provider !== 'fake' && { [current.provider]: current.model }),
+    ...(current.provider !== 'fake' && current.provider !== 'compatible' && { [current.provider]: current.model }),
   });
   const [effort, setEffort] = useState<GmEffort>(current.provider === 'claude' ? current.effort : 'low');
+  // Another service: its address and model, and a key per address (switching services keeps each one's).
+  const [other, setOther] = useState(() =>
+    current.provider === 'compatible' ? { baseUrl: current.baseUrl, model: current.model } : { baseUrl: COMPATIBLE_PRESETS[0].baseUrl, model: COMPATIBLE_PRESETS[0].models[0] ?? '' },
+  );
+  const [otherKeys, setOtherKeys] = useState<Record<string, string>>(() => ({
+    ...remembered.compatible,
+    ...(current.provider === 'compatible' && current.apiKey && { [current.baseUrl]: current.apiKey }),
+  }));
+  const otherUrl = cleanBaseUrl(other.baseUrl);
+  const otherKey = (otherUrl && otherKeys[otherUrl]) || '';
+  const preset = presetFor(other.baseUrl);
+  const otherLocal = !!otherUrl && isLocalUrl(otherUrl);
+  const pickPreset = (id: string) => {
+    const p = COMPATIBLE_PRESETS.find((x) => x.id === id);
+    if (!p) return setOther((o) => ({ ...o, baseUrl: '' }));
+    // A model of the last service's means nothing here: the new one's first suggestion, or blank.
+    setOther((o) => ({ baseUrl: p.baseUrl, model: preset && o.model && !preset.models.includes(o.model) ? o.model : (p.models[0] ?? '') }));
+  };
 
-  const llm = provider === 'fake' || provider === 'same' ? null : provider;
-  const canSave = !llm || (keys[llm].trim().length > 0 && models[llm].trim().length > 0);
+  const llm = provider === 'fake' || provider === 'same' || provider === 'compatible' ? null : provider;
+  const otherMissing = provider === 'compatible' && !otherLocal && !otherKey.trim() ? '키' : null;
+  const canSave =
+    provider === 'compatible'
+      ? !!otherUrl && other.model.trim().length > 0 && !otherMissing
+      : !llm || (keys[llm].trim().length > 0 && models[llm].trim().length > 0);
 
   const save = () => {
     if (!canSave) return;
     if (provider === 'same') return brain?.onUseGm();
     // A seat's key is kept with that seat (its caller remembers it), not as the GM's.
-    if (!brain) rememberKeys(keys);
+    if (!brain) rememberKeys({ ...keys, compatible: otherKeys });
+    if (provider === 'compatible' && otherUrl) return onSave({ provider: 'compatible', baseUrl: otherUrl, model: other.model.trim(), apiKey: otherKey.trim() });
     if (!llm) return onSave({ provider: 'fake' });
     const base = { apiKey: keys[llm].trim(), model: models[llm].trim() };
     onSave(llm === 'claude' ? { provider: llm, ...base, effort } : { provider: llm, ...base });
@@ -113,6 +140,55 @@ export function GmSettings({ current, onSave, onClose, brain }: Props) {
             </label>
           ))}
         </fieldset>
+
+        {provider === 'compatible' && (
+          <>
+            <label className="field">
+              <span>서비스</span>
+              <select value={preset?.id ?? 'custom'} onChange={(e) => pickPreset(e.target.value)}>
+                {COMPATIBLE_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+                <option value="custom">직접 입력</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>API 주소</span>
+              <input
+                value={other.baseUrl}
+                onChange={(e) => setOther((o) => ({ ...o, baseUrl: e.target.value }))}
+                type="url"
+                placeholder="https://…/v1"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              {other.baseUrl.trim() && !otherUrl && <small className="field-error">https 주소여야 합니다(http는 내 컴퓨터 localhost만).</small>}
+              {!other.baseUrl.trim() && <small>OpenAI 호환 API의 주소. 뒤에 /chat/completions가 붙습니다.</small>}
+            </label>
+            <label className="field">
+              <span>API 키{otherLocal ? ' (없어도 됨)' : ''}</span>
+              <input
+                type="password"
+                value={otherKey}
+                onChange={(e) => otherUrl && setOtherKeys((k) => ({ ...k, [otherUrl]: e.target.value }))}
+                disabled={!otherUrl}
+                placeholder={otherLocal ? '내 컴퓨터의 서버는 비워 두세요' : '이 서비스의 API 키'}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+            <label className="field">
+              <span>모델</span>
+              <input list="compatible-models" value={other.model} onChange={(e) => setOther((o) => ({ ...o, model: e.target.value }))} placeholder="서비스 문서의 모델 이름" spellCheck={false} />
+              <datalist id="compatible-models">
+                {(preset?.models ?? []).map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+            </label>
+          </>
+        )}
+
 
         {llm && (
           <>
@@ -162,26 +238,35 @@ export function GmSettings({ current, onSave, onClose, brain }: Props) {
                 </select>
               </label>
             )}
-            <ul className="notes">
-              {brain ? (
-                <>
-                  <li>키는 이 자리의 AI 몫으로 이 브라우저에만 기억됩니다. 다른 사람에게는 전송되지 않습니다. 지우려면 "GM과 같이"로 바꾸세요.</li>
-                  <li>이 AI가 특수 행동을 지을 때마다 이 키로 API 요금이 청구됩니다. 판정은 GM의 키로 따로 청구됩니다.</li>
-                </>
-              ) : (
-                <>
-                  <li>키는 이 브라우저에만 기억되어 새로고침해도 다시 넣지 않아도 됩니다. 상대 플레이어에게는 전송되지 않습니다. 지우려면 칸을 비우고 다른 GM(예: 가짜 GM)으로 저장하세요. 같이 쓰는 컴퓨터라면 다 쓴 뒤 지워 주세요.</li>
-                  <li>판정을 요청할 때마다 이 키로 API 요금이 청구됩니다.</li>
-                </>
-              )}
-              <li>{KEY_HINT[llm].where}</li>
-            </ul>
           </>
+        )}
+
+        {(llm || provider === 'compatible') && (
+          <ul className="notes">
+            {brain ? (
+              <>
+                <li>키는 이 자리의 AI 몫으로 이 브라우저에만 기억됩니다. 다른 사람에게는 전송되지 않습니다. 지우려면 "GM과 같이"로 바꾸세요.</li>
+                <li>이 AI가 특수 행동을 지을 때마다 이 키로 API 요금이 청구됩니다. 판정은 GM의 키로 따로 청구됩니다.</li>
+              </>
+            ) : (
+              <>
+                <li>키는 이 브라우저에만 기억되어 새로고침해도 다시 넣지 않아도 됩니다. 상대 플레이어에게는 전송되지 않습니다. 지우려면 칸을 비우고 다른 GM(예: 가짜 GM)으로 저장하세요. 같이 쓰는 컴퓨터라면 다 쓴 뒤 지워 주세요.</li>
+                <li>판정을 요청할 때마다 이 키로 API 요금이 청구됩니다.</li>
+              </>
+            )}
+            {llm && <li>{KEY_HINT[llm].where}</li>}
+            {provider === 'compatible' && (
+              <>
+                {preset && <li>{preset.where}</li>}
+                <li>판정은 긴 JSON으로 받습니다. 작은 모델이나 JSON을 잘 못 쓰는 모델은 판정이 자주 실패할 수 있으니, 되도록 큰 모델을 고르세요.</li>
+              </>
+            )}
+          </ul>
         )}
 
         <div className="choice-row">
           <button type="submit" className="primary" disabled={!canSave}>
-            {llm && !keys[llm].trim() ? 'API 키를 넣어 주세요' : brain ? '이 두뇌로 정하기' : '이 GM으로 정하기'}
+            {(llm && !keys[llm].trim()) || otherMissing ? 'API 키를 넣어 주세요' : brain ? '이 두뇌로 정하기' : '이 GM으로 정하기'}
           </button>
           <button type="button" onClick={onClose}>닫기</button>
         </div>

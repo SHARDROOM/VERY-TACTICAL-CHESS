@@ -325,4 +325,18 @@ describe('remembered GM', () => {
     expect(rememberedGm(storage)).toEqual({ current: { provider: 'fake' }, keys: { openai: 'sk-2' } });
     expect(JSON.stringify(gmForSave({ provider: 'openai', apiKey: 'sk-2', model: 'gpt' }))).not.toContain('sk-2');
   });
+
+  it('keeps another service (기타) with a key per address, and gives a save its key back', async () => {
+    const { rememberGm, rememberKeys, rememberedGm } = await import('./storage');
+    const storage = new MemoryStorage();
+    const router = 'https://openrouter.ai/api/v1';
+    rememberKeys({ compatible: { [router]: ' sk-or ', 'https://api.deepseek.com': 'sk-ds', 'https://x.example/v1': ' ' } }, storage);
+    rememberGm({ provider: 'compatible', baseUrl: router, model: 'openrouter/auto', apiKey: 'sk-or' }, storage);
+    const back = rememberedGm(storage);
+    expect(back.current).toEqual({ provider: 'compatible', baseUrl: router, model: 'openrouter/auto', apiKey: 'sk-or' });
+    expect(back.keys.compatible).toEqual({ [router]: 'sk-or', 'https://api.deepseek.com': 'sk-ds' });
+    const saved = gmForSave(back.current);
+    expect(JSON.stringify(saved)).not.toContain('sk-or');
+    expect(gmFromSave(saved, back.keys)).toEqual(back.current);
+  });
 });

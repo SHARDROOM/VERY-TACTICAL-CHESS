@@ -62,7 +62,7 @@ input, select { font: inherit; }
 .input-row .write-help.active { background: var(--accent); border-color: var(--accent); color: var(--bg, #1b1410); }
 .counter.write-hint { color: var(--accent); }
 .input-row input, .join-row input, .link-row input, .name-field input, .rules-form select, .doodle-note,
-.settings input[type='password'], .settings input[list], .settings select {
+.settings input[type='password'], .settings input[list], .settings input[type='url'], .settings select {
   flex: 1; min-width: 0; background: rgba(0, 0, 0, 0.35); color: var(--text); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 10px; font-size: 0.9375rem;
 }
@@ -364,6 +364,7 @@ select option { background: var(--walnut); }
 .settings .field { display: flex; flex-direction: column; gap: 4px; font-size: 0.9375rem; }
 .settings .field span { color: var(--muted); }
 .settings .field small { color: var(--muted); font-size: 0.8125rem; }
+.settings .field small.field-error { color: var(--danger); }
 .settings .notes { margin: 0; padding-left: 18px; color: var(--muted); font-size: 0.8125rem; display: flex; flex-direction: column; gap: 3px; line-height: 1.5; }
 .settings input[type='radio'], .settings input[type='checkbox'] { accent-color: var(--accent); }
 .menu-backdrop { position: absolute; inset: 0; z-index: 4; }
