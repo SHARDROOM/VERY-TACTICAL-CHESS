@@ -121,6 +121,27 @@ describe('AI players (hotseat)', () => {
     }
   }, 30000);
 
+  it('a model still busy after its tries: the AI rests from special actions for two turns (사용자 요청: slow answers)', async () => {
+    const { GmError } = await import('../gm/errors');
+    const s = game({ black: { level: 'easy', specials: 'often' } });
+    const brain = new FakeGameMaster(0);
+    let calls = 0;
+    brain.act = () => (calls++, Promise.reject(new GmError('busy', 'busy')));
+    const notices: string[] = [];
+    const local = new LocalSession(new FakeGameMaster(0), { initialState: { ...s, ap: { ...s.ap, black: 4 } }, phase: 'playing', aiPace: 0, chance: () => 0.3 });
+    local.setBrains({ black: brain });
+    local.subscribe((e: SessionEvent) => e.kind === 'notice' && notices.push(e.text));
+    local.request({ type: 'move', from: 12, to: 28 });
+    await until(() => local.view().state.turn === 'white', 15000);
+    expect(calls).toBe(4);
+    expect(notices.some((t) => t.includes('특수 행동을 쉬고'))).toBe(true);
+    // Its next turn: no model call at all.
+    local.request({ type: 'move', from: 11, to: 27 });
+    await until(() => local.view().state.turn === 'white', 15000);
+    expect(calls).toBe(4);
+    local.dispose();
+  }, 30000);
+
   it('writes its declaration anew when the GM finds it impossible, telling its model why (two more times at most)', async () => {
     const s = game({ black: { level: 'easy', specials: 'often' } });
     const gm = new FakeGameMaster(0);

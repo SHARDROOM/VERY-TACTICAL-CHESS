@@ -54,6 +54,13 @@ const AI_SLOW_MS = 2400;
 const AI_FAST_MS = 120;
 /** An AI's declaration found impossible (or not ruled within the rules) is written anew this many more times. */
 const AI_REWRITES = 2;
+/**
+ * The most an AI spends on one turn's special action, model calls, waits and rewrites together
+ * (사용자 요청: answers came slowly; a busy model could hold a turn for minutes). Then it plays chess.
+ */
+const AI_SPECIAL_BUDGET_MS = 45_000;
+/** A model found busy or out of reach: the AI leaves special actions alone for this many of its turns. */
+const AI_BUSY_REST_TURNS = 2;
 /** How long one try may take: the AI writing a sentence, the GM ruling on it (a long reply). Shortened (사용자 요청). */
 const AI_COMPOSE_TIMEOUT_MS = 20_000;
 const AI_RULING_TIMEOUT_MS = 60_000;
@@ -415,14 +422,22 @@ export class Authority {
         // A declaration the GM finds impossible, or cannot rule on within the rules, is let go and
         // written anew with the reason, up to AI_REWRITES more times (사용자 요청).
         let problem: string | undefined;
-        for (let n = 0; n <= AI_REWRITES; n++) {
-          const action = await this.aiCompose(who, problem);
+        const deadline = this.now() + AI_SPECIAL_BUDGET_MS;
+        for (let n = 0; n <= AI_REWRITES && this.now() < deadline; n++) {
+          const action = await this.aiCompose(who, problem, deadline);
           if (generation !== this.generation) return;
+          if (action === 'busy') {
+            this.restFromBusy(who.color);
+            break;
+          }
           if (!action) break;
-          const outcome = await this.declare(action, who.color, true);
+          const outcome = await this.declare(action, who.color, true, deadline);
           if (generation !== this.generation) return;
-          // The GM cannot be reached (even after asking again): it just plays chess this turn.
-          if (outcome === 'unreachable') break;
+          // The GM cannot be reached (even after asking again): it just plays chess, and rests a while.
+          if (outcome === 'unreachable') {
+            this.restFromBusy(who.color);
+            break;
+          }
           const p = this.state.pending;
           if (p?.color === who.color) {
             if (p.ruling.feasible) return;
@@ -468,7 +483,7 @@ export class Authority {
    * came). A busy, slow or unreachable model, or a reply without a declaration, is asked again
    * (retry.ts); `problem` says why its last declaration did not work.
    */
-  private async aiCompose({ color, seat }: { color: Color; seat: AiSeat }, problem?: string): Promise<string | null> {
+  private async aiCompose({ color, seat }: { color: Color; seat: AiSeat }, problem?: string, deadline?: number): Promise<string | null | 'busy'> {
     const generation = this.generation;
     this.setBusy(true);
     try {
@@ -482,14 +497,20 @@ export class Authority {
           if (!action || action === this.aiDropped[color]) throw new GmError('선언이 없습니다.', 'format');
           return action;
         },
-        { timeoutMs: AI_COMPOSE_TIMEOUT_MS, pace: this.aiPace, stillWanted: () => generation === this.generation, onRetry: (kind, n) => this.retryNotice(color, kind, n) },
+        { timeoutMs: AI_COMPOSE_TIMEOUT_MS, pace: this.aiPace, stillWanted: () => generation === this.generation, onRetry: (kind, n) => this.retryNotice(color, kind, n), deadline, now: this.now },
       );
-    } catch {
-      // The model would not, even asked again: the AI just plays chess this turn.
-      return null;
+    } catch (err) {
+      // The model would not, even asked again: the AI just plays chess this turn (a busy one: a while).
+      return isTransient(err) && err.kind !== 'format' ? 'busy' : null;
     } finally {
       if (generation === this.generation) this.setBusy(false);
     }
+  }
+
+  /** The model is busy or out of reach: no special actions for this AI's next few turns (it plays chess meanwhile). */
+  private restFromBusy(color: Color): void {
+    this.aiRestUntil[color] = this.state.turnNumber + AI_BUSY_REST_TURNS * playersOf(this.state.map).length + 1;
+    this.emit({ kind: 'notice', to: 'all', text: `🤖 ${COLOR_NAME[color]} AI: 모델이 붐벼서 ${AI_BUSY_REST_TURNS}턴 동안 특수 행동을 쉬고 일반 수를 둡니다.`, tone: 'warn' });
   }
 
   /** Everyone sees that an AI's model is being asked again (not for a malformed reply: that is quick). */
@@ -614,7 +635,7 @@ export class Authority {
    * slow or unreachable GM is asked again (retry.ts). What came of it: a ruling proposed, the GM
    * not reachable, or no ruling the rules accept.
    */
-  private async declare(action: string, actor: Color | 'any', patient = false): Promise<'proposed' | 'unreachable' | 'refused'> {
+  private async declare(action: string, actor: Color | 'any', patient = false, deadline?: number): Promise<'proposed' | 'unreachable' | 'refused'> {
     const notice = (text: string) => {
       this.emit({ kind: 'notice', to: actor, text, tone: 'error' });
       return 'refused' as const;
@@ -642,6 +663,8 @@ export class Authority {
               pace: this.aiPace,
               stillWanted: () => generation === this.generation,
               onRetry: (kind, n) => actor !== 'any' && this.retryNotice(actor, kind, n),
+              deadline,
+              now: this.now,
             })
           : await ask();
         if (generation !== this.generation) return 'refused';

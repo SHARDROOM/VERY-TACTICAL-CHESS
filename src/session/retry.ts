@@ -52,18 +52,25 @@ export interface RetryOptions {
   stillWanted: () => boolean;
   /** Told before each extra try: what went wrong and which try it is (1..AI_RETRIES). */
   onRetry?: (kind: Exclude<GmErrorKind, 'other'>, n: number) => void;
+  /** No new try starts after this (ms, by `now`): a busy model is not waited on for minutes. */
+  deadline?: number;
+  now?: () => number;
 }
 
 /** Calls `call` until it succeeds, a non-transient error comes, the tries run out, or it is no longer wanted. */
-export async function withRetries<T>(call: () => Promise<T>, { timeoutMs, pace, stillWanted, onRetry }: RetryOptions): Promise<T> {
+export async function withRetries<T>(call: () => Promise<T>, { timeoutMs, pace, stillWanted, onRetry, deadline, now = Date.now }: RetryOptions): Promise<T> {
   for (let n = 0; ; n++) {
+    // A try never runs past the deadline either.
+    const limit = deadline === undefined ? timeoutMs : Math.max(1, Math.min(timeoutMs, deadline - now()));
     try {
-      return await timeLimited(call(), timeoutMs);
+      return await timeLimited(call(), limit);
     } catch (err) {
       if (!isTransient(err) || n >= AI_RETRIES || !stillWanted()) throw err;
       const kind = err.kind as Exclude<GmErrorKind, 'other'>;
-      onRetry?.(kind, n + 1);
       const wait = RETRY_WAIT_MS[kind][n] * pace;
+      // Out of time for another go (a model this busy is not worth more waiting this turn).
+      if (deadline !== undefined && now() + wait + 1000 > deadline) throw err;
+      onRetry?.(kind, n + 1);
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       if (!stillWanted()) throw err;
     }
