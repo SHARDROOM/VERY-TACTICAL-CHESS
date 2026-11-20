@@ -54,9 +54,9 @@ const AI_SLOW_MS = 2400;
 const AI_FAST_MS = 120;
 /** An AI's declaration found impossible (or not ruled within the rules) is written anew this many more times. */
 const AI_REWRITES = 2;
-/** How long one try may take: the AI writing a sentence, the GM ruling on it (a long reply). */
-const AI_COMPOSE_TIMEOUT_MS = 45_000;
-const AI_RULING_TIMEOUT_MS = 100_000;
+/** How long one try may take: the AI writing a sentence, the GM ruling on it (a long reply). Shortened (사용자 요청). */
+const AI_COMPOSE_TIMEOUT_MS = 20_000;
+const AI_RULING_TIMEOUT_MS = 60_000;
 
 /** How long a fall plays on screen; the clock does not run during it. */
 export const FALL_SHOW_MS = 3200;

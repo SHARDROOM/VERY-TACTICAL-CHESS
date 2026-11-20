@@ -12,7 +12,7 @@ export { applyEffects, validateRuling, type EffectContext } from './effects';
 export { checkActor, distance, targetsOf } from './actor';
 export { impulseOf, impulseKindOf, impulseTargets, commandable, type ImpulseKind } from './vanguard';
 export { saverFor } from './guard';
-export { chooseMove, vanguardOrder, isAiOnly, standing, clashCaptures, clashBuffs, type ClashCapture, aiExile, aiHints, aiShouldRoll, aiMaxDc, evaluate, AI_LEVELS, AI_LEVEL_NAME, AI_SPECIALS, AI_SPECIALS_NAME, type AiLevel, type AiSpecials, type AiSeat, type AiMove } from './ai';
+export { chooseMove, vanguardOrder, isAiOnly, standing, clashCaptures, clashBuffs, type ClashCapture, aiExile, aiHints, aiShouldRoll, aiMaxDc, evaluate, wanderRisk, AI_LEVELS, AI_LEVEL_NAME, AI_SPECIALS, AI_SPECIALS_NAME, type AiLevel, type AiSpecials, type AiSeat, type AiMove } from './ai';
 export { hasTag, isStunned, isShielded, isBurning, isFloating, CORE_TAGS, MAX_MOVE_TIMES, movePatterns, movesReplaced, moveTimesOf, ridersOf, stackOf } from './tags';
 export { DEFAULT_RULES, DIE_SIDES, DICE_PER_ROLL, ROLL_MAX, ROLL_MIN, withDefaultRules, cleanAiSeats, type RuleConfig } from './config';
 export * from './staging';

@@ -1,4 +1,4 @@
-import { rulingContext } from './game';
+import { rulingContext, wanderTargets } from './game';
 import { CLASH_ROLLS, canResist, clashMultiplier, clashWinChance } from './clash';
 import { saverFor } from './guard';
 import { legalTargets, movesFrom } from './moves';
@@ -12,8 +12,10 @@ import { hasTag, withoutTag } from './tags';
  * with alpha-beta over this game's own moves (tags, terrain, the air, the hexagon), on a light copy
  * of the rules: a capture into a clash is weighed by its chances, a capture a guard or a hostage
  * takes for the target counts as such, a pawn reaching the far side becomes a queen. On the
- * hexagon every opponent is taken to play against this AI (paranoid search). Special actions,
- * chaos and the wanderers are left out.
+ * hexagon every opponent is taken to play against this AI (paranoid search). Special actions and
+ * chaos are left out; chaos's gray wanderers belong to no one (taking one gains nothing in itself)
+ * but are a risk: each steps at random whenever a turn passes and takes what it lands on, so every
+ * piece one could take counts as lost by the chance it picks that step (see wanderRisk).
  *
  * Four levels: 쉬움 (one move ahead, and slips now and then), 보통 (the reply too), 어려움 (three
  * moves ahead, the odd slip), 무아 (ever deeper until its time is up, captures followed to the
@@ -119,13 +121,32 @@ function placeBonus(p: Piece, sq: Square): number {
   return b;
 }
 
+/**
+ * What the gray wanderers may take next, as expected losses by side (사용자 요청: how the AI sees
+ * them): a wanderer picks one of its steps at random, so a piece it could take is lost with
+ * chance 1 / (its steps). Kings and pieces with clash gear are never taken by one.
+ */
+export function wanderRisk(board: Board, wanderers: readonly Square[]): Partial<Record<Color, number>> {
+  const risk: Partial<Record<Color, number>> = {};
+  for (const sq of wanderers) {
+    const steps = wanderTargets(board, sq);
+    for (const to of steps) {
+      const victim = board[to];
+      if (victim && victim.color !== 'gray') risk[victim.color] = (risk[victim.color] ?? 0) + worth(victim) / steps.length;
+    }
+  }
+  return risk;
+}
+
 /** The board as `me` sees it: its pieces against the others' (each opponent's share on the hexagon). */
 export function evaluate(board: Board, me: Color): number {
   const sides = playersOf();
   const opponents = Math.max(1, sides.length - 1);
   let score = 0;
   const kings = new Set<Color>();
+  const wanderers: Square[] = [];
   board.forEach((p, sq) => {
+    if (p?.color === 'gray') wanderers.push(sq);
     if (!p || p.color === 'gray') return;
     if (p.type === 'king') kings.add(p.color);
     const v = worth(p) + placeBonus(p, sq);
@@ -133,8 +154,26 @@ export function evaluate(board: Board, me: Color): number {
   });
   if (!kings.has(me)) return -KING_LOST;
   for (const c of sides) if (c !== me && !kings.has(c) && board.some((p) => p?.color === c)) score += 40;
+  // What the wanderers may take before anyone can answer: a risk to every side alike.
+  if (wanderers.length) score += wanderScore(board, me, wanderers);
   return score;
 }
+
+/** The wanderers' risk on `board` as `me` counts it (its own losses against the others' share). */
+function wanderScore(board: Board, me: Color, wanderers?: readonly Square[]): number {
+  const grays = wanderers ?? board.flatMap((p, sq) => (p?.color === 'gray' ? [sq] : []));
+  if (!grays.length) return 0;
+  const opponents = Math.max(1, playersOf().length - 1);
+  let score = 0;
+  for (const [c, v] of Object.entries(wanderRisk(board, grays))) score += c === me ? -v : v / opponents;
+  return score;
+}
+
+/**
+ * The wanderers step after every move (whenever a turn passes), not only at the end of what the
+ * search looks at: a position passed through on the way costs its risk too (a leaf's is in evaluate).
+ */
+const stepRisk = (board: Board, ctx: Ctx, childDepth: number) => (ctx.wanderers && childDepth > 0 ? wanderScore(board, ctx.me) : 0);
 
 /** Who moves after `turn` on `board`: the next in turn order that still has pieces. */
 function nextTurn(board: Board, turn: Color): Color {
@@ -153,6 +192,8 @@ interface Ctx {
   deadline: number;
   quiet: number;
   nodes: number;
+  /** Gray wanderers are on the board (their risk is counted along the way, see stepRisk). */
+  wanderers?: boolean;
 }
 
 class OutOfTime extends Error {}
@@ -248,7 +289,11 @@ function search(board: Board, turn: Color, depth: number, alpha: number, beta: n
     let v = 0;
     const outcomes = play(board, from, to);
     // A clash can go either way: each outcome is searched in full (bounds do not hold for a mix).
-    for (const o of outcomes) v += o.p * search(o.board, next(o.board), depth - 1, outcomes.length > 1 ? -Infinity : alpha, outcomes.length > 1 ? Infinity : beta, ctx, ply + 1);
+    for (const o of outcomes) {
+      // The risk on the way shifts the child's window by as much (the bounds stay exact).
+      const risk = stepRisk(o.board, ctx, depth - 1);
+      v += o.p * (search(o.board, next(o.board), depth - 1, outcomes.length > 1 ? -Infinity : alpha - risk, outcomes.length > 1 ? Infinity : beta - risk, ctx, ply + 1) + risk);
+    }
     if (maximizing) {
       if (v > best) best = v;
       if (best > alpha) alpha = best;
@@ -290,7 +335,7 @@ export function chooseMove(state: GameState, level: AiLevel, random: () => numbe
   }
   if (state.chain) roots.push({ from: state.chain.at, to: null });
   if (!roots.length) return null;
-  const ctx: Ctx = { me, terrain, deadline: now() + cfg.ms, quiet: cfg.quiet, nodes: 0 };
+  const ctx: Ctx = { me, terrain, deadline: now() + cfg.ms, quiet: cfg.quiet, nodes: 0, wanderers: board.some((p) => p?.color === 'gray') };
   const after = (m: AiMove) => (m.to === null ? [{ board, p: 1 }] : play(board, m.from, m.to));
   // Captures first, so a deadline mid-way has already looked at them.
   const ordered = [...roots].sort((a, b) => (b.to !== null && board[b.to] ? 1 : 0) - (a.to !== null && board[a.to] ? 1 : 0));
@@ -303,7 +348,10 @@ export function chooseMove(state: GameState, level: AiLevel, random: () => numbe
       for (const m of ordered) {
         let v = 0;
         const outcomes = after(m);
-        for (const o of outcomes) v += o.p * search(o.board, nextTurn(o.board, me), depth - 1, outcomes.length > 1 ? -Infinity : alpha - 1e-6, Infinity, ctx, 1);
+        for (const o of outcomes) {
+          const risk = stepRisk(o.board, ctx, depth - 1);
+          v += o.p * (search(o.board, nextTurn(o.board, me), depth - 1, outcomes.length > 1 ? -Infinity : alpha - 1e-6 - risk, Infinity, ctx, 1) + risk);
+        }
         round.set(m, v);
         alpha = Math.max(alpha, v);
       }
@@ -480,6 +528,24 @@ export function aiHints(state: GameState, me: Color): string[] {
   });
   const out: string[] = [];
   if (danger.length) out.push(`위험(공격받는데 지켜 주는 기물이 없음): ${danger.slice(0, 4).join(', ')}`);
+  // The gray wanderers: no one's, moving at random whenever a turn passes, taking what they land on.
+  const wanderLines = board.flatMap((p, sq) => {
+    if (p?.color !== 'gray') return [];
+    const steps = wanderTargets(board, sq, terrain);
+    const title = (p.tags ?? []).find((t) => t.turnsLeft === null && !t.clash && !t.skill && !t.mind)?.name;
+    const prey = steps.filter((to) => board[to] && board[to]!.color !== 'gray');
+    const mine = prey.filter((to) => board[to]!.color === me).map((to) => name(to));
+    const theirs = prey.filter((to) => board[to]!.color !== me).map((to) => name(to));
+    const odds = steps.length ? `수마다 1/${steps.length}` : '움직일 곳 없음';
+    const parts = [mine.length ? `내 ${mine.join(', ')}을(를) 잡을 수 있음(${odds})` : '', theirs.length ? `상대 ${theirs.join(', ')}도 노림` : ''].filter(Boolean);
+    const takers = isAttacked(board, sq, me, terrain) ? '내 기물로 잡을 수 있음' : '';
+    return [`${name(sq)}${title ? `(${title})` : ''}: ${[...parts, takers].filter(Boolean).join(', ') || '지금은 아무도 노리지 않음'}`];
+  });
+  if (wanderLines.length) {
+    out.push(
+      `떠돌이(회색, 누구의 편도 아님. 턴이 넘어갈 때마다 무작위로 한 수 움직여 그 칸의 기물을 잡음, 킹과 합 장비가 있는 기물은 못 잡음. 잡아도 점수는 없지만 위협이 사라지고, 회유해 내 편으로 만들 수도 있음): ${wanderLines.slice(0, 4).join('; ')}`,
+    );
+  }
   if (chance.length) out.push(`기회(공짜로 잡을 수 있음): ${chance.slice(0, 4).join(', ')}`);
   // Captures into a clash: the odds of each attacker, by target.
   const clashes = clashCaptures(state, me);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aiExile, aiHints, aiShouldRoll, applyCommand, clashBuffs, clashCaptures, standing, chooseMove, createInitialState, createStateFrom, squareName, type AiLevel, type Effect, type GameState, type Ruling } from './index';
+import { aiExile, aiHints, evaluate, wanderRisk, aiShouldRoll, applyCommand, clashBuffs, clashCaptures, standing, chooseMove, createInitialState, createStateFrom, squareName, type AiLevel, type Effect, type GameState, type Ruling } from './index';
 import { ok, sq } from './testUtil';
 
 const pick = (s: GameState, level: AiLevel, seed = 0.5) => {
@@ -159,5 +159,44 @@ describe('clashes in what the AI is told (clashCaptures, clashBuffs, aiHints)', 
     expect(hints).not.toMatch(/기회/);
     expect(hints).toMatch(/합 표적.*e5 룩 ×1\.8\(검술\).*d4 폰 ×0\.8의 승률 7%/);
     expect(hints).toMatch(/합 계획.*d4 폰에 합 배율 태그를 주면 e5 룩을\(를\) 잡을 확률 7% → ×2면 \d+%\(배율 판정 DC 9 성공까지 치면 약 \d+%\)/);
+  });
+});
+
+describe('gray wanderers as the AI sees them (사용자 요청)', () => {
+  // White: king a1, queen d4, bishop c2 (it can take f5). A gray knight on f5 could take the queen on d4.
+  function scene(): GameState {
+    const s = createStateFrom({ a1: { color: 'white', type: 'king' }, d4: { color: 'white', type: 'queen' }, c2: { color: 'white', type: 'bishop' }, h8: { color: 'black', type: 'king' }, h7: { color: 'black', type: 'pawn' } }, 'white');
+    const board = [...s.board];
+    board[sq('f5')] = { id: 'g1', color: 'gray', type: 'knight', tags: [{ name: '떠돌이 기사', turnsLeft: null, appliedOnTurn: 1 }] };
+    return { ...s, board };
+  }
+
+  it('counts what a wanderer may take as a risk (by the chance it picks that step)', () => {
+    const s = scene();
+    const risk = wanderRisk(s.board, [sq('f5')]);
+    // A knight on f5 has 8 steps; one takes the queen.
+    expect(risk.white).toBeCloseTo(9 / 8, 1);
+    const without = s.board.map((p, i) => (i === sq('f5') ? null : p));
+    expect(evaluate(s.board, 'white')).toBeLessThan(evaluate(without, 'white'));
+  });
+
+  it('does not leave its queen where a wanderer may take it, even for a free knight elsewhere', () => {
+    // A gray knight in the corner (a8) has one step (the king on c7 cannot be taken): onto the queen
+    // on b6. The bishop could take a free knight on e5 instead (+3.2), which it would without the risk.
+    const base = createStateFrom({ c7: { color: 'white', type: 'king' }, b6: { color: 'white', type: 'queen' }, c3: { color: 'white', type: 'bishop' }, h1: { color: 'black', type: 'king' }, e5: { color: 'black', type: 'knight' } }, 'white');
+    const board = [...base.board];
+    board[sq('a8')] = { id: 'g2', color: 'gray', type: 'knight' };
+    for (const level of ['normal', 'hard'] as AiLevel[]) {
+      const s = { ...base, board };
+      const m = chooseMove(s, level, () => 0.5)!;
+      const after = ok(applyCommand(s, { type: 'move', from: m.from, to: m.to! })).state;
+      const wanderers = after.board.flatMap((p, i) => (p?.color === 'gray' ? [i] : []));
+      expect(wanderRisk(after.board, wanderers).white ?? 0).toBe(0);
+    }
+  });
+
+  it('tells its model about the wanderer: what it may take, the odds, and that it can be taken', () => {
+    const hints = aiHints(scene(), 'white').join('\n');
+    expect(hints).toMatch(/떠돌이\(회색.*f5 나이트\(떠돌이 기사\): 내 d4 퀸을\(를\) 잡을 수 있음\(수마다 1\/8\), 내 기물로 잡을 수 있음/);
   });
 });

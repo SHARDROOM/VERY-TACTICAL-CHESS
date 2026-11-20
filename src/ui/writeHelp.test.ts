@@ -22,7 +22,27 @@ describe('writing a declaration by tapping the board', () => {
     expect(taps(start, 'b1')).toBe('b1의 나이트가 ');
     expect(taps(start, 'd2', 'd7')).toBe('d2의 폰이 d7의 폰에게 ');
     expect(taps(start, 'd2', 'd4')).toBe('d2의 폰이 d4에 ');
-    expect(taps(start, 'd1', 'b1', 'g8')).toBe('d1의 퀸이 b1의 나이트에게 g8의 나이트에게 ');
+    // Two things acted on: joined by 와/과, the last keeps its particle (사용자 요청).
+    expect(taps(start, 'd1', 'b1', 'g8')).toBe('d1의 퀸이 b1의 나이트와 g8의 나이트에게 ');
+    expect(taps(start, 'd1', 'd7', 'e7', 'f7')).toBe('d1의 퀸이 d7의 폰과 e7의 폰과 f7의 폰에게 ');
+    expect(taps(start, 'd2', 'd4', 'e5')).toBe('d2의 폰이 d4와 e5에 ');
+    expect(taps(start, 'd2', 'd7', 'd4')).toBe('d2의 폰이 d7의 폰과 d4에 ');
+  });
+
+  it('tapping a square again takes it out (and the joining follows)', () => {
+    expect(taps(start, 'd1', 'b1', 'g8', 'g8')).toBe('d1의 퀸이 b1의 나이트에게 ');
+    expect(taps(start, 'd1', 'b1', 'g8', 'b1')).toBe('d1의 퀸이 g8의 나이트에게 ');
+    expect(taps(start, 'd1', 'd7', 'd7')).toBe('d1의 퀸이 ');
+    // Who acts, too: then the next own piece tapped acts.
+    expect(taps(start, 'd1', 'd7', 'd1')).toBe('d7의 폰에게 ');
+    expect(taps(start, 'd1', 'd7', 'd1', 'b1')).toBe('d7의 폰에게 b1의 나이트가 ');
+    expect(taps(start, 'd2', 'd2')).toBe('');
+  });
+
+  it('what the player typed between stays, and is not joined across', () => {
+    const r = tapToWrite(start, sq('g8'), 'd1의 퀸이 b1의 나이트에게 불을 쏘고 ');
+    expect(r).toEqual({ text: 'd1의 퀸이 b1의 나이트에게 불을 쏘고 g8의 나이트에게 ' });
+    expect(tapToWrite(start, sq('b1'), 'd1의 퀸이 b1의 나이트에게 불을 쏘고 g8의 나이트에게 ')).toEqual({ text: 'd1의 퀸이 불을 쏘고 g8의 나이트에게 ' });
   });
 
   it('any order: what it is done to may come first, and the own piece tapped then is who does it', () => {

@@ -94,8 +94,8 @@ describe('AI players (hotseat)', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       local.request({ type: 'move', from: 12, to: 28 });
-      // The slow try times out (45 s) on the fake clock.
-      await vi.advanceTimersByTimeAsync(60_000);
+      // The slow try times out (20 s) on the fake clock.
+      await vi.advanceTimersByTimeAsync(30_000);
       await until(() => local.view().state.turn === 'white', 15000);
     } finally {
       vi.useRealTimers();

@@ -11,7 +11,8 @@ export const AI_RETRIES = 3;
 
 /** How long to wait before each extra try, by what went wrong (ms; scaled by the runner's pace). */
 export const RETRY_WAIT_MS: Record<Exclude<GmErrorKind, 'other'>, readonly number[]> = {
-  busy: [3000, 8000, 15000],
+  // 3 s each time (사용자 요청).
+  busy: [3000, 3000, 3000],
   network: [2000, 5000, 10000],
   slow: [1000, 2000, 3000],
   format: [0, 0, 0],
