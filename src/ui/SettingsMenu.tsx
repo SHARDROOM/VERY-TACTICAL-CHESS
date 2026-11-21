@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getSoundSettings, onSoundSettings, playSfx, setSoundSettings } from '../audio/sfx';
 import { setStagingLook, useStagingLook } from './stagingLook';
+import { CloudSection } from './Cloud';
 
 /** "연출: 풍부하게 / 가볍게": how much of the GM's staging this device draws. */
 function StagingControls() {
@@ -93,6 +94,7 @@ export function SettingsMenu({ onClose, gm, fullscreen, game, rules }: Props) {
           )}
           {gm.note && <div className="menu-note">{gm.note}</div>}
         </section>
+        <CloudSection onAction={onClose} />
         {fullscreen.supported && (
           <section>
             <h3>화면</h3>

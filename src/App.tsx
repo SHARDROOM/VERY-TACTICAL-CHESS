@@ -15,7 +15,12 @@ import { isAiOnly, type Color } from './engine';
 import type { GameMaster } from './gm/types';
 import { WaitingRoom } from './ui/WaitingRoom';
 import { rollDie } from './dice';
-import { playSfx, unlockAudio } from './audio/sfx';
+import { playSfx, reloadSoundSettings, unlockAudio } from './audio/sfx';
+import { reloadStagingLook } from './ui/stagingLook';
+import { CloudSync, type Item } from './cloud/sync';
+import { GoogleDrive } from './cloud/drive';
+import { GOOGLE_CLIENT_ID, googleAuth, preloadGoogle } from './cloud/google';
+import { CloudContext, CloudDialogs } from './ui/Cloud';
 import './App.css';
 
 function roomFromHash(): string | null {
@@ -29,6 +34,19 @@ function clearHash() {
 
 /** Falls from the air (공중부양) are settled by the physics, on the side that runs the game. */
 const landFalls: FallSimulator = (q) => simulateFalls(q).then((r) => r.landings);
+
+/** Google 로그인과 Drive 저장: only in a build that has a Google client id (docs/GOOGLE_LOGIN.md). */
+function makeCloud(): CloudSync | null {
+  if (!GOOGLE_CLIENT_ID) return null;
+  try {
+    return new CloudSync({ storage: localStorage, auth: googleAuth, drive: (token) => new GoogleDrive(token) });
+  } catch {
+    return null; // no storage on this browser: nothing to keep in step
+  }
+}
+
+/** A new game's id (kept in its save, so two devices can tell one game from another). */
+const newGameId = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('');
 
 /** How the current game is saved (only the side that runs the game saves it). */
 type SaveTarget = { kind: 'hotseat' } | { kind: 'host'; code: string } | null;
@@ -51,6 +69,7 @@ export default function App() {
   const gmName = useMemo(() => chainOf(gmConfig).name, [gmConfig, gmVersion]);
   const autoJoined = useRef(false);
   const saveTarget = useRef<SaveTarget>(null);
+  const gameId = useRef(newGameId());
   const gmRef = useRef(gmConfig);
   gmRef.current = gmConfig;
   // Each AI seat's own model for its special actions (AI의 두뇌), kept on this browser like the GM's key.
@@ -65,6 +84,32 @@ export default function App() {
     for (const [seat, config] of Object.entries(brains)) if (config) made[seat as Color] = createGmChain(config, [gm, ...backups], labels(config));
     session.setBrains(made);
   }, [session, brains, gmConfig, gmVersion]);
+  // Signed in to Google: what comes from the Drive copy is taken up at once.
+  const [cloud] = useState(makeCloud);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  useEffect(() => {
+    if (!cloud) return;
+    void preloadGoogle().catch(() => {});
+    cloud.onApplied = (items: Item[]) => {
+      if (items.includes('gm') || items.includes('backups')) {
+        const config = rememberedGm().current;
+        setGmConfig(config);
+        setGmVersion((v) => v + 1);
+        sessionRef.current?.setGm(chainOf(config));
+      }
+      if (items.includes('brains')) setBrains(rememberedBrains());
+      if (items.includes('game')) setSaved(loadSavedGame());
+      if (items.includes('sound')) reloadSoundSettings();
+      if (items.includes('stagingLook')) reloadStagingLook();
+    };
+    const stop = cloud.start();
+    return () => {
+      stop();
+      cloud.onApplied = undefined;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloud]);
   const changeBrain = (seat: 'white' | 'black' | 'red', config: GmConfig | null) => {
     setBrains((b) => {
       const next = { ...b };
@@ -75,10 +120,11 @@ export default function App() {
     });
   };
 
-  const start = (s: Session, target: SaveTarget, notice: string | null = null) => {
+  const start = (s: Session, target: SaveTarget, notice: string | null = null, resumed: SavedGame | null = null) => {
     setError(null);
     setBusy(null);
     saveTarget.current = target;
+    gameId.current = resumed?.id ?? newGameId();
     setStartNotice(notice);
     setSessionId((n) => n + 1);
     setSession(s);
@@ -94,7 +140,7 @@ export default function App() {
       // A game only AIs play is for watching, not resuming: it never takes the save slot.
       if (!target || view.phase !== 'playing' || isAiOnly(view.state)) return;
       const seats = session instanceof HostSession ? session.seats() : undefined;
-      saveGame({ kind: target.kind, code: target.kind === 'host' ? target.code : undefined, state: view.state, gm: gmForSave(gmRef.current), seats });
+      saveGame({ id: gameId.current, kind: target.kind, code: target.kind === 'host' ? target.code : undefined, state: view.state, gm: gmForSave(gmRef.current), seats });
       last = view.state;
     };
     write();
@@ -120,7 +166,7 @@ export default function App() {
     const local = new LocalSession(chainOf(config), { roll: rollDie, initialState: resume?.state, phase: resume ? 'playing' : 'waiting', fall: landFalls });
     if (mode !== 'people') local.setAi('black', { level: mode === 'watch' ? 'hard' : 'normal', specials: 'some' });
     if (mode === 'watch') local.setAi('white', { level: 'normal', specials: 'some' });
-    start(local, { kind: 'hotseat' }, resume ? `저장된 게임을 이어 갑니다.${keyNotice(config)}` : null);
+    start(local, { kind: 'hotseat' }, resume ? `저장된 게임을 이어 갑니다.${keyNotice(config)}` : null, resume);
   };
 
   const host = async (resume: SavedGame | null = null) => {
@@ -157,7 +203,7 @@ export default function App() {
           : `이전 방 코드를 다시 쓸 수 없어 새 코드 ${room.code}로 열었습니다. 친구에게 새 링크를 보내 주세요.`;
         notice += keyNotice(config);
       }
-      start(hostSession, { kind: 'host', code: room.code }, notice);
+      start(hostSession, { kind: 'host', code: room.code }, notice, resume);
     } catch (err) {
       setBusy(null);
       setError(err instanceof Error ? err.message : String(err));
@@ -237,6 +283,14 @@ export default function App() {
     session?.setGm(chainOf(config));
   };
 
+  return (
+    <CloudContext.Provider value={cloud}>
+      {screen()}
+      <CloudDialogs />
+    </CloudContext.Provider>
+  );
+
+  function screen() {
   if (!session) {
     return (
       <>
@@ -283,6 +337,7 @@ export default function App() {
       startNotice={startNotice}
     />
   );
+  }
 }
 
 /** The waiting room or the game, whichever phase the room is in. */

@@ -66,6 +66,11 @@ export function setSoundSettings(next: Partial<SoundSettings>): void {
   listeners.forEach((l) => l(settings));
 }
 
+/** Takes the remembered settings up again (they came from another device). */
+export function reloadSoundSettings(): void {
+  setSoundSettings(loadSettings());
+}
+
 export function onSoundSettings(listener: (s: SoundSettings) => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);

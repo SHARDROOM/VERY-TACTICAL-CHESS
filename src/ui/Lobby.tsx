@@ -5,6 +5,7 @@ import type { TourInset } from '../scene/TourCamera';
 import { LobbyBackdrop } from './LobbyBackdrop';
 import { SettingsMenu, useFullscreen } from './SettingsMenu';
 import { Icon } from './Icon';
+import { CloudButton } from './Cloud';
 import { BOOK_FACES, BookControl } from '../scene/RuleBook';
 
 /** While reading the rule book: the close button above, the page buttons below. */
@@ -120,9 +121,12 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
         </h1>
         <p>아주 전략적인 체스</p>
       </header>
-      <button className="menu-button lobby-menu-button" onClick={() => setShowMenu(true)} aria-haspopup="menu" title="설정">
-        <Icon name="gear" /> <span className="label">설정</span>
-      </button>
+      <div className="lobby-corner">
+        <CloudButton />
+        <button className="menu-button lobby-menu-button" onClick={() => setShowMenu(true)} aria-haspopup="menu" title="설정">
+          <Icon name="gear" /> <span className="label">설정</span>
+        </button>
+      </div>
 
       <div className="lobby-scroll">
       <div className="lobby-card" ref={cardRef}>

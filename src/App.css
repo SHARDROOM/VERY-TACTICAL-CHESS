@@ -62,11 +62,11 @@ input, select { font: inherit; }
 .input-row .write-help.active { background: var(--accent); border-color: var(--accent); color: var(--bg, #1b1410); }
 .counter.write-hint { color: var(--accent); }
 .input-row input, .join-row input, .link-row input, .name-field input, .rules-form select, .doodle-note,
-.settings input[type='password'], .settings input[list], .settings input[type='url'], .settings select {
+.settings input[type='password'], .settings input[list], .settings input[type='url'], .settings select, .cloud-field input {
   flex: 1; min-width: 0; background: rgba(0, 0, 0, 0.35); color: var(--text); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 10px; font-size: 0.9375rem;
 }
-.input-row input:focus, .join-row input:focus, .name-field input:focus, .doodle-note:focus { border-color: var(--accent); outline: none; }
+.input-row input:focus, .join-row input:focus, .name-field input:focus, .doodle-note:focus, .cloud-field input:focus { border-color: var(--accent); outline: none; }
 select option { background: var(--walnut); }
 
 /* ---- top bar ---- */
@@ -444,7 +444,9 @@ body > .overlay { position: fixed; z-index: 10; }
 }
 .lobby-title h1 span { display: inline-block; white-space: nowrap; }
 .lobby-title p { margin: 8px 0 0; font-family: var(--font-voice); font-weight: 500; color: #ecdfc0; letter-spacing: 0.18em; font-size: clamp(0.95rem, 1.6vw, 1.2rem); text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8); }
-.lobby-menu-button { position: absolute; top: 12px; right: 12px; z-index: 2; background: var(--panel); }
+/* The corner of the lobby: the settings, and the Google account under them (clear of the title). */
+.lobby-corner { position: absolute; top: 12px; right: 12px; z-index: 2; display: flex; flex-direction: column-reverse; align-items: flex-end; gap: 8px; }
+.lobby-menu-button, .cloud-chip { background: var(--panel); }
 .lobby-scroll {
   position: absolute; inset: 0; z-index: 1; overflow-y: auto; pointer-events: none;
   /* The card is centred by auto margins, not by alignment: when it is taller than the screen the
@@ -665,8 +667,8 @@ body > .overlay { position: fixed; z-index: 10; }
   background: rgba(200, 150, 62, 0.08); border: 1px solid rgba(200, 150, 62, 0.45);
 }
 .book-open:hover { background: rgba(200, 150, 62, 0.16); }
-.lobby-title, .lobby-scroll, .lobby-menu-button, .lobby-shade { transition: opacity 0.5s ease; }
-.lobby.reading .lobby-title, .lobby.reading .lobby-scroll, .lobby.reading .lobby-menu-button, .lobby.reading .lobby-shade { opacity: 0; pointer-events: none; }
+.lobby-title, .lobby-scroll, .lobby-corner, .lobby-shade { transition: opacity 0.5s ease; }
+.lobby.reading .lobby-title, .lobby.reading .lobby-scroll, .lobby.reading .lobby-corner, .lobby.reading .lobby-shade { opacity: 0; pointer-events: none; }
 .lobby.reading .lobby-scroll > * { pointer-events: none; }
 .lobby.reading .lobby-backdrop { pointer-events: auto; touch-action: none; }
 .book-ui { position: absolute; inset: 0; z-index: 2; pointer-events: none; animation: book-ui-in 0.6s ease 0.4s both; }
@@ -684,3 +686,44 @@ body > .overlay { position: fixed; z-index: 10; }
 /* A low landscape screen: the page buttons stand in a column at the right, the page gets the height. */
 .lobby.low .book-nav { left: auto; right: 12px; bottom: auto; top: 50%; transform: translateY(-50%); flex-direction: column; padding: 10px 8px; }
 .lobby.low .book-hint { display: none; }
+
+/* ---- Google 계정 (Drive 저장) ---- */
+.cloud-chip { display: flex; align-items: center; gap: 7px; padding: 4px 12px 4px 4px; border-radius: 999px; }
+.cloud-chip.signed-out { padding: 7px 12px 7px 10px; }
+.cloud-chip .icon { width: 20px; height: 20px; color: var(--accent-bright); }
+/* Where the title comes near the corner, the account is its mark alone (its words are in the tooltip and the menu). */
+@media (max-width: 1099px), (orientation: landscape) and (max-height: 600px) {
+  .cloud-chip .label { display: none; }
+  .cloud-chip, .cloud-chip.signed-out { padding: 5px; }
+}
+/* The account menu opens under the account, over the whole screen. */
+body > .menu-backdrop { position: fixed; z-index: 10; }
+.settings-menu.cloud-menu { top: 106px; }
+/* The account's initial on a brass coin; the mark at its rim says how the saving goes. */
+.cloud-avatar {
+  position: relative; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: radial-gradient(circle at 35% 30%, #f3d38a, var(--accent) 60%, #8f6220); color: var(--ink);
+  font-family: var(--font-voice); font-weight: 800; font-size: 0.9375rem; box-shadow: inset 0 -2px 0 rgba(60, 35, 5, 0.45);
+}
+.cloud-badge {
+  position: absolute; right: -4px; bottom: -4px; min-width: 15px; height: 15px; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--font-ui); font-size: 0.625rem; font-weight: 700; line-height: 1; border: 1.5px solid var(--panel-solid);
+}
+.cloud-badge.ok { background: var(--felt); color: #eaf6ee; }
+.cloud-badge.busy { background: var(--raised-hover); color: var(--accent-bright); }
+.cloud-badge.warn { background: var(--wax); color: #fbe3dc; }
+.cloud-badge.busy { animation: cloud-turn 1.4s linear infinite; }
+@keyframes cloud-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cloud-badge.busy { animation: none; } }
+.cloud-chip.warn .label { color: var(--warn); }
+.cloud-section .cloud-email { font-size: 0.9375rem; overflow-wrap: anywhere; }
+.cloud-line.ok { color: var(--success); }
+.cloud-line.warn, .cloud-warn { color: var(--warn); }
+.cloud-dialog { width: min(420px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 6px; }
+.cloud-field { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; font-size: 0.875rem; color: var(--muted); }
+.cloud-field input { padding: 9px 11px; }
+.cloud-dialog .link { align-self: flex-start; }
+.cloud-games { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
+.cloud-games button { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 11px 13px; text-align: left; }
+.cloud-games button strong { font-family: var(--font-voice); }
+.cloud-games button span { color: var(--muted); font-size: 0.875rem; }

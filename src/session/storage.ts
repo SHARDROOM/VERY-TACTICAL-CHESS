@@ -10,6 +10,8 @@ export type SavedGm =
 
 export interface SavedGame {
   version: 1;
+  /** Which game this is (a resumed game keeps it): tells another device's save of the same game from a different game. */
+  id?: string;
   kind: 'hotseat' | 'host';
   /** Host only: the room code, so the same room can be reopened. */
   code?: string;

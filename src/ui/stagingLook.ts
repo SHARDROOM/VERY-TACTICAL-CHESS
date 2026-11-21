@@ -41,6 +41,12 @@ export function setStagingLook(look: StagingLook): void {
   listeners.forEach((l) => l(look));
 }
 
+/** Takes the remembered look up again (it came from another device). */
+export function reloadStagingLook(): void {
+  const look = load();
+  if (look !== current) setStagingLook(look);
+}
+
 export function useStagingLook(): StagingLook {
   const [look, setLook] = useState(current);
   useEffect(() => {

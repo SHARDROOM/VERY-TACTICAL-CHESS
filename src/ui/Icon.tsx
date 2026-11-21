@@ -1,5 +1,5 @@
 /** Small line icons for the table tools, drawn in the current text colour. */
-export type IconName = 'reset' | 'top' | 'side' | 'pencil' | 'scroll' | 'gear' | 'note' | 'eraser' | 'undo' | 'check' | 'quill';
+export type IconName = 'reset' | 'top' | 'side' | 'pencil' | 'scroll' | 'gear' | 'note' | 'eraser' | 'undo' | 'check' | 'quill' | 'cloud';
 
 const PATHS: Record<IconName, string> = {
   // A circular arrow: back to the usual view.
@@ -9,6 +9,8 @@ const PATHS: Record<IconName, string> = {
   // A square seen at an angle.
   side: 'M3 16l5-9h13l-5 9zM8 7v5',
   pencil: 'M15 4l5 5L9 20H4v-5zM13 6l5 5',
+  // A cloud with an arrow going up into it: keep things in the Drive.
+  cloud: 'M7 18.5h10.5a4 4 0 0 0 .4-7.98A6 6 0 0 0 6.3 9.2 4.7 4.7 0 0 0 7 18.5zM12 16v-5.5M9.6 12.8L12 10.4l2.4 2.4',
   // A rolled-up scroll: the precedents.
   scroll: 'M7 4h11a2 2 0 0 1 0 4H9v10a2 2 0 1 1-4 0V6a2 2 0 0 1 2-2zM9 12h6M9 15h4',
   gear: 'M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1',

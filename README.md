@@ -45,6 +45,8 @@ npx peer --port 9000   # 별도 터미널에서 (IPv6가 없는 환경이면 127
 
 배포 주소는 `https://<소유자>.github.io/<저장소 이름>/` 형태입니다.
 
+Google 로그인(설정, API 키, 저장된 게임을 내 Drive에 보관)을 켜려면 Google OAuth 클라이언트 ID를 만들어 저장소 변수 `VITE_GOOGLE_CLIENT_ID`에 넣습니다. 순서는 [docs/GOOGLE_LOGIN.md](docs/GOOGLE_LOGIN.md)에 있습니다. 변수가 없으면 로그인 버튼이 나오지 않습니다.
+
 ## 구조
 
 - `src/engine/` — 순수 게임 엔진. `applyCommand(state, command)`가 상태를 바꾸는 유일한 입구이며, 네트워크·UI·LLM·난수에 의존하지 않습니다.
