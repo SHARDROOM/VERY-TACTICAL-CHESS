@@ -1,4 +1,4 @@
-import { readLocal, wipeLocal, writeLocal, type KeysPart, type LocalParts, type SettingsPart } from './local';
+import { LOCAL_KEYS, readLocal, wipeLocal, writeLocal, type KeysPart, type LocalParts, type SettingsPart } from './local';
 import { lockKey, newSalt, seal, unseal, type Sealed } from './crypto';
 import { TokenExpired, type CloudDrive } from './drive';
 import type { CloudAuth, Token } from './google';
@@ -81,6 +81,8 @@ interface Meta {
   cloudAt: Partial<Record<Item, number>>;
   /** The keys start over (키 초기화): this browser's keys replace the ones locked in the cloud. */
   resetKeys?: boolean;
+  /** The salt of the cloud's locked keys when last opened here (another one: they were locked again elsewhere). */
+  keysSalt?: string;
   lastSynced?: number;
 }
 
@@ -158,6 +160,45 @@ function unionKeys(base: unknown, over: unknown): unknown {
   return out;
 }
 
+/** The same model on the same service (its key aside). */
+const sameConfig = (a: unknown, b: unknown) => a !== undefined && b !== undefined && fingerprint(a) === fingerprint(b);
+
+/**
+ * A keyed item as `primary` has it, with the keys it lacks filled from `other` where the model is
+ * the same one (by service and model, wherever it stands): a key is never lost to a sync.
+ */
+function fillKeys(i: Keyed, primary: KeyedValue, other: KeyedValue): KeyedValue {
+  if (i === 'gm') return { ...primary, keys: unionKeys(other.keys, primary.keys) };
+  if (i === 'backups') {
+    if (!Array.isArray(primary.setting)) return primary;
+    const own = Array.isArray(primary.keys) ? (primary.keys as unknown[]) : [];
+    const theirs = Array.isArray(other.setting) ? (other.setting as unknown[]) : [];
+    const theirKeys = Array.isArray(other.keys) ? (other.keys as unknown[]) : [];
+    const keys = primary.setting.map((c, n) => {
+      if (typeof own[n] === 'string' && own[n]) return own[n] as string;
+      const m = theirs.findIndex((t, k) => sameConfig(t, c) && typeof theirKeys[k] === 'string' && theirKeys[k]);
+      return m >= 0 ? (theirKeys[m] as string) : typeof own[n] === 'string' ? (own[n] as string) : '';
+    });
+    return keys.some((k) => k) ? { ...primary, keys } : primary;
+  }
+  if (!isObj(primary.setting)) return primary;
+  const own = isObj(primary.keys) ? primary.keys : {};
+  const theirs = isObj(other.setting) ? other.setting : {};
+  const theirKeys = isObj(other.keys) ? other.keys : {};
+  const keys: Obj = {};
+  for (const [seat, c] of Object.entries(primary.setting)) {
+    if (typeof own[seat] === 'string' && own[seat]) keys[seat] = own[seat];
+    else if (sameConfig(theirs[seat], c) && typeof theirKeys[seat] === 'string' && theirKeys[seat]) keys[seat] = theirKeys[seat];
+  }
+  return Object.keys(keys).length ? { ...primary, keys } : primary;
+}
+
+/** Runs `work` alone among this game's tabs (Web Locks where the browser has them). */
+function alone<T>(work: () => Promise<T>): Promise<T> {
+  const locks = (globalThis.navigator as Navigator | undefined)?.locks;
+  return locks?.request ? (locks.request('vtc-cloud-sync', work) as Promise<T>) : work();
+}
+
 const gameId = (g: unknown): string | null => (isObj(g) && typeof g.id === 'string' ? g.id : null);
 
 /** Two saved games that are not the same game (one is not the other, played on). */
@@ -226,19 +267,32 @@ export class CloudSync {
   private cloudKeys: Sealed | null = null;
   /** Items that could not be synced last time (the keys locked, a game to choose). */
   private blocked = new Set<Item>();
+  /** What was in this browser's storage at the last look, and the items read from it (a game can be large: it is read again only when it changed). */
+  private lastRaw: { raw: (string | null)[]; values: Values; prints: Record<Item, string> } | null = null;
 
   constructor(options: CloudSyncOptions) {
     this.storage = options.storage;
     this.auth = options.auth;
     this.makeDrive = options.drive;
     this.now = options.now ?? Date.now;
+    this.meta = freshMeta();
+    this.lock = null;
+    this.token = null;
+    this.reload();
+    this.snapshot = this.compute();
+  }
+
+  /**
+   * Takes up what another tab of this game may have written (signed in or out, the passphrase, a
+   * new token, what changed and what is in step): each tab keeps its copy in this browser's storage.
+   */
+  private reload(): void {
     const meta = readJson(this.storage, META);
     this.meta = isObj(meta) && Array.isArray(meta.dirty) ? { ...freshMeta(), ...(meta as Partial<Meta>) } : freshMeta();
     const lock = readJson(this.storage, LOCK);
     this.lock = isObj(lock) && typeof lock.salt === 'string' && typeof lock.key === 'string' ? { salt: lock.salt, key: lock.key } : null;
     const token = readJson(this.storage, TOKEN);
     this.token = isObj(token) && typeof token.token === 'string' && typeof token.expiresAt === 'number' ? { token: token.token, expiresAt: token.expiresAt } : null;
-    this.snapshot = this.compute();
   }
 
   get state(): CloudState {
@@ -261,6 +315,7 @@ export class CloudSync {
 
   /** Sign in (or connect again): must be called from a click. */
   async connect(): Promise<void> {
+    if (!this.running) this.reload();
     this.connecting = true;
     this.error = null;
     this.emit();
@@ -271,6 +326,7 @@ export class CloudSync {
       // Another account than before: nothing here is in its cloud yet.
       if (this.meta.signedIn && email && this.meta.email && email !== this.meta.email) {
         this.meta.cloudAt = {};
+        this.meta.keysSalt = undefined;
         this.setLock(null);
       }
       this.meta.signedIn = true;
@@ -294,10 +350,14 @@ export class CloudSync {
     }
     const run = async () => {
       try {
-        do {
-          this.again = false;
-          await this.syncOnce();
-        } while (this.again);
+        await alone(async () => {
+          do {
+            this.again = false;
+            // Another tab may have synced (or signed out) while this one waited its turn.
+            this.reload();
+            await this.syncOnce();
+          } while (this.again);
+        });
         this.error = null;
         this.retryAt = 0;
       } catch (e) {
@@ -356,6 +416,7 @@ export class CloudSync {
    * keeps off this browser; it stops ('unsynced') if something could not be sent, unless `force`.
    */
   async signOut(wipe = false, force = false): Promise<'done' | 'unsynced'> {
+    if (!this.running) this.reload();
     this.observe();
     if (this.meta.signedIn && this.tokenValid() && (this.meta.dirty.length || this.running)) await this.sync();
     if (wipe && !force && (this.meta.dirty.length > 0 || this.blocked.size > 0)) return 'unsynced';
@@ -383,6 +444,7 @@ export class CloudSync {
 
   /** Notices changes made here; sends them once they have settled. */
   tick(): void {
+    if (!this.running && !this.connecting) this.reload();
     this.observe();
     if (this.meta.signedIn && !this.running && !this.connecting && this.tokenValid() && this.now() >= this.retryAt) {
       const pending = this.pending();
@@ -402,10 +464,16 @@ export class CloudSync {
 
   /** Reads this browser's items, noting any change since last seen. */
   private observe(): Values {
-    const values = itemsOf(readLocal(this.storage));
+    const raw = LOCAL_KEYS.map((k) => this.storage.getItem(k));
+    if (!this.lastRaw || raw.some((r, n) => r !== this.lastRaw!.raw[n])) {
+      const values = itemsOf(readLocal(this.storage));
+      const prints = Object.fromEntries(ITEMS.map((i) => [i, fingerprint(values[i])])) as Record<Item, string>;
+      this.lastRaw = { raw, values, prints };
+    }
+    const { values, prints } = this.lastRaw;
     let changed = false;
     for (const i of ITEMS) {
-      const f = fingerprint(values[i]);
+      const f = prints[i];
       if (this.meta.seen[i] === f) continue;
       // The first look: what is here is from before (its time unknown), not a change.
       if (this.meta.seen[i] !== undefined) {
@@ -448,6 +516,8 @@ export class CloudSync {
       cloudKeys = this.lock || !KEYED.some((k) => hasKeys((local[k] as KeyedValue).keys)) ? {} : null;
     }
     this.passphrase = cloudKeys ? null : cloud.keys && !this.meta.resetKeys ? 'enter' : 'set';
+    // Locked again elsewhere (키 초기화 there): the keys this browser has go back in where the cloud lacks them.
+    const rekeyed = !!cloudKeys && !!cloud.keys && !this.meta.resetKeys && this.meta.keysSalt !== undefined && this.meta.keysSalt !== cloud.keys.salt;
 
     // From here to the local writes nothing waits, so no change here can slip in between.
     const local = this.observe();
@@ -464,7 +534,7 @@ export class CloudSync {
       const mine = local[i];
       const theirs: unknown = isKeyed(i) ? { setting: cloud.items[i] ?? null, keys: cloudKeys?.[i] ?? null } : (cloud.items[i] ?? null);
       const cAt = cloud.at[i];
-      const cloudChanged = cAt !== undefined && cAt !== this.meta.cloudAt[i];
+      const cloudChanged = cAt !== undefined && (cAt !== this.meta.cloudAt[i] || (rekeyed && isKeyed(i)));
       const localChanged = this.meta.dirty.includes(i) || (this.meta.cloudAt[i] === undefined && !isEmpty(i, mine));
       if (cloudChanged && fingerprint(mine) === fingerprint(theirs)) {
         // Already the same on both sides.
@@ -486,15 +556,20 @@ export class CloudSync {
       } else if (cloudChanged) winner = 'cloud';
       else if (localChanged) winner = 'local';
       if (winner === 'cloud') {
-        const v = i === 'gm' ? { ...(theirs as KeyedValue), keys: unionKeys((mine as KeyedValue).keys, (theirs as KeyedValue).keys) } : theirs;
-        take[i] = v;
+        const v = isKeyed(i) ? fillKeys(i, theirs as KeyedValue, mine as KeyedValue) : theirs;
+        if (fingerprint(v) !== fingerprint(mine)) take[i] = v;
         // The keys only this browser had go back up with it.
         if (fingerprint(v) !== fingerprint(theirs)) {
           send[i] = v;
           sendAt[i] = Math.max(this.now(), cAt! + 1);
         }
+        if (take[i] === undefined && send[i] === undefined) {
+          this.meta.cloudAt[i] = cAt;
+          this.meta.at[i] = cAt;
+          this.meta.dirty = this.meta.dirty.filter((d) => d !== i);
+        }
       } else if (winner === 'local') {
-        const v = i === 'gm' ? { ...(mine as KeyedValue), keys: unionKeys((theirs as KeyedValue).keys, (mine as KeyedValue).keys) } : mine;
+        const v = isKeyed(i) ? fillKeys(i, mine as KeyedValue, theirs as KeyedValue) : mine;
         if (fingerprint(v) !== fingerprint(mine)) take[i] = v;
         send[i] = v;
         sendAt[i] = Math.max(this.localAt(i, mine), cAt === undefined ? 0 : cAt + 1, 1);
@@ -554,7 +629,8 @@ export class CloudSync {
         if (this.meta.seen[i] === expect[i]) this.meta.dirty = this.meta.dirty.filter((d) => d !== i);
       }
       if (this.lock) this.meta.resetKeys = false;
-    }
+      if (cloudKeys) this.meta.keysSalt = doc.keys?.salt;
+    } else if (cloudKeys) this.meta.keysSalt = cloud.keys?.salt;
     this.meta.lastSynced = this.now();
     this.saveMeta();
   }

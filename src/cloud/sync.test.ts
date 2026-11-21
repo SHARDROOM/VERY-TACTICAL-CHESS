@@ -287,6 +287,57 @@ describe('CloudSync', () => {
     expect(rememberedGm(a.storage).keys).toEqual({ gemini: 'KEY-NEW' });
   });
 
+  it('keeps a tab opened before signing in from signing the other tab out', async () => {
+    const cloud = new Cloud();
+    const a = device(cloud);
+    // A second tab of the same browser: the same storage, its own CloudSync.
+    const tab = new CloudSync({ storage: a.storage, auth: { requestToken: async () => ({ token: 't', expiresAt: clock + 3_600_000 }), email: async () => null, revoke: () => {} }, drive: () => cloud.drive(), now });
+    tab.tick();
+    await a.sync.connect();
+    saveName('두 탭', a.storage);
+    tab.tick();
+    expect(tab.state.status).not.toBe('signedOut');
+    // What the first tab writes next still knows it is signed in.
+    a.sync.tick();
+    expect(a.sync.state.status).not.toBe('signedOut');
+    clock += UPLOAD_DELAY_MS + 1;
+    tab.tick();
+    await tab.sync();
+    expect(cloud.doc!.items.name).toBe('두 탭');
+    expect(JSON.parse(a.storage.getItem('vtc.sync.meta')!).signedIn).toBe(true);
+  });
+
+  it('puts back the keys another device still has after the keys were started over', async () => {
+    const cloud = new Cloud();
+    const a = device(cloud);
+    rememberGm(gemini('KEY-GM'), a.storage);
+    rememberBackups([groq('KEY-B1')], a.storage);
+    a.sync.tick();
+    await a.sync.connect();
+    await a.sync.setPassphrase('잊을 암호');
+    await a.sync.sync();
+
+    // A new device without the passphrase starts the keys over: it has no keys of its own.
+    clock += 1000;
+    const b = device(cloud);
+    await b.sync.connect();
+    b.sync.resetKeys();
+    await b.sync.setPassphrase('새 암호');
+    await b.sync.sync();
+    expect(rememberedBackups(b.storage)).toEqual([groq('')]);
+
+    // The old device opens the new lock: its keys go back where the cloud lacks them.
+    await a.sync.sync();
+    expect(a.sync.state.passphrase).toBe('enter');
+    expect(await a.sync.setPassphrase('새 암호')).toBe(true);
+    await a.sync.sync();
+    expect(rememberedBackups(a.storage)).toEqual([groq('KEY-B1')]);
+    expect(rememberedGm(a.storage).current).toEqual(gemini('KEY-GM'));
+    await b.sync.sync();
+    expect(rememberedBackups(b.storage)).toEqual([groq('KEY-B1')]);
+    expect(rememberedGm(b.storage).current).toEqual(gemini('KEY-GM'));
+  });
+
   it('signs out keeping this browser, or wiping it once everything is in the cloud', async () => {
     const cloud = new Cloud();
     const a = device(cloud);
