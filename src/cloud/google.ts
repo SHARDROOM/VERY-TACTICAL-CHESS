@@ -2,11 +2,14 @@
  * Signing in with Google from the page itself (Google Identity Services, the token model): a
  * click opens Google's window and gives back a short-lived access token for the hidden Drive
  * folder and the email (shown as who is signed in). No server; when the token runs out, another
- * click gets a new one. The OAuth client id comes with the build (VITE_GOOGLE_CLIENT_ID, public);
- * without it there is no signing in at all. Setting it up: docs/GOOGLE_LOGIN.md.
+ * click gets a new one. The OAuth client id is public (it is in every page that signs in): this
+ * game's own (Google Cloud project chess-drive, origins https://shardroom.github.io and
+ * http://localhost:5173), unless a build gives another (VITE_GOOGLE_CLIENT_ID, e.g. for a fork on
+ * another address). Setting one up: docs/GOOGLE_LOGIN.md.
  */
 
-export const GOOGLE_CLIENT_ID: string = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? '';
+const OWN_CLIENT_ID = '473752168126-rrm8hadird8bj25mcntthlo6fd5bmer5.apps.googleusercontent.com';
+export const GOOGLE_CLIENT_ID: string = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) || OWN_CLIENT_ID;
 const SCOPE = 'https://www.googleapis.com/auth/drive.appdata email';
 
 interface TokenResponse {
