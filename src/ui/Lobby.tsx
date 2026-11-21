@@ -192,6 +192,14 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
           온라인 대전은 서버 없이 두 브라우저를 직접 연결합니다(P2P). 방장 브라우저가 게임을 진행하고 GM을 호출합니다. 회사나 학교
           네트워크에서는 연결이 막힐 수 있으니, 그럴 때는 핫시트 모드를 이용하세요.
         </details>
+        <p className="lobby-links">
+          <a href="privacy.html" target="_blank" rel="noreferrer">
+            개인정보처리방침
+          </a>
+          <a href="terms.html" target="_blank" rel="noreferrer">
+            이용 약관
+          </a>
+        </p>
       </div>
       </div>
 

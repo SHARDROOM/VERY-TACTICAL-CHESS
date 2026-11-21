@@ -4,9 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>아주 전략적인 체스</title>
+    <meta name="description" content="VERY TACTICAL CHESS: 3D 체스판 위에서 무엇이든 선언하면 AI GM이 판정하고 주사위가 결정하는 브라우저 체스 게임. 핫시트, AI 대전, P2P 온라인 대전." />
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Shown until the game starts (and to readers that do not run scripts): what this is, and the policies. -->
+    <div id="root">
+      <main style="max-width: 640px; margin: 0 auto; padding: 32px 16px; font: 16px/1.7 system-ui, sans-serif; color: #ecdfc0; background: #1c130d">
+        <h1 style="margin: 0 0 8px; color: #e2b45a">VERY TACTICAL CHESS (아주 전략적인 체스)</h1>
+        <p>3D 체스판 위에서 무엇이든 선언하세요. AI GM이 판정하고, 주사위가 결정합니다. 한 화면에서 둘이, AI와, 또는 온라인 방에서 친구와 둡니다.</p>
+        <p>Google로 로그인하면(선택) 설정, 암호로 잠근 API 키, 저장된 게임을 내 Google Drive의 이 게임 전용 폴더에 보관하고 다른 기기에서 불러옵니다.</p>
+        <p><a href="privacy.html" style="color: #e2b45a">개인정보처리방침</a> &nbsp; <a href="terms.html" style="color: #e2b45a">이용 약관</a></p>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

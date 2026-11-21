@@ -467,6 +467,9 @@ body > .overlay { position: fixed; z-index: 10; }
 .lobby-error { color: var(--danger); margin: 0; }
 .lobby-note { color: var(--muted); font-size: 0.8125rem; margin: 2px 0 0; line-height: 1.55; }
 .lobby-note summary { cursor: pointer; width: fit-content; }
+.lobby-links { display: flex; gap: 14px; margin: 0; font-size: 0.8125rem; }
+.lobby-links a { color: var(--muted); text-underline-offset: 3px; }
+.lobby-links a:hover { color: var(--text); }
 .lobby-note[open] summary { margin-bottom: 4px; }
 .saved-card { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: rgba(200, 150, 62, 0.1); border: 1px solid rgba(200, 150, 62, 0.45); border-radius: 8px; padding: 10px 12px; }
 .saved-card strong { font-family: var(--font-voice); }
