@@ -160,6 +160,8 @@ select option { background: var(--walnut); }
 
 /* ---- dialogs ---- */
 .overlay { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; background: rgba(10, 6, 2, 0.55); padding: 16px; overflow-y: auto; }
+/* A dialog opened from a dialog (a backup GM): over the whole screen. */
+body > .overlay { position: fixed; z-index: 10; }
 .overlay.passive { pointer-events: none; background: rgba(10, 6, 2, 0.35); }
 .overlay.passive > * { pointer-events: auto; }
 .dialog {
@@ -365,6 +367,13 @@ select option { background: var(--walnut); }
 .settings .field span { color: var(--muted); }
 .settings .field small { color: var(--muted); font-size: 0.8125rem; }
 .settings .field small.field-error { color: var(--danger); }
+/* Backup GMs (예비 GM): an ordered list under the GM, each changeable or removable. */
+.backup-gms { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 8px; }
+.backup-gms h3 { margin: 0; font-family: var(--font-voice); font-size: 1.0625rem; }
+.backup-gms ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.backup-gms li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.backup-gms .backup-name { flex: 1 1 10em; min-width: 0; overflow-wrap: anywhere; }
+.backup-gms li button { padding: 3px 9px; font-size: 0.8125rem; }
 .settings .notes { margin: 0; padding-left: 18px; color: var(--muted); font-size: 0.8125rem; display: flex; flex-direction: column; gap: 3px; line-height: 1.5; }
 .settings input[type='radio'], .settings input[type='checkbox'] { accent-color: var(--accent); }
 .menu-backdrop { position: absolute; inset: 0; z-index: 4; }

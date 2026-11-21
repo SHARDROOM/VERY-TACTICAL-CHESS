@@ -2,14 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { GameScreen } from './ui/GameScreen';
 import { Lobby } from './ui/Lobby';
 import { GmSettings, type GmConfig } from './ui/GmSettings';
-import { createGm, missingKey } from './gm/createGm';
+import { createGmChain, missingKey, serviceOf } from './gm/createGm';
 import { LocalSession } from './session/localSession';
 import { HostSession } from './session/hostSession';
 import { GuestSession } from './session/guestSession';
 import { inviteLink, joinRoom, normalizeRoomCode, openRoom } from './session/peerTransport';
 import { simulateFalls } from './scene/boardPhysics';
 import type { FallSimulator } from './session/authority';
-import { browserId, clearSavedGame, gmForSave, gmFromSave, loadSavedGame, rememberBrains, rememberGm, rememberedBrains, rememberedGm, saveGame, savedName, type AiBrains, type SavedGame } from './session/storage';
+import { browserId, clearSavedGame, gmForSave, gmFromSave, loadSavedGame, rememberBrains, rememberGm, rememberedBackups, rememberedBrains, rememberedGm, saveGame, savedName, type AiBrains, type SavedGame } from './session/storage';
 import type { Session, SessionView } from './session/types';
 import { isAiOnly, type Color } from './engine';
 import type { GameMaster } from './gm/types';
@@ -44,7 +44,11 @@ export default function App() {
   const [askForKey, setAskForKey] = useState(false);
   const [startNotice, setStartNotice] = useState<string | null>(null);
   const [lobbyGmSettings, setLobbyGmSettings] = useState(false);
-  const gmName = useMemo(() => createGm(gmConfig).name, [gmConfig]);
+  // The GM with its backups (예비 GM, kept on this browser): bumped when the settings are saved.
+  const [gmVersion, setGmVersion] = useState(0);
+  const chainOf = (config: GmConfig) => createGmChain(config, rememberedBackups());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const gmName = useMemo(() => chainOf(gmConfig).name, [gmConfig, gmVersion]);
   const autoJoined = useRef(false);
   const saveTarget = useRef<SaveTarget>(null);
   const gmRef = useRef(gmConfig);
@@ -54,9 +58,13 @@ export default function App() {
   useEffect(() => {
     if (!session) return;
     const made: Partial<Record<Color, GameMaster>> = {};
-    for (const [seat, config] of Object.entries(brains)) if (config) made[seat as Color] = createGm(config);
+    // A seat's own model, blocked, goes on to the GM and its backups in turn.
+    const backups = rememberedBackups();
+    const gm = gmRef.current;
+    const labels = (own: GmConfig) => [serviceOf(own), `GM(${serviceOf(gm)})`, ...backups.map((b, i) => `예비 ${i + 1} ${serviceOf(b)}`)];
+    for (const [seat, config] of Object.entries(brains)) if (config) made[seat as Color] = createGmChain(config, [gm, ...backups], labels(config));
     session.setBrains(made);
-  }, [session, brains]);
+  }, [session, brains, gmConfig, gmVersion]);
   const changeBrain = (seat: 'white' | 'black' | 'red', config: GmConfig | null) => {
     setBrains((b) => {
       const next = { ...b };
@@ -109,7 +117,7 @@ export default function App() {
   /** One screen: two people (hotseat), against the AI ('vsAi', on black), or watching two AIs ('watch'). */
   const hotseat = (resume: SavedGame | null = null, mode: 'people' | 'vsAi' | 'watch' = 'people') => {
     const config = resumeGm(resume);
-    const local = new LocalSession(createGm(config), { roll: rollDie, initialState: resume?.state, phase: resume ? 'playing' : 'waiting', fall: landFalls });
+    const local = new LocalSession(chainOf(config), { roll: rollDie, initialState: resume?.state, phase: resume ? 'playing' : 'waiting', fall: landFalls });
     if (mode !== 'people') local.setAi('black', { level: mode === 'watch' ? 'hard' : 'normal', specials: 'some' });
     if (mode === 'watch') local.setAi('white', { level: 'normal', specials: 'some' });
     start(local, { kind: 'hotseat' }, resume ? `저장된 게임을 이어 갑니다.${keyNotice(config)}` : null);
@@ -132,7 +140,7 @@ export default function App() {
           onWaiting: (n) => setBusy(`방 ${resume?.code}을(를) 다시 여는 중… 이전 연결이 정리되기를 기다리고 있습니다 (${n}/10)`),
         },
       );
-      hostSession = new HostSession(createGm(config), {
+      hostSession = new HostSession(chainOf(config), {
         code: room.code,
         link: inviteLink(room.code),
         fall: landFalls,
@@ -225,7 +233,8 @@ export default function App() {
     rememberGm(config);
     setGmConfig(config);
     setAskForKey(false);
-    session?.setGm(createGm(config));
+    setGmVersion((v) => v + 1);
+    session?.setGm(chainOf(config));
   };
 
   if (!session) {

@@ -1,5 +1,8 @@
 import { useState } from 'react';
-import { rememberKeys, rememberedGm } from '../session/storage';
+import { createPortal } from 'react-dom';
+import { rememberBackups, rememberKeys, rememberedBackups, rememberedGm } from '../session/storage';
+import { MAX_BACKUPS } from '../gm/failover';
+import { gmLabel } from './gmLabel';
 import { CLAUDE_MODELS, type GmEffort } from '../gm/claudeGm';
 import { OPENAI_MODEL_SUGGESTIONS } from '../gm/openaiGm';
 import { GEMINI_MODEL_SUGGESTIONS } from '../gm/geminiGm';
@@ -23,6 +26,8 @@ interface Props {
    * uses the GM's model now, and how to go back to that.
    */
   brain?: { seat: string; usesGm: boolean; onUseGm: () => void };
+  /** Choosing backup GM number `backup` (예비 GM): a GM kind, without the fake one. */
+  backup?: number;
 }
 
 const EFFORTS: { id: GmEffort; label: string }[] = [
@@ -62,7 +67,7 @@ const BRAIN_PROVIDERS: { id: GmConfig['provider'] | 'same'; name: string; note: 
   { id: 'fake', name: '내장 AI', note: '키 없이. 보호막, 저격, 기절, 검술 같은 정해진 행동만 고릅니다.' },
 ];
 
-export function GmSettings({ current, onSave, onClose, brain }: Props) {
+export function GmSettings({ current, onSave, onClose, brain, backup }: Props) {
   const [provider, setProvider] = useState<GmConfig['provider'] | 'same'>(brain?.usesGm ? 'same' : current.provider);
   // Keys and models are kept per provider while the dialog is open, so switching tabs loses nothing.
   // Every key typed in on this browser is filled in again.
@@ -97,6 +102,9 @@ export function GmSettings({ current, onSave, onClose, brain }: Props) {
     setOther((o) => ({ baseUrl: p.baseUrl, model: preset && o.model && !preset.models.includes(o.model) ? o.model : (p.models[0] ?? '') }));
   };
 
+  // The backup GMs (main settings only): kept with the GM when it is saved.
+  const [backups, setBackups] = useState<GmConfig[]>(() => (brain || backup ? [] : rememberedBackups()));
+  const [editing, setEditing] = useState<number | null>(null);
   const llm = provider === 'fake' || provider === 'same' || provider === 'compatible' ? null : provider;
   const otherMissing = provider === 'compatible' && !otherLocal && !otherKey.trim() ? '키' : null;
   const canSave =
@@ -107,8 +115,11 @@ export function GmSettings({ current, onSave, onClose, brain }: Props) {
   const save = () => {
     if (!canSave) return;
     if (provider === 'same') return brain?.onUseGm();
-    // A seat's key is kept with that seat (its caller remembers it), not as the GM's.
-    if (!brain) rememberKeys({ ...keys, compatible: otherKeys });
+    // A seat's or a backup's key is kept with it (its caller remembers it), not as the GM's.
+    if (!brain && !backup) {
+      rememberKeys({ ...keys, compatible: otherKeys });
+      rememberBackups(backups);
+    }
     if (provider === 'compatible' && otherUrl) return onSave({ provider: 'compatible', baseUrl: otherUrl, model: other.model.trim(), apiKey: otherKey.trim() });
     if (!llm) return onSave({ provider: 'fake' });
     const base = { apiKey: keys[llm].trim(), model: models[llm].trim() };
@@ -124,15 +135,17 @@ export function GmSettings({ current, onSave, onClose, brain }: Props) {
           save();
         }}
       >
-        <h2>{brain ? `${brain.seat} AI의 두뇌` : 'GM 설정'}</h2>
+        <h2>{brain ? `${brain.seat} AI의 두뇌` : backup ? `예비 GM ${backup}` : 'GM 설정'}</h2>
         <p className="settings-lead">
           {brain
             ? '이 AI가 특수 행동 문장을 지을 모델과 키를 고르세요. 일반 수는 엔진이 두고(난이도대로), 판정은 방의 GM이 합니다.'
-            : '특수 행동을 판정하고 혼돈을 일으킬 GM을 고르세요.'}
+            : backup
+              ? '앞의 GM이 막히면(사용 한도, 요청 몰림, 너무 느림, 연결 안 됨, 키 오류) 이 GM에 대신 묻습니다.'
+              : '특수 행동을 판정하고 혼돈을 일으킬 GM을 고르세요.'}
         </p>
         <fieldset className="provider-grid">
           <legend className="sr-only">{brain ? '모델 종류' : 'GM 종류'}</legend>
-          {(brain ? BRAIN_PROVIDERS : PROVIDERS).map((p) => (
+          {(brain ? BRAIN_PROVIDERS : backup ? PROVIDERS.filter((p) => p.id !== 'fake') : PROVIDERS).map((p) => (
             <label key={p.id} className={`provider-tile ${provider === p.id ? 'active' : ''}`}>
               <input type="radio" name="provider" checked={provider === p.id} onChange={() => setProvider(p.id)} />
               <span className="provider-name">{p.name}</span>
@@ -264,13 +277,57 @@ export function GmSettings({ current, onSave, onClose, brain }: Props) {
           </ul>
         )}
 
+        {!brain && !backup && (
+          <section className="backup-gms" aria-label="예비 GM">
+            <h3>예비 GM</h3>
+            <p className="muted-line">GM이 막히면(사용 한도, 요청 몰림, 너무 느림, 연결 안 됨, 키 오류) 차례로 대신 묻습니다. 막힌 GM은 2분 쉬고(키 오류면 계속), 넘어갈 때 기록에 알립니다.</p>
+            {backups.length > 0 && (
+              <ol>
+                {backups.map((b, i) => (
+                  <li key={i}>
+                    <span className="backup-name">
+                      {i + 1}. {gmLabel(b)}
+                    </span>
+                    <button type="button" onClick={() => setEditing(i)}>바꾸기</button>
+                    <button type="button" onClick={() => setBackups((list) => list.filter((_, k) => k !== i))}>빼기</button>
+                  </li>
+                ))}
+              </ol>
+            )}
+            {backups.length < MAX_BACKUPS && (
+              <button type="button" onClick={() => setEditing(backups.length)}>
+                + 예비 GM 추가
+              </button>
+            )}
+            <p className="muted-line">같은 회사의 무료 키 여러 개로 사용 한도를 늘리는 것은 그 회사 약관 위반일 수 있습니다. 다른 회사나 다른 모델을 예비로 두세요(요청이 몰린 것은 같은 모델이면 키를 바꿔도 그대로입니다).</p>
+          </section>
+        )}
+
         <div className="choice-row">
           <button type="submit" className="primary" disabled={!canSave}>
-            {(llm && !keys[llm].trim()) || otherMissing ? 'API 키를 넣어 주세요' : brain ? '이 두뇌로 정하기' : '이 GM으로 정하기'}
+            {(llm && !keys[llm].trim()) || otherMissing ? 'API 키를 넣어 주세요' : brain ? '이 두뇌로 정하기' : backup ? '이 예비 GM으로 정하기' : '이 GM으로 정하기'}
           </button>
           <button type="button" onClick={onClose}>닫기</button>
         </div>
       </form>
+      {editing !== null &&
+        // On top of the whole screen (inside this dialog it would scroll along with it).
+        createPortal(
+        <GmSettings
+          current={backups[editing] ?? { provider: 'compatible', baseUrl: COMPATIBLE_PRESETS[0].baseUrl, model: COMPATIBLE_PRESETS[0].models[0] ?? '', apiKey: '' }}
+          backup={editing + 1}
+          onClose={() => setEditing(null)}
+          onSave={(config) => {
+            setBackups((list) => {
+              const next = [...list];
+              next[editing] = config;
+              return next;
+            });
+            setEditing(null);
+          }}
+        />,
+        document.body,
+      )}
     </div>
   );
 }

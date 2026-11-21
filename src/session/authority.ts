@@ -112,7 +112,24 @@ export class Authority {
   /** A game only AIs play: paused or not, how fast, the score of the series (docs/SPEC.md, "AI 관전"). */
   watch: WatchState = WATCH_DEFAULT;
   /** AI seats with a model of their own for their special actions (AI의 두뇌); the others use the GM's. */
-  brains: Partial<Record<Color, GameMaster>> = {};
+  private brainsNow: Partial<Record<Color, GameMaster>> = {};
+  private gmNow!: GameMaster;
+
+  /** The GM; one that goes on to a backup (예비 GM) tells everyone through the log. */
+  get gm(): GameMaster {
+    return this.gmNow;
+  }
+  set gm(gm: GameMaster) {
+    this.gmNow = gm;
+    gm.onNotice = (text) => this.emit({ kind: 'notice', to: 'all', text, tone: 'warn' });
+  }
+  get brains(): Partial<Record<Color, GameMaster>> {
+    return this.brainsNow;
+  }
+  set brains(brains: Partial<Record<Color, GameMaster>>) {
+    this.brainsNow = brains;
+    for (const [c, gm] of Object.entries(brains)) if (gm) gm.onNotice = (text) => this.emit({ kind: 'notice', to: 'all', text: `${COLOR_NAME[c as Color]} AI: ${text}`, tone: 'warn' });
+  }
 
   /** Who writes this AI's declarations: its own model, or the GM's. */
   private brainOf(color: Color): GameMaster {
@@ -120,11 +137,12 @@ export class Authority {
   }
 
   constructor(
-    public gm: GameMaster,
+    gm: GameMaster,
     private readonly roll: () => number,
     private readonly emit: (e: AuthorityEvent) => void,
     options: AuthorityOptions = {},
   ) {
+    this.gm = gm;
     this.state = options.initial ?? createInitialState();
     this.phase = options.phase ?? 'waiting';
     this.chance = options.chance ?? Math.random;

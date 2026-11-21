@@ -184,6 +184,31 @@ export function rememberBrains(brains: AiBrains, storage?: Storage): void {
   }
 }
 
+/** The backup GMs (예비 GM, up to three, in order), each with its own key: kept on this browser only. */
+const BACKUPS_KEY = 'vtc.gm.backups.v1';
+
+export function rememberedBackups(storage?: Storage): GmConfig[] {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(store(storage)?.getItem(BACKUPS_KEY) ?? 'null');
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.map(readConfig).filter((c): c is GmConfig => c !== null && c.provider !== 'fake').slice(0, 3);
+}
+
+export function rememberBackups(backups: readonly GmConfig[], storage?: Storage): void {
+  const s = store(storage);
+  if (!s) return;
+  try {
+    if (backups.length) s.setItem(BACKUPS_KEY, JSON.stringify(backups.slice(0, 3)));
+    else s.removeItem(BACKUPS_KEY);
+  } catch {
+    // blocked storage: no backups next time
+  }
+}
+
 export function saveGame(game: Omit<SavedGame, 'version' | 'savedAt'>, storage?: Storage, now = Date.now()): void {
   const s = store(storage);
   if (!s) return;

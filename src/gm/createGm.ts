@@ -6,6 +6,24 @@ import { GeminiGameMaster } from './geminiGm';
 import { FakeGameMaster } from './fakeGm';
 import { MissingKeyGameMaster } from './missingKeyGm';
 import { chatEndpoint, isLocalUrl, serviceName } from './compatible';
+import { FailoverGameMaster, MAX_BACKUPS } from './failover';
+
+/** A GM's service as named in notices ("Gemini", "Groq"). */
+export function serviceOf(config: GmConfig): string {
+  if (config.provider === 'compatible') return serviceName(config.baseUrl);
+  return { claude: 'Claude', openai: 'OpenAI', gemini: 'Gemini', fake: '가짜 GM' }[config.provider];
+}
+
+/**
+ * The GM with its backups (예비 GM, failover.ts): blocked, the next is asked. `labels` name them in
+ * the notices (by default: the main one's service, then "예비 1 · Groq"...). No backup: the GM itself.
+ */
+export function createGmChain(main: GmConfig, backups: readonly GmConfig[] = [], labels?: string[]): GameMaster {
+  // (The settings keep at most MAX_BACKUPS; an AI's own model puts the GM before them.)
+  const list = [main, ...backups.slice(0, MAX_BACKUPS + 1)];
+  if (list.length === 1) return createGm(main);
+  return new FailoverGameMaster(list.map((c, i) => ({ gm: createGm(c), label: labels?.[i] ?? (i === 0 ? serviceOf(c) : `예비 ${i} ${serviceOf(c)}`) })));
+}
 
 /** The config has no key where one is needed (another service on this computer needs none). */
 export function missingKey(config: GmConfig): boolean {

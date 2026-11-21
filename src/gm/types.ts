@@ -30,6 +30,8 @@ export interface GameMaster {
   chaos?(request: ChaosRequest): Promise<unknown>;
   /** Makes up an AI player's declaration for its turn (player.ts); callers run it through parsePlayerAction. */
   act?(request: ActRequest): Promise<unknown>;
+  /** Set by whoever runs the game: told when this GM goes on to a backup (예비 GM, failover.ts). */
+  onNotice?: (text: string) => void;
 }
 
 export interface ChaosRequest {

@@ -90,6 +90,7 @@ function claudeErrorKind(err: unknown): GmErrorKind {
   if (err instanceof Anthropic.RateLimitError || err instanceof Anthropic.InternalServerError) return 'busy';
   if (err instanceof Anthropic.APIConnectionTimeoutError) return 'slow';
   if (err instanceof Anthropic.APIConnectionError) return 'network';
+  if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError || err instanceof Anthropic.NotFoundError) return 'auth';
   if (err instanceof Anthropic.APIError && (err.status === 529 || (err.status ?? 0) >= 500)) return 'busy';
   return 'other';
 }

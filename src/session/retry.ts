@@ -1,5 +1,8 @@
 import { GmError, isTransient, type GmErrorKind } from '../gm/errors';
 
+/** What asking again may help with. */
+type RetryKind = Exclude<GmErrorKind, 'other' | 'auth'>;
+
 /*
  * An AI asking its model again (사용자 요청): when the model is busy (rate limit, overload), too
  * slow, unreachable, or answered in the wrong shape, it waits a little and asks once more, up to
@@ -10,7 +13,7 @@ import { GmError, isTransient, type GmErrorKind } from '../gm/errors';
 export const AI_RETRIES = 3;
 
 /** How long to wait before each extra try, by what went wrong (ms; scaled by the runner's pace). */
-export const RETRY_WAIT_MS: Record<Exclude<GmErrorKind, 'other'>, readonly number[]> = {
+export const RETRY_WAIT_MS: Record<RetryKind, readonly number[]> = {
   // 3 s each time (사용자 요청).
   busy: [3000, 3000, 3000],
   network: [2000, 5000, 10000],
@@ -19,7 +22,7 @@ export const RETRY_WAIT_MS: Record<Exclude<GmErrorKind, 'other'>, readonly numbe
 };
 
 /** What the player is told while it asks again. */
-export const RETRY_REASON: Record<Exclude<GmErrorKind, 'other'>, string> = {
+export const RETRY_REASON: Record<RetryKind, string> = {
   busy: '모델에 요청이 몰려',
   network: '모델에 연결하지 못해',
   slow: '모델의 응답이 너무 오래 걸려',
@@ -51,7 +54,7 @@ export interface RetryOptions {
   /** False once the game moved on: no more tries. */
   stillWanted: () => boolean;
   /** Told before each extra try: what went wrong and which try it is (1..AI_RETRIES). */
-  onRetry?: (kind: Exclude<GmErrorKind, 'other'>, n: number) => void;
+  onRetry?: (kind: RetryKind, n: number) => void;
   /** No new try starts after this (ms, by `now`): a busy model is not waited on for minutes. */
   deadline?: number;
   now?: () => number;
@@ -66,7 +69,7 @@ export async function withRetries<T>(call: () => Promise<T>, { timeoutMs, pace, 
       return await timeLimited(call(), limit);
     } catch (err) {
       if (!isTransient(err) || n >= AI_RETRIES || !stillWanted()) throw err;
-      const kind = err.kind as Exclude<GmErrorKind, 'other'>;
+      const kind = err.kind as RetryKind;
       const wait = RETRY_WAIT_MS[kind][n] * pace;
       // Out of time for another go (a model this busy is not worth more waiting this turn).
       if (deadline !== undefined && now() + wait + 1000 > deadline) throw err;

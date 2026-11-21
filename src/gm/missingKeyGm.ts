@@ -10,6 +10,6 @@ export class MissingKeyGameMaster implements GameMaster {
   }
 
   async rule(): Promise<never> {
-    throw new GmError('API 키가 없습니다. ⚙ GM 설정에서 키를 입력해 주세요.');
+    throw new GmError('API 키가 없습니다. ⚙ GM 설정에서 키를 입력해 주세요.', 'auth');
   }
 }
