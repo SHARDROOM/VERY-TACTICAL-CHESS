@@ -80,6 +80,7 @@ export function CloudSection({ onAction }: { onAction?: () => void }) {
         <div className="menu-note">로그인하면 GM 설정과 API 키, 저장된 게임을 내 Google Drive에 보관하고 다른 기기에서 불러옵니다. 로그인하지 않아도 모든 기능을 쓸 수 있습니다.</div>
         {state.error && <div className="menu-note cloud-warn">{state.error}</div>}
         <button onClick={() => void cloud.connect()}>Google로 로그인</button>
+        <PolicyLinks />
       </section>
     );
   }
@@ -111,7 +112,22 @@ export function CloudSection({ onAction }: { onAction?: () => void }) {
         이 기기에서 지우고 로그아웃
       </button>
       <div className="menu-note">로그아웃해도 이 기기의 설정과 게임은 그대로 남습니다.</div>
+      <PolicyLinks />
     </section>
+  );
+}
+
+/** What is kept where (the pages Google's sign-in screen links to as well). */
+function PolicyLinks() {
+  return (
+    <div className="menu-note cloud-links">
+      <a href="privacy.html" target="_blank" rel="noreferrer">
+        개인정보처리방침
+      </a>
+      <a href="terms.html" target="_blank" rel="noreferrer">
+        이용 약관
+      </a>
+    </div>
   );
 }
 

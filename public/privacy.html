@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>개인정보처리방침 · VERY TACTICAL CHESS</title>
+<style>
+  :root { --bg: #1c130d; --paper: #2a1d14; --text: #ecdfc0; --muted: #b3a283; --line: rgba(236, 223, 192, 0.18); --accent: #e2b45a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.7 system-ui, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-family: 'Nanum Myeongjo', 'AppleMyungjo', serif; font-size: 1.9rem; line-height: 1.3; margin: 0 0 4px; color: var(--accent); }
+  h2 { font-size: 1.15rem; margin: 32px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+  p, li { color: var(--text); }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  ul { padding-left: 1.2em; }
+  li + li { margin-top: 4px; }
+  code { background: var(--paper); padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
+  a { color: var(--accent); }
+  section.en { margin-top: 48px; }
+</style>
+</head>
+<body>
+<main>
+<h1>개인정보처리방침</h1>
+<p class="muted">VERY TACTICAL CHESS (아주 전략적인 체스) · 2026년 11월 21일 시행</p>
+
+<p>VERY TACTICAL CHESS는 브라우저에서 돌아가는 체스 게임입니다. 게임을 만든 사람은 서버를 운영하지 않으며, 플레이어의 정보를 받거나 모으거나 팔지 않습니다. 이 문서는 게임이 어떤 정보를 어디에 두는지 설명합니다.</p>
+
+<h2>1. 이 브라우저에 저장하는 것</h2>
+<p>게임은 다음을 이 브라우저의 저장소(localStorage)에 둡니다. 로그인하지 않으면 이 정보는 이 기기를 떠나지 않습니다(API 키를 쓰는 AI 서비스로 가는 요청은 3번).</p>
+<ul>
+  <li>설정: 고른 GM과 모델, 예비 GM, AI 자리별 모델, 이름, 효과음, 연출</li>
+  <li>플레이어가 입력한 AI 서비스의 API 키</li>
+  <li>이어 하기용으로 저장한 게임 하나</li>
+</ul>
+
+<h2>2. Google로 로그인했을 때</h2>
+<p>로그인은 선택입니다. 로그인하면 게임은 Google에 다음 두 가지 권한만 요청합니다.</p>
+<ul>
+  <li><code>drive.appdata</code>: 플레이어의 Google Drive 안에 있는, 이 게임 전용 숨은 폴더 하나를 읽고 씁니다. 이 폴더는 Drive 화면에 보이지 않고, 플레이어의 다른 Drive 파일은 보거나 읽을 수 없습니다.</li>
+  <li><code>email</code>: 어느 계정으로 로그인했는지 화면에 보여 주는 데만 씁니다.</li>
+</ul>
+<p>전용 폴더에는 <code>vtc-sync.json</code> 파일 하나를 두고, 1번의 설정과 저장된 게임을 넣습니다. API 키는 플레이어가 정한 암호로 잠근 뒤에 넣습니다(PBKDF2로 만든 키로 AES-GCM 암호화). 암호는 어디에도 저장되지 않습니다.</p>
+<p>이 정보는 플레이어의 브라우저와 Google 사이에서만 오갑니다. 게임을 만든 사람에게는 전달되지 않습니다. Google에서 받은 정보는 다른 기기에서 설정과 게임을 이어 쓰는 데만 사용하고, 광고나 다른 목적으로 쓰거나 남에게 넘기지 않습니다.</p>
+<p>Google API에서 받은 정보의 사용과 전송은 Limited Use 요건을 포함한 <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API 서비스 사용자 데이터 정책</a>을 따릅니다.</p>
+
+<h2>3. AI 서비스로 보내는 것</h2>
+<p>GM이나 AI 플레이어로 Claude, OpenAI, Gemini 등 AI 서비스를 고르면, 게임은 플레이어의 브라우저에서 그 서비스로 직접 요청을 보냅니다. 이때 보드 상태, 선언한 특수 행동, 판례, 그리고 플레이어가 입력한 API 키가 함께 갑니다. 이 요청에는 각 서비스의 개인정보처리방침이 적용되고, 사용료는 그 키의 주인에게 청구됩니다.</p>
+
+<h2>4. 온라인 대전</h2>
+<p>온라인 방은 두 브라우저를 직접 연결합니다(WebRTC). 서로를 찾을 때만 PeerJS의 공개 중계 서버를 거칩니다. 상대에게는 게임 상태, 채팅, 방에서 쓰는 이름이 전달되고, API 키는 전달되지 않습니다.</p>
+
+<h2>5. 지우는 방법</h2>
+<ul>
+  <li>이 기기: 게임의 ⚙ 설정 → Google 계정 → "이 기기에서 지우고 로그아웃". 또는 브라우저에서 이 사이트의 데이터를 지웁니다.</li>
+  <li>Google Drive: Drive 설정 → 앱 관리 → VERY TACTICAL CHESS → "숨겨진 앱 데이터 삭제".</li>
+  <li>권한 거두기: <a href="https://myaccount.google.com/permissions">Google 계정 → 서드 파티 연결</a>에서 이 게임의 접근을 해제합니다.</li>
+</ul>
+
+<h2>6. 바뀔 때와 문의</h2>
+<p>이 방침이 바뀌면 이 페이지를 고치고 위의 날짜를 바꿉니다. 문의는 <a href="https://github.com/SHARDROOM/VERY-TACTICAL-CHESS/issues">GitHub 이슈</a>로 남겨 주세요.</p>
+
+<section class="en" lang="en">
+<h2>Summary in English</h2>
+<p>VERY TACTICAL CHESS runs entirely in the browser; its developer runs no server and receives no player data. Settings, API keys and one saved game are kept in the browser's localStorage. Signing in with Google is optional. It requests only <code>drive.appdata</code> (the app's own hidden folder in the player's Drive; no other Drive files can be seen) and <code>email</code> (to show which account is signed in). The app stores one file, <code>vtc-sync.json</code>, in that folder: settings, the saved game, and API keys encrypted with a passphrase only the player knows. This data travels only between the player's browser and Google. It is used only to continue settings and games on another device, and it is never shared, sold or used for ads. The use and transfer of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements. AI providers the player chooses receive the board state and actions directly from the browser, with the player's own key. To delete: use "이 기기에서 지우고 로그아웃" in the game, delete hidden app data under Drive settings → Manage apps, and revoke access in the Google Account permissions page. Contact: <a href="https://github.com/SHARDROOM/VERY-TACTICAL-CHESS/issues">GitHub issues</a>.</p>
+</section>
+</main>
+</body>
+</html>

@@ -716,6 +716,9 @@ body > .menu-backdrop { position: fixed; z-index: 10; }
 @keyframes cloud-turn { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .cloud-badge.busy { animation: none; } }
 .cloud-chip.warn .label { color: var(--warn); }
+.cloud-links { display: flex; gap: 14px; }
+.cloud-links a { color: var(--muted); text-underline-offset: 3px; }
+.cloud-links a:hover { color: var(--text); }
 .cloud-section .cloud-email { font-size: 0.9375rem; overflow-wrap: anywhere; }
 .cloud-line.ok { color: var(--success); }
 .cloud-line.warn, .cloud-warn { color: var(--warn); }
