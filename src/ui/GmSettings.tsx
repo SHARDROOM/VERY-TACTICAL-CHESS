@@ -7,6 +7,7 @@ import { CLAUDE_MODELS, type GmEffort } from '../gm/claudeGm';
 import { OPENAI_MODEL_SUGGESTIONS } from '../gm/openaiGm';
 import { GEMINI_MODEL_SUGGESTIONS } from '../gm/geminiGm';
 import { COMPATIBLE_PRESETS, cleanBaseUrl, isLocalUrl, presetFor } from '../gm/compatible';
+import { missingKey } from '../gm/createGm';
 
 type LlmProvider = 'claude' | 'openai' | 'gemini';
 
@@ -66,6 +67,9 @@ const BRAIN_PROVIDERS: { id: GmConfig['provider'] | 'same'; name: string; note: 
   ...PROVIDERS.filter((p) => p.id !== 'fake'),
   { id: 'fake', name: '내장 AI', note: '키 없이. 보호막, 저격, 기절, 검술 같은 정해진 행동만 고릅니다.' },
 ];
+
+/** A config's key (none for the fake one). */
+const keyOf = (c: GmConfig): string => (c.provider === 'fake' ? '' : c.apiKey);
 
 export function GmSettings({ current, onSave, onClose, brain, backup }: Props) {
   const [provider, setProvider] = useState<GmConfig['provider'] | 'same'>(brain?.usesGm ? 'same' : current.provider);
@@ -150,16 +154,27 @@ export function GmSettings({ current, onSave, onClose, brain, backup }: Props) {
             <h3>예비 GM에서 바로 고르기</h3>
             <div className="brain-quick-list">
               {savedBackups.map((b, i) => {
-                const now = !brain.usesGm && sameModel(b, current);
+                // The one this seat took: the same model with the same key (two backups may share a model).
+                const now = !brain.usesGm && sameModel(b, current) && keyOf(b) === keyOf(current);
+                // One without a key (its key not here yet, e.g. synced before the passphrase) would do nothing.
+                const keyless = missingKey(b);
                 return (
-                  <button key={i} type="button" className={now ? 'active' : ''} aria-pressed={now} onClick={() => onSave(b)}>
+                  <button
+                    key={i}
+                    type="button"
+                    className={now ? 'active' : ''}
+                    aria-pressed={now}
+                    disabled={keyless}
+                    title={keyless ? '키가 없습니다. ⚙ GM 설정에서 이 예비 GM에 키를 넣으면 고를 수 있습니다.' : undefined}
+                    onClick={() => onSave(b)}
+                  >
                     <span className="brain-quick-num">예비 {i + 1}</span>
                     <span className="brain-quick-name">{gmLabel(b)}</span>
                   </button>
                 );
               })}
             </div>
-            <p className="muted-line">누르면 그 예비 GM의 모델과 키로 바로 정합니다. 다른 모델은 아래에서 고르세요.</p>
+            <p className="muted-line">누르면 그 예비 GM의 모델과 키로 바로 정합니다. 키가 없는 예비 GM은 고를 수 없습니다. 다른 모델은 아래에서 고르세요.</p>
           </section>
         )}
         <fieldset className="provider-grid">

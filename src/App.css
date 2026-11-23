@@ -378,6 +378,7 @@ body > .overlay { position: fixed; z-index: 10; }
 .brain-quick-num { font-size: 0.75rem; color: var(--muted); }
 .brain-quick-list button.active .brain-quick-num { color: var(--accent-bright); }
 .brain-quick-name { overflow-wrap: anywhere; }
+.brain-quick-list button:disabled { cursor: not-allowed; }
 .backup-gms h3 { margin: 0; font-family: var(--font-voice); font-size: 1.0625rem; }
 .backup-gms ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
 .backup-gms li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
