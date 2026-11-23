@@ -96,9 +96,11 @@ export function movesFrom(board: Board, from: Square, terrain?: readonly Terrain
       slides([...ORTHO, ...DIAG]);
       break;
     case 'pawn': {
-      // A gray (wandering) pawn has no side to march toward: it steps one square any way.
+      // A gray (wandering) pawn has no side to march toward: it walks one square straight any way,
+      // onto an empty square, and takes like a pawn, one square diagonally any way (사용자 요청).
       if (piece.color === GRAY) {
-        for (const d of [...ORTHO, ...DIAG]) for (const s of step(from, d)) if (canLand(s.sq)) out.push(s.sq);
+        for (const d of ORTHO) for (const s of step(from, d)) if (!board[s.sq] && canLand(s.sq)) out.push(s.sq);
+        for (const d of DIAG) for (const s of step(from, d)) if (board[s.sq] && canLand(s.sq)) out.push(s.sq);
         break;
       }
       const fwd = pawnForward(piece.color, from);

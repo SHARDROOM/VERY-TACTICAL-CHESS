@@ -18,19 +18,31 @@ describe('chaos\'s gray wanderers', () => {
     expect(applyCommand(s, { type: 'proposeSpecial', action: 'a', ruling })).toMatchObject({ ok: false, reason: 'invalidRuling' });
   });
 
-  it('a gray pawn steps one square any way; a wanderer never takes a king or a piece that would stand its ground', () => {
+  it('a gray pawn walks one square straight any way and takes only on a diagonal (사용자 요청); a wanderer never takes a king or a piece that would stand its ground', () => {
     const s = withGray(
-      createStateFrom({ d5: { color: 'white', type: 'king' }, e4: { color: 'black', type: 'rook' }, c4: { color: 'white', type: 'pawn' }, e8: { color: 'black', type: 'king' } }),
+      createStateFrom({
+        d5: { color: 'white', type: 'king' },
+        e4: { color: 'black', type: 'rook' },
+        e5: { color: 'black', type: 'knight' },
+        c3: { color: 'white', type: 'pawn' },
+        e8: { color: 'black', type: 'king' },
+      }),
       'd4',
       'pawn',
     );
     const shielded = [...s.board];
-    shielded[sq('c4')] = { ...shielded[sq('c4')]!, tags: [{ name: '보호막', turnsLeft: null, appliedOnTurn: 1 }] };
+    shielded[sq('c3')] = { ...shielded[sq('c3')]!, tags: [{ name: '보호막', turnsLeft: null, appliedOnTurn: 1 }] };
     const t = wanderTargets(shielded, sq('d4'));
-    expect(t).toContain(sq('e4'));
-    expect(t).toContain(sq('d3'));
+    // Straight: onto empty squares only (the rook beside it is not taken).
+    expect(t).toEqual(expect.arrayContaining([sq('c4'), sq('d3')]));
+    expect(t).not.toContain(sq('e4'));
+    // Diagonal: only to take (the knight), never onto an empty square.
+    expect(t).toContain(sq('e5'));
+    expect(t).not.toContain(sq('c5'));
+    expect(t).not.toContain(sq('e3'));
+    // Never a king, never a shielded piece.
     expect(t).not.toContain(sq('d5'));
-    expect(t).not.toContain(sq('c4'));
+    expect(t).not.toContain(sq('c3'));
   });
 
   it('moves as told, takes what it lands on, and gives no check', () => {
