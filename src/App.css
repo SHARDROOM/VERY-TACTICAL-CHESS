@@ -369,6 +369,15 @@ body > .overlay { position: fixed; z-index: 10; }
 .settings .field small.field-error { color: var(--danger); }
 /* Backup GMs (예비 GM): an ordered list under the GM, each changeable or removable. */
 .backup-gms { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 8px; }
+/* An AI seat's brain: the saved backup GMs, one press each. */
+.brain-quick { display: grid; gap: 8px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.brain-quick h3 { margin: 0; font-family: var(--font-voice); font-size: 1.0625rem; }
+.brain-quick-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 8px; }
+.brain-quick-list button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 9px 11px; }
+.brain-quick-list button.active { border-color: var(--accent); background: rgba(200, 150, 62, 0.14); }
+.brain-quick-num { font-size: 0.75rem; color: var(--muted); }
+.brain-quick-list button.active .brain-quick-num { color: var(--accent-bright); }
+.brain-quick-name { overflow-wrap: anywhere; }
 .backup-gms h3 { margin: 0; font-family: var(--font-voice); font-size: 1.0625rem; }
 .backup-gms ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
 .backup-gms li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

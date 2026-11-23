@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { rememberBackups, rememberKeys, rememberedBackups, rememberedGm } from '../session/storage';
 import { MAX_BACKUPS } from '../gm/failover';
-import { gmLabel } from './gmLabel';
+import { gmLabel, sameModel } from './gmLabel';
 import { CLAUDE_MODELS, type GmEffort } from '../gm/claudeGm';
 import { OPENAI_MODEL_SUGGESTIONS } from '../gm/openaiGm';
 import { GEMINI_MODEL_SUGGESTIONS } from '../gm/geminiGm';
@@ -104,6 +104,8 @@ export function GmSettings({ current, onSave, onClose, brain, backup }: Props) {
 
   // The backup GMs (main settings only): kept with the GM when it is saved.
   const [backups, setBackups] = useState<GmConfig[]>(() => (brain || backup ? [] : rememberedBackups()));
+  // An AI seat may take one of the saved backup GMs as it is, key and all (사용자 요청).
+  const [savedBackups] = useState<GmConfig[]>(() => (brain ? rememberedBackups() : []));
   const [editing, setEditing] = useState<number | null>(null);
   const llm = provider === 'fake' || provider === 'same' || provider === 'compatible' ? null : provider;
   const otherMissing = provider === 'compatible' && !otherLocal && !otherKey.trim() ? '키' : null;
@@ -143,6 +145,23 @@ export function GmSettings({ current, onSave, onClose, brain, backup }: Props) {
               ? '앞의 GM이 막히면(사용 한도, 요청 몰림, 너무 느림, 연결 안 됨, 키 오류) 이 GM에 대신 묻습니다.'
               : '특수 행동을 판정하고 혼돈을 일으킬 GM을 고르세요.'}
         </p>
+        {brain && savedBackups.length > 0 && (
+          <section className="brain-quick" aria-label="예비 GM에서 바로 고르기">
+            <h3>예비 GM에서 바로 고르기</h3>
+            <div className="brain-quick-list">
+              {savedBackups.map((b, i) => {
+                const now = !brain.usesGm && sameModel(b, current);
+                return (
+                  <button key={i} type="button" className={now ? 'active' : ''} aria-pressed={now} onClick={() => onSave(b)}>
+                    <span className="brain-quick-num">예비 {i + 1}</span>
+                    <span className="brain-quick-name">{gmLabel(b)}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="muted-line">누르면 그 예비 GM의 모델과 키로 바로 정합니다. 다른 모델은 아래에서 고르세요.</p>
+          </section>
+        )}
         <fieldset className="provider-grid">
           <legend className="sr-only">{brain ? '모델 종류' : 'GM 종류'}</legend>
           {(brain ? BRAIN_PROVIDERS : backup ? PROVIDERS.filter((p) => p.id !== 'fake') : PROVIDERS).map((p) => (
