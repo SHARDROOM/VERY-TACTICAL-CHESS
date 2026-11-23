@@ -129,7 +129,7 @@ export const SKILLS_DESCRIPTION = '이번 행동에 해당하는 주체(와 그 
 const skillsField = z.array(z.string()).describe(SKILLS_DESCRIPTION);
 export const MENTAL_DESCRIPTION = '회유, 매혹, 공포, 설득, 세뇌처럼 마음을 움직이는 정신 계열 행동이면 true (대상의 정신력이 보정이 된다)';
 const mentalField = z.boolean().describe(MENTAL_DESCRIPTION);
-export const SACRIFICE_DESCRIPTION = '희생: 선언에서 바치는 선언자 쪽 기물들의 칸(주체에서 1칸 이내, 킹과 주체 불가). 주사위를 굴리는 순간 성공과 상관없이 사라지고, 시스템이 기물 점수만큼 보정을 더한다. 없으면 빈 목록';
+export const SACRIFICE_DESCRIPTION = '희생: 선언에서 바치는 선언자 쪽 기물들의 칸(주체에서 1칸 이내, 킹과 주체 불가). 주사위를 굴리는 순간 성공과 상관없이 사라지고, 시스템이 가장 센 제물의 점수만큼 보정을 더한다. 없으면 빈 목록';
 const sacrificeField = z.array(z.string()).describe(SACRIFICE_DESCRIPTION);
 
 /** `lenient`: reading a reply, where a missing actor or means is left for the engine to refuse (and the GM to retry). */

@@ -14,8 +14,9 @@ import { remainsAt } from './captured';
  * - mind (정신력): a tag on the target that resists (or invites) a mental action (회유, 매혹, ...),
  *   counted only against another side's piece;
  * - sacrifice (희생): pieces of the declarer's next to the actor, given up the moment the dice are
- *   thrown (success or not), worth more the stronger they are; with one, the GM may also hand
- *   out stronger buffs (a clash multiplier up to ×2.5, a skill or will up to ±4);
+ *   thrown (success or not), worth more the stronger they are (several help the roll only as much
+ *   as the strongest of them); with one, the GM may also hand out stronger buffs (a skill or will
+ *   up to ±4, a clash multiplier the offering raises);
  * - remains (유해): reviving a piece where it fell, while its remains are still there;
  * - distance (거리): the farther the action reaches from its actor, the harder (DISTANCE_RULE);
  * - building (건물): a building next to the actor that helps with this kind of action (the GM
@@ -30,7 +31,7 @@ export interface RollModifier {
   /** Where it comes from: the tag's name, the sacrificed piece, ... */
   label: string;
   value: number;
-  /** A sacrifice's whole worth (SACRIFICE_VALUE added up), when `value` is less: it went into a clash multiplier. */
+  /** An offering for a clash multiplier: its whole worth (SACRIFICE_VALUE added up), which raises the multiplier. */
   worth?: number;
 }
 
@@ -78,19 +79,24 @@ export function givesClash(board: Board, ruling: Ruling, color: Color): boolean 
 }
 
 /**
- * The pieces given up, as modifiers (from the board before they go). Given up for a clash
- * multiplier, they are one modifier worth a third of the offering (it went into the multiplier).
+ * The pieces given up, as one modifier (from the board before they go). Several help the roll
+ * only as much as the strongest of them (사용자 요청: bringing more pieces must not pile up the
+ * odds). Given up for a clash multiplier, the whole offering raises the multiplier (`worth`) and
+ * the roll gets a third of the strongest piece.
  */
 export function sacrificeModifiers(board: Board, ruling: Ruling, color: Color): RollModifier[] {
-  const out: RollModifier[] = [];
+  const given: { name: string; value: number }[] = [];
   for (const at of ruling.sacrifice ?? []) {
     const p = board[at];
-    if (p && p.type !== 'king') out.push({ kind: 'sacrifice', label: `제물 ${KIND_NAME[p.type]} ${squareName(at)}`, value: SACRIFICE_VALUE[p.type] });
+    if (p && p.type !== 'king') given.push({ name: `${KIND_NAME[p.type]} ${squareName(at)}`, value: SACRIFICE_VALUE[p.type] });
   }
-  if (!out.length || !givesClash(board, ruling, color)) return out;
-  const worth = out.reduce((s, m) => s + m.value, 0);
-  const names = out.map((m) => m.label.replace(/^제물 /, '')).join(', ');
-  return [{ kind: 'sacrifice', label: `제물 ${names} (배율에 바쳐 1/3)`, value: Math.round(worth / 3), worth }];
+  if (!given.length) return [];
+  const strongest = Math.max(...given.map((g) => g.value));
+  const names = given.map((g) => g.name).join(', ');
+  const several = given.length > 1;
+  if (!givesClash(board, ruling, color)) return [{ kind: 'sacrifice', label: `제물 ${names}${several ? ' (확률은 가장 센 하나만)' : ''}`, value: strongest }];
+  const worth = given.reduce((s, g) => s + g.value, 0);
+  return [{ kind: 'sacrifice', label: `제물 ${names} (배율에 바쳐 1/3${several ? ', 확률은 가장 센 하나만' : ''})`, value: Math.round(strongest / 3), worth }];
 }
 
 /** How much an offering raises the clash multiplier the ruling gives (0 when it was not for one). */

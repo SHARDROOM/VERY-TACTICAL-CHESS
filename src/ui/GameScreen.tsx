@@ -1460,7 +1460,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
                     <li className="sacrifice-note">주사위를 굴리는 순간 제물({pending.ruling.sacrifice.map((s) => squareName(s)).join(', ')})이 성공과 상관없이 사라집니다.</li>
                   )}
                   {sacrificeBoost > 0 && (
-                    <li className="sacrifice-note">제물의 힘이 합 배율로 갑니다: 내 기물에 주는 배율 +{sacrificeBoost} (주사위 보정은 1/3).</li>
+                    <li className="sacrifice-note">제물의 힘이 합 배율로 갑니다: 내 기물에 주는 배율 +{sacrificeBoost} (주사위 보정은 가장 센 제물의 1/3).</li>
                   )}
                   {strikeClashes.map((c) => (
                     <li key={c.at} className="clash-note">

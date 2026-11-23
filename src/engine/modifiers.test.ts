@@ -98,18 +98,22 @@ describe('sacrifice (희생)', () => {
     board[sq('e3')] = { id: 'pe3', color: 'white', type: 'pawn' };
     board[sq('c4')] = { id: 'rc4', color: 'white', type: 'rook' };
     board[sq('h1')] = { id: 'qh1', color: 'white', type: 'queen' };
+    board[sq('c3')] = { id: 'bc3', color: 'white', type: 'bishop' };
     return { ...s, board };
   }
   const offering = (over: Partial<Ruling> = {}) =>
     ruling({ interpretation: '제물을 바쳐 나이트가 강해진다', effects: [{ type: 'tag', at: sq('d4'), tag: '피의 맹세', turns: 2, clash: 1.5 }], sacrifice: [sq('e3'), sq('c4')], ...over });
-  /** The same offering for a plain skill (no multiplier): each piece adds its whole worth. */
+  /** The same offering for a plain skill (no multiplier). */
   const forSkill = (over: Partial<Ruling> = {}) => offering({ effects: [{ type: 'tag', at: sq('d4'), tag: '광전사', turns: 2, skill: { about: '돌격', bonus: 2 } }], ...over });
 
-  it('pieces next to the actor are given up when the dice are thrown, even on a failure, and add their worth', () => {
-    const r = roll(altar(), forSkill(), 4);
+  it('pieces next to the actor are given up when the dice are thrown, even on a failure; several help the roll only as much as the strongest (사용자 요청)', () => {
+    const r = roll(altar(), forSkill(), 5);
     const resolved = r.events.find((e) => e.type === 'specialResolved');
-    // 4 + (1 + 3) = 8 < 9: a failure, and the offering is gone anyway.
-    expect(resolved).toMatchObject({ outcome: 'failure', bonus: 4, mods: [{ kind: 'sacrifice', value: 1 }, { kind: 'sacrifice', value: 3 }] });
+    // A pawn and a rook help the roll as the rook alone: 5 + 3 = 8 < 9, a failure, and both are gone anyway.
+    expect(resolved).toMatchObject({ outcome: 'failure', bonus: 3, mods: [{ kind: 'sacrifice', value: 3, label: '제물 폰 e3, 룩 c4 (확률은 가장 센 하나만)' }] });
+    // One piece is counted as before.
+    const pawn = roll(altar(), forSkill({ sacrifice: [sq('e3')] }), 5);
+    expect(pawn.events.find((e) => e.type === 'specialResolved')).toMatchObject({ bonus: 1, mods: [{ kind: 'sacrifice', value: 1, label: '제물 폰 e3' }] });
     expect(r.state.board[sq('e3')]).toBeNull();
     expect(r.state.board[sq('c4')]).toBeNull();
     expect(r.events.filter((e) => e.type === 'removed' && e.cause === 'sacrifice')).toHaveLength(2);
@@ -124,6 +128,10 @@ describe('sacrifice (희생)', () => {
     // A pawn alone: ×1.6. Stronger and more pieces give more.
     const pawn = roll(altar(), offering({ sacrifice: [sq('e3')] }), 9);
     expect(pawn.state.board[sq('d4')]?.tags?.[0]).toMatchObject({ clash: 1.6 });
+    // A rook and a bishop (3 + 2 = 5): the multiplier takes all of it (×2.0), the dice a third of the rook alone (+1, not +2).
+    const two = roll(altar(), offering({ sacrifice: [sq('c4'), sq('c3')] }), 8);
+    expect(two.events.find((e) => e.type === 'specialResolved')).toMatchObject({ bonus: 1, mods: [{ kind: 'sacrifice', value: 1, worth: 5 }] });
+    expect(two.state.board[sq('d4')]?.tags?.[0]).toMatchObject({ clash: 2 });
   });
 
   it('a second try after a failure keeps the offering (and its multiplier) without giving anything more', () => {
