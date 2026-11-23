@@ -86,7 +86,7 @@ export class ClaudeGameMaster implements GameMaster {
 }
 
 /** Whether asking again may help: busy (rate limit, overload, server error), slow, unreachable. */
-function claudeErrorKind(err: unknown): GmErrorKind {
+export function claudeErrorKind(err: unknown): GmErrorKind {
   if (err instanceof Anthropic.RateLimitError || err instanceof Anthropic.InternalServerError) return 'busy';
   if (err instanceof Anthropic.APIConnectionTimeoutError) return 'slow';
   if (err instanceof Anthropic.APIConnectionError) return 'network';
@@ -95,7 +95,7 @@ function claudeErrorKind(err: unknown): GmErrorKind {
   return 'other';
 }
 
-function describeApiError(err: unknown): string {
+export function describeApiError(err: unknown): string {
   if (err instanceof Anthropic.AuthenticationError) return 'API 키가 올바르지 않습니다. GM 설정에서 키를 확인해 주세요.';
   if (err instanceof Anthropic.PermissionDeniedError) return '이 API 키로는 선택한 모델을 쓸 수 없습니다.';
   if (err instanceof Anthropic.NotFoundError) return '선택한 모델을 찾을 수 없습니다. GM 설정에서 다른 모델을 골라 주세요.';

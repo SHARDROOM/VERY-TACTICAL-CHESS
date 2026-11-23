@@ -262,6 +262,8 @@ interface Props {
   session: Session;
   gmConfig: GmConfig;
   onGmConfig: (config: GmConfig) => void;
+  /** The backup GMs were changed in the GM settings (saved at once). */
+  onBackups?: () => void;
   onLeave: () => void;
   /** Open the GM settings right away (a resumed game whose API key must be typed again). */
   openGmSettings?: boolean;
@@ -273,7 +275,7 @@ interface Props {
 const narrowScreen = () => typeof matchMedia === 'function' && matchMedia('(max-width: 700px)').matches;
 const WATCH_FOLD_KEY = 'vtc.watchFolded';
 
-export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSettings = false, startNotice = null }: Props) {
+export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, openGmSettings = false, startNotice = null }: Props) {
   const [view, setView] = useState<SessionView>(() => session.view());
   // Every square helper (names, the scene's geometry) follows the board this game is played on.
   setBoardMap(view.state.map);
@@ -1529,6 +1531,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onLeave, openGmSetti
             onGmConfig(config);
             setShowGmSettings(false);
           }}
+          onBackups={onBackups}
         />
       )}
 

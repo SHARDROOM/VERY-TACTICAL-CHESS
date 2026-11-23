@@ -8,6 +8,7 @@ import { OPENAI_MODEL_SUGGESTIONS } from '../gm/openaiGm';
 import { GEMINI_MODEL_SUGGESTIONS } from '../gm/geminiGm';
 import { COMPATIBLE_PRESETS, cleanBaseUrl, isLocalUrl, presetFor } from '../gm/compatible';
 import { missingKey } from '../gm/createGm';
+import { pingGm, type PingResult } from '../gm/ping';
 
 type LlmProvider = 'claude' | 'openai' | 'gemini';
 
@@ -29,6 +30,8 @@ interface Props {
   brain?: { seat: string; usesGm: boolean; onUseGm: () => void };
   /** Choosing backup GM number `backup` (예비 GM): a GM kind, without the fake one. */
   backup?: number;
+  /** The backup GMs were changed (added, changed or taken out): they are saved at once (사용자 요청). */
+  onBackups?: (backups: GmConfig[]) => void;
 }
 
 const EFFORTS: { id: GmEffort; label: string }[] = [
@@ -71,7 +74,7 @@ const BRAIN_PROVIDERS: { id: GmConfig['provider'] | 'same'; name: string; note: 
 /** A config's key (none for the fake one). */
 const keyOf = (c: GmConfig): string => (c.provider === 'fake' ? '' : c.apiKey);
 
-export function GmSettings({ current, onSave, onClose, brain, backup }: Props) {
+export function GmSettings({ current, onSave, onClose, brain, backup, onBackups }: Props) {
   const [provider, setProvider] = useState<GmConfig['provider'] | 'same'>(brain?.usesGm ? 'same' : current.provider);
   // Keys and models are kept per provider while the dialog is open, so switching tabs loses nothing.
   // Every key typed in on this browser is filled in again.
@@ -111,12 +114,41 @@ export function GmSettings({ current, onSave, onClose, brain, backup }: Props) {
   // An AI seat may take one of the saved backup GMs as it is, key and all (사용자 요청).
   const [savedBackups] = useState<GmConfig[]>(() => (brain ? rememberedBackups() : []));
   const [editing, setEditing] = useState<number | null>(null);
+  // A backup GM is kept the moment it is set, changed or taken out (not only with the GM).
+  const updateBackups = (next: GmConfig[]) => {
+    setBackups(next);
+    rememberBackups(next);
+    onBackups?.(next);
+  };
   const llm = provider === 'fake' || provider === 'same' || provider === 'compatible' ? null : provider;
   const otherMissing = provider === 'compatible' && !otherLocal && !otherKey.trim() ? '키' : null;
   const canSave =
     provider === 'compatible'
       ? !!otherUrl && other.model.trim().length > 0 && !otherMissing
       : !llm || (keys[llm].trim().length > 0 && models[llm].trim().length > 0);
+
+  /** The GM as the form now stands (none for "GM과 같이" or an address not yet right). */
+  const configNow = (): GmConfig | null => {
+    if (provider === 'same') return null;
+    if (provider === 'compatible') return otherUrl ? { provider: 'compatible', baseUrl: otherUrl, model: other.model.trim(), apiKey: otherKey.trim() } : null;
+    if (!llm) return { provider: 'fake' };
+    const base = { apiKey: keys[llm].trim(), model: models[llm].trim() };
+    return llm === 'claude' ? { provider: llm, ...base, effort } : { provider: llm, ...base };
+  };
+
+  // 응답 확인: a short question to the model as filled in; the answer stays while the form does.
+  const [ping, setPing] = useState<{ of: string; result: PingResult | null } | null>(null);
+  const formNow = JSON.stringify(configNow());
+  const pingShown = ping && ping.of === formNow ? ping.result : undefined;
+  const checking = pingShown === null;
+  const check = async () => {
+    const config = configNow();
+    if (!config || !canSave) return;
+    const of = JSON.stringify(config);
+    setPing({ of, result: null });
+    const result = await pingGm(config);
+    setPing((p) => (p?.of === of ? { of, result } : p));
+  };
 
   const save = () => {
     if (!canSave) return;
@@ -126,10 +158,8 @@ export function GmSettings({ current, onSave, onClose, brain, backup }: Props) {
       rememberKeys({ ...keys, compatible: otherKeys });
       rememberBackups(backups);
     }
-    if (provider === 'compatible' && otherUrl) return onSave({ provider: 'compatible', baseUrl: otherUrl, model: other.model.trim(), apiKey: otherKey.trim() });
-    if (!llm) return onSave({ provider: 'fake' });
-    const base = { apiKey: keys[llm].trim(), model: models[llm].trim() };
-    onSave(llm === 'claude' ? { provider: llm, ...base, effort } : { provider: llm, ...base });
+    const config = configNow();
+    if (config) onSave(config);
   };
 
   return (
@@ -311,10 +341,23 @@ export function GmSettings({ current, onSave, onClose, brain, backup }: Props) {
           </ul>
         )}
 
+        {(llm || provider === 'compatible') && (
+          <div className="ping-row">
+            <button type="button" onClick={() => void check()} disabled={!canSave || checking} title="짧은 질문 하나를 보내 이 키와 모델로 실제로 답이 오는지 봅니다(요금은 아주 조금).">
+              {checking ? '확인 중…' : '응답 확인'}
+            </button>
+            {pingShown && (
+              <span className={`ping-result ${pingShown.ok ? 'ok' : 'bad'}`} role="status">
+                {pingShown.ok ? `✓ 응답함 (${(pingShown.ms / 1000).toFixed(1)}초)` : `✗ ${pingShown.message}`}
+              </span>
+            )}
+          </div>
+        )}
+
         {!brain && !backup && (
           <section className="backup-gms" aria-label="예비 GM">
             <h3>예비 GM</h3>
-            <p className="muted-line">GM이 막히면(사용 한도, 요청 몰림, 너무 느림, 연결 안 됨, 키 오류) 차례로 대신 묻습니다. 막힌 GM은 2분 쉬고(키 오류면 계속), 넘어갈 때 기록에 알립니다.</p>
+            <p className="muted-line">GM이 막히면(사용 한도, 요청 몰림, 너무 느림, 연결 안 됨, 키 오류) 차례로 대신 묻습니다. 막힌 GM은 2분 쉬고(키 오류면 계속), 넘어갈 때 기록에 알립니다. 예비 GM은 넣거나 바꾸거나 빼는 즉시 저장됩니다.</p>
             {backups.length > 0 && (
               <ol>
                 {backups.map((b, i) => (
@@ -323,7 +366,7 @@ export function GmSettings({ current, onSave, onClose, brain, backup }: Props) {
                       {i + 1}. {gmLabel(b)}
                     </span>
                     <button type="button" onClick={() => setEditing(i)}>바꾸기</button>
-                    <button type="button" onClick={() => setBackups((list) => list.filter((_, k) => k !== i))}>빼기</button>
+                    <button type="button" onClick={() => updateBackups(backups.filter((_, k) => k !== i))}>빼기</button>
                   </li>
                 ))}
               </ol>
@@ -352,11 +395,9 @@ export function GmSettings({ current, onSave, onClose, brain, backup }: Props) {
           backup={editing + 1}
           onClose={() => setEditing(null)}
           onSave={(config) => {
-            setBackups((list) => {
-              const next = [...list];
-              next[editing] = config;
-              return next;
-            });
+            const next = [...backups];
+            next[editing] = config;
+            updateBackups(next);
             setEditing(null);
           }}
         />,

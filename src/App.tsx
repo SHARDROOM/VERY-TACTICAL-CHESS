@@ -275,6 +275,12 @@ export default function App() {
     clearHash();
   };
 
+  // A backup GM set, changed or taken out is saved at once: the GM in use takes it up now.
+  const backupsChanged = () => {
+    setGmVersion((v) => v + 1);
+    session?.setGm(chainOf(gmRef.current));
+  };
+
   const changeGm = (config: GmConfig) => {
     rememberGm(config);
     setGmConfig(config);
@@ -319,6 +325,7 @@ export default function App() {
               changeGm(config);
               setLobbyGmSettings(false);
             }}
+            onBackups={backupsChanged}
           />
         )}
       </>
@@ -330,6 +337,7 @@ export default function App() {
       session={session}
       gmConfig={gmConfig}
       onGmConfig={changeGm}
+      onBackups={backupsChanged}
       brains={brains}
       onBrain={changeBrain}
       onLeave={leave}
@@ -345,6 +353,7 @@ function RoomScreen(props: {
   session: Session;
   gmConfig: GmConfig;
   onGmConfig: (c: GmConfig) => void;
+  onBackups: () => void;
   brains: AiBrains;
   onBrain: (seat: 'white' | 'black' | 'red', config: GmConfig | null) => void;
   onLeave: () => void;
@@ -388,6 +397,7 @@ function RoomScreen(props: {
               props.onGmConfig(config);
               setGmSettings(false);
             }}
+            onBackups={props.onBackups}
           />
         )}
       </>
@@ -399,6 +409,7 @@ function RoomScreen(props: {
       session={session}
       gmConfig={props.gmConfig}
       onGmConfig={props.onGmConfig}
+      onBackups={props.onBackups}
       onLeave={props.onLeave}
       openGmSettings={props.openGmSettings}
       startNotice={gameNo <= 1 ? props.startNotice : null}

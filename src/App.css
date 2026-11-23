@@ -369,6 +369,11 @@ body > .overlay { position: fixed; z-index: 10; }
 .settings .field small.field-error { color: var(--danger); }
 /* Backup GMs (예비 GM): an ordered list under the GM, each changeable or removable. */
 .backup-gms { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 8px; }
+/* 응답 확인: a short question to the model as filled in, and what came back. */
+.ping-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 2px 0 10px; }
+.ping-result { font-size: 0.875rem; line-height: 1.45; flex: 1 1 12em; }
+.ping-result.ok { color: var(--success); }
+.ping-result.bad { color: var(--warn); }
 /* An AI seat's brain: the saved backup GMs, one press each. */
 .brain-quick { display: grid; gap: 8px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .brain-quick h3 { margin: 0; font-family: var(--font-voice); font-size: 1.0625rem; }
