@@ -153,11 +153,10 @@ export function GmSettings({ current, onSave, onClose, brain, backup, onBackups 
   const save = () => {
     if (!canSave) return;
     if (provider === 'same') return brain?.onUseGm();
-    // A seat's or a backup's key is kept with it (its caller remembers it), not as the GM's.
-    if (!brain && !backup) {
-      rememberKeys({ ...keys, compatible: otherKeys });
-      rememberBackups(backups);
-    }
+    // A seat's or a backup's key is kept with it (its caller remembers it), not as the GM's. The
+    // backups were saved as they changed: saving them again would write back the list as it was
+    // when this opened over a change made meanwhile elsewhere (another tab, the Drive; 교차 검증).
+    if (!brain && !backup) rememberKeys({ ...keys, compatible: otherKeys });
     const config = configNow();
     if (config) onSave(config);
   };
