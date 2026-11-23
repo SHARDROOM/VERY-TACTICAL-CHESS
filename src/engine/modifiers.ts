@@ -73,9 +73,29 @@ export function checkSacrifice(board: Board, ruling: Ruling, color: Color): stri
   return null;
 }
 
-/** The ruling gives one of `color`'s pieces a clash multiplier (a tag with one). */
+/**
+ * The ruling gives one of `color`'s pieces a clash multiplier (a tag with one), on whoever stands
+ * on the tag's square when its turn comes: an actor that charges and is then made stronger where
+ * it went counts (교차 검증: it was missed when only the board before the effects was looked at).
+ */
 export function givesClash(board: Board, ruling: Ruling, color: Color): boolean {
-  return ruling.effects.some((e) => e.type === 'tag' && typeof e.clash === 'number' && e.clash > 1 && board[e.at]?.color === color);
+  const moved = new Map<number, Color | null>();
+  const side = (at: number): Color | null => (moved.has(at) ? moved.get(at)! : (board[at]?.color ?? null));
+  for (const e of ruling.effects) {
+    if (e.type === 'tag' && typeof e.clash === 'number' && e.clash > 1 && side(e.at) === color) return true;
+    if (e.type === 'move') {
+      moved.set(e.to, side(e.from));
+      moved.set(e.from, null);
+    } else if (e.type === 'swap') {
+      const [a, b] = [side(e.a), side(e.b)];
+      moved.set(e.a, b);
+      moved.set(e.b, a);
+    } else if (e.type === 'convert' || e.type === 'spawn') moved.set(e.at, e.color);
+    else if (e.type === 'remove') moved.set(e.at, null);
+    else if (e.type === 'board') moved.set(e.rider, null);
+    else if (e.type === 'unboard') moved.set(e.to, side(e.at));
+  }
+  return false;
 }
 
 /**

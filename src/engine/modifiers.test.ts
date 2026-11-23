@@ -134,6 +134,14 @@ describe('sacrifice (희생)', () => {
     expect(two.state.board[sq('d4')]?.tags?.[0]).toMatchObject({ clash: 2 });
   });
 
+  it('an offering for a piece that first moves and then gets its multiplier still goes into the multiplier (교차 검증)', () => {
+    // Charges d4 → d5, then the multiplier on d5: the tag lands on the actor where it went.
+    const charge = offering({ effects: [{ type: 'move', from: sq('d4'), to: sq('d5') }, { type: 'tag', at: sq('d5'), tag: '피의 맹세', turns: 2, clash: 1.5 }] });
+    const r = roll(altar(), charge, 8);
+    expect(r.events.find((e) => e.type === 'specialResolved')).toMatchObject({ outcome: 'success', bonus: 1, mods: [{ kind: 'sacrifice', value: 1, worth: 4 }] });
+    expect(r.state.board[sq('d5')]?.tags?.[0]).toMatchObject({ clash: 1.9 });
+  });
+
   it('a second try after a failure keeps the offering (and its multiplier) without giving anything more', () => {
     const first = roll(altar(), offering(), 4).state;
     expect(first.pending?.offered).toHaveLength(1);
