@@ -37,7 +37,9 @@ describe('AI players (hotseat)', () => {
     local.setRules({ ai: { white: { level: 'easy', specials: 'off' }, black: { level: 'easy', specials: 'off' } } });
     local.start();
     await until(() => local.view().state.turnNumber >= 9 || local.view().state.status.kind !== 'playing', 20000);
-    expect(local.view().state.turnNumber).toBeGreaterThanOrEqual(9);
+    // Nine turns, or a game won sooner (a king can fall early in random play: this test failed now and then).
+    const { turnNumber, status } = local.view().state;
+    expect(turnNumber > 1 && (turnNumber >= 9 || status.kind === 'won')).toBe(true);
     local.dispose();
   }, 30000);
 
