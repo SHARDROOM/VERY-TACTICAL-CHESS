@@ -15,7 +15,9 @@ export type ToyOp =
    * Let go of from `pose` at `velocity` (spun as `seed` says): every screen plays the same throw,
    * and it comes to rest at `final` (where the screen that threw it worked out it does).
    */
-  | { op: 'drop'; id: string; pose: Pose; velocity: Vec3; seed: number; final: Pose };
+  | { op: 'drop'; id: string; pose: Pose; velocity: Vec3; seed: number; final: Pose }
+  /** Where a player's camera is and what it looks at (상대 시선): `id` is the side it plays. */
+  | { op: 'gaze'; id: 'white' | 'black' | 'red'; from: Vec3; at: Vec3 };
 
 const num = (v: unknown, limit: number): v is number => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= limit;
 const pose = (v: unknown): v is Pose => Array.isArray(v) && v.length === 7 && v.every((n, i) => num(n, i < 3 ? 40 : 1.01));
@@ -25,6 +27,7 @@ const vec = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && v.e
 export function parseToyOp(raw: unknown): ToyOp | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const r = raw as Record<string, unknown>;
+  if (r.op === 'gaze') return (r.id === 'white' || r.id === 'black' || r.id === 'red') && vec(r.from) && vec(r.at) ? { op: 'gaze', id: r.id, from: r.from, at: r.at } : null;
   if (typeof r.id !== 'string' || !r.id || r.id.length > 80 || !pose(r.pose)) return null;
   if (r.op === 'hold') return { op: 'hold', id: r.id, pose: r.pose };
   if (r.op === 'drop' && vec(r.velocity) && num(r.seed, 2 ** 32) && pose(r.final)) {

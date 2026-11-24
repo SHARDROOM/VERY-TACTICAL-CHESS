@@ -7,7 +7,8 @@ import { HEX_FRAME_R, sideDir, squareToWorld } from './coords';
 import { HexFrame, tileGeometry } from './HexBoard';
 import { fallStart } from './boardPhysics';
 import { TableContext, depthMoved, holdingSomething, type TableHands } from './tableDrag';
-import { diceObstacles, setTakenSource } from './toys';
+import { diceObstacles, setTakenSource, tellGaze } from './toys';
+import { Gazes } from './Gazes';
 import { clearChunks, restingChunks } from './debris';
 import { PieceMesh, PiecePhysicsContext, type PiecePhysics } from './PieceMesh';
 import { riderTypes, type Obstacle } from './piecePhysics';
@@ -109,6 +110,8 @@ interface Props {
   falling?: readonly FallingPiece[];
   /** Watching AIs: the camera moves by itself (until touched). */
   broadcast?: Broadcast | null;
+  /** Online, playing this side: where this camera looks goes to the others, and theirs are drawn (상대 시선). */
+  gazeAs?: 'white' | 'black' | 'red' | null;
 }
 
 /** Shakes everything on the table (not the camera, which the player controls) for a moment. */
@@ -346,6 +349,7 @@ function CameraRig({
   holdNow,
   pinchNow,
   broadcast = null,
+  gazeAs = null,
 }: {
   camera: CameraRequest;
   diceSide: 1 | -1;
@@ -353,8 +357,18 @@ function CameraRig({
   holdNow?: MutableRefObject<(on: boolean) => void>;
   pinchNow?: MutableRefObject<(spread: number, dx: number, dy: number) => void>;
   broadcast?: Broadcast | null;
+  gazeAs?: 'white' | 'black' | 'red' | null;
 }) {
   const ref = useRef<CameraControls>(null);
+  // 상대 시선: where this camera is and what it looks at, told to the others (tellGaze keeps it to a few a second).
+  const eye = useMemo(() => ({ p: new Vector3(), t: new Vector3() }), []);
+  useFrame(() => {
+    const c = ref.current;
+    if (!c || !gazeAs) return;
+    c.getPosition(eye.p);
+    c.getTarget(eye.t);
+    tellGaze(gazeAs, [eye.p.x, eye.p.y, eye.p.z], [eye.t.x, eye.t.y, eye.t.z]);
+  });
   // Watching: a hand on the camera stops it moving by itself, until a while after the hand lets go.
   const touching = useRef(false);
   const idleUntil = useRef(0);
@@ -511,6 +525,7 @@ export function BoardScene({
   clashOdds = NO_ODDS,
   falling = NO_FALLING,
   broadcast = null,
+  gazeAs,
   extras = null,
   book,
 }: Props) {
@@ -598,8 +613,9 @@ export function BoardScene({
       {tour ? (
         <TourCamera diceSide={diceSide} inset={tour.inset} onPhase={tour.onPhase} focus={tour.focus} />
       ) : (
-        <CameraRig camera={camera} diceSide={diceSide} locked={!!doodle?.tool || holding} holdNow={holdNow} pinchNow={pinchNow} broadcast={broadcast} />
+        <CameraRig camera={camera} diceSide={diceSide} locked={!!doodle?.tool || holding} holdNow={holdNow} pinchNow={pinchNow} broadcast={broadcast} gazeAs={gazeAs} />
       )}
+      {gazeAs !== undefined && <Gazes mySide={gazeAs} />}
       <TwoFingerDepth />
       {import.meta.env.DEV && <DevProbe resting={resting.current} shown={hands.piecesShown} />}
 

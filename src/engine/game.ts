@@ -856,7 +856,7 @@ export function withScenario(state: GameState, random: () => number, id?: string
   for (const def of order.flatMap((d) => [d, d, d, d, d])) {
     const effects = scenarioEffects(def, state, random);
     if (!effects.length) continue;
-    const applied = applyEffects(state.board, effects, { ...effectContext(state), chaos: true });
+    const applied = applyEffects(state.board, effects, effectContext(state));
     if (!applied.ok || playersOf().some((c) => isInCheck(applied.board, c, applied.terrain))) continue;
     return {
       ...state,

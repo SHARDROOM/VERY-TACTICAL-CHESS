@@ -9,7 +9,9 @@ import { d6Corners } from '../dice3d/d6';
  * in to the thing it was done to. Also where the dice lie, so thrown things can hit them.
  */
 
-type Handler = (op: ToyOp) => void;
+/** What is done to one thing on the table (a look is not: it goes to onGaze). */
+type ItemOp = Exclude<ToyOp, { op: 'gaze' }>;
+type Handler = (op: ItemOp) => void;
 const handlers = new Map<string, Handler>();
 let send: ((op: ToyOp) => void) | null = null;
 const lastHold = new Map<string, number>();
@@ -41,7 +43,36 @@ export function onToy(id: string, handler: Handler): () => void {
 
 /** Something another screen did. */
 export function receiveToy(op: ToyOp): void {
+  if (op.op === 'gaze') {
+    for (const fn of gazeListeners) fn(op);
+    return;
+  }
   handlers.get(op.id)?.(op);
+}
+
+// ---- where the others look (상대 시선) --------------------------------------------
+
+type GazeOp = Extract<ToyOp, { op: 'gaze' }>;
+const gazeListeners = new Set<(op: GazeOp) => void>();
+let lastGaze = { at: 0, text: '' };
+/** A look is told a few times a second at most, and only when it moved. */
+const GAZE_EVERY_MS = 200;
+
+/** Tells the others where this screen's camera is and what it looks at. */
+export function tellGaze(side: GazeOp['id'], from: [number, number, number], at: [number, number, number]): void {
+  const now = performance.now();
+  const r = (v: number) => Math.round(v * 20) / 20;
+  const op: GazeOp = { op: 'gaze', id: side, from: [r(from[0]), r(from[1]), r(from[2])], at: [r(at[0]), r(at[1]), r(at[2])] };
+  const text = JSON.stringify(op);
+  if (now - lastGaze.at < GAZE_EVERY_MS || text === lastGaze.text) return;
+  lastGaze = { at: now, text };
+  send?.(op);
+}
+
+/** Listens for where the others look. */
+export function onGaze(fn: (op: GazeOp) => void): () => void {
+  gazeListeners.add(fn);
+  return () => void gazeListeners.delete(fn);
 }
 
 const round = (n: number) => Math.round(n * 1e4) / 1e4;

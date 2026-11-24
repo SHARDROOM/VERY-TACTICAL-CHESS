@@ -1113,6 +1113,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
         falling={game.falling}
         clashOdds={locked ? undefined : clashOdds}
         broadcast={watching ? focus : null}
+        gazeAs={online ? (seat === 'white' || seat === 'black' || seat === 'red' ? seat : null) : undefined}
         directions={directions}
         fx={fxShow}
         shake={shake}
