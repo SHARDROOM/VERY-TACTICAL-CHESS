@@ -1,15 +1,17 @@
 import { LOCAL_KEYS, readLocal, wipeLocal, writeLocal, type KeysPart, type LocalParts, type SettingsPart } from './local';
 import { lockKey, newSalt, seal, unseal, type Sealed } from './crypto';
 import { TokenExpired, type CloudDrive } from './drive';
+import { fingerprint } from './fingerprint';
+import { mergeRecords } from '../session/records';
 import type { CloudAuth, Token } from './google';
 
 /*
  * Keeping this browser and the player's Google Drive in step (docs/SPEC.md, "Google 로그인과 Drive
  * 저장"). What is kept is split into items: the GM chosen, the backup GMs, the AI seats' models
- * (each with its keys), the name, the sound and staging looks, the folded watch bar, and the game
- * saved to go on with. Each item carries when it last changed; an item changed on one side only
- * goes to the other, one changed on both sides is settled by the newer (a different game on each
- * side is asked about instead). The keys are locked with the player's passphrase before they leave
+ * (each with its keys), the name, the sound and staging looks, the folded watch bar, the game
+ * saved to go on with, and the finished games' records. Each item carries when it last changed; an
+ * item changed on one side only goes to the other, one changed on both sides is settled by the
+ * newer (a different game on each side is asked about instead; the records are merged). The keys are locked with the player's passphrase before they leave
  * (crypto.ts); a device that does not have it yet syncs everything else and waits for it.
  *
  * Signed in, this browser takes the cloud's copy at once and sends its own changes a few seconds
@@ -19,7 +21,7 @@ import type { CloudAuth, Token } from './google';
 
 export const KEYED = ['gm', 'backups', 'brains'] as const;
 const PLAIN = ['name', 'sound', 'stagingLook', 'watchFolded'] as const;
-export const ITEMS = [...KEYED, ...PLAIN, 'game'] as const;
+export const ITEMS = [...KEYED, ...PLAIN, 'game', 'records'] as const;
 export type Item = (typeof ITEMS)[number];
 type Keyed = (typeof KEYED)[number];
 type Values = Record<Item, unknown>;
@@ -98,26 +100,14 @@ type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v);
 const isKeyed = (i: Item): i is Keyed => (KEYED as readonly string[]).includes(i);
 
-/** A short fingerprint of a value (to notice a change without keeping a copy of the keys). */
-export function fingerprint(value: unknown): string {
-  const text = JSON.stringify(value) ?? 'null';
-  let h1 = 0xdeadbeef;
-  let h2 = 0x41c6ce57;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 2654435761);
-    h2 = Math.imul(h2 ^ ch, 1597334677);
-  }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
-}
+export { fingerprint };
 
 export function itemsOf(parts: LocalParts): Values {
   const v = {} as Values;
   for (const k of KEYED) v[k] = { setting: parts.settings[k] ?? null, keys: parts.keys[k] ?? null } satisfies KeyedValue;
   for (const k of PLAIN) v[k] = parts.settings[k] ?? null;
   v.game = parts.game ?? null;
+  v.records = parts.records ?? null;
   return v;
 }
 
@@ -135,7 +125,7 @@ function partsOf(v: Values): LocalParts {
   if (isObj(brains.setting)) settings.brains = brains.setting;
   if (isObj(brains.keys)) keys.brains = brains.keys as Record<string, string>;
   for (const k of PLAIN) if (typeof v[k] === 'string') settings[k] = v[k] as string;
-  return { settings, keys, game: v.game ?? null };
+  return { settings, keys, game: v.game ?? null, records: v.records ?? null };
 }
 
 const isEmpty = (i: Item, v: unknown): boolean => (isKeyed(i) ? !isObj(v) || (v.setting === null && v.keys === null) : v === null || v === undefined);
@@ -542,6 +532,22 @@ export class CloudSync {
         this.meta.dirty = this.meta.dirty.filter((d) => d !== i);
         continue;
       }
+      // The game records (기록·전적) are not settled by the newer side: both lists come together.
+      if (i === 'records') {
+        if (cloudChanged || localChanged) {
+          const merged = mergeRecords(mine, theirs);
+          if (fingerprint(merged) !== fingerprint(mine)) take[i] = merged;
+          if (fingerprint(merged) !== fingerprint(theirs)) {
+            send[i] = merged;
+            sendAt[i] = Math.max(this.now(), cAt === undefined ? 1 : cAt + 1);
+          }
+          if (take[i] === undefined && send[i] === undefined) {
+            this.meta.cloudAt[i] = cAt;
+            this.meta.dirty = this.meta.dirty.filter((d) => d !== i);
+          }
+        }
+        continue;
+      }
       let winner: 'local' | 'cloud' | null = null;
       if (cloudChanged && localChanged) {
         if (i === 'game' && differentGames(mine, theirs)) {
@@ -584,7 +590,11 @@ export class CloudSync {
       const fresh = itemsOf(readLocal(this.storage));
       for (const i of taken) fresh[i] = take[i];
       const parts = partsOf(fresh);
-      writeLocal(this.storage, taken.some((i) => i !== 'game') ? (taken.includes('game') ? parts : { settings: parts.settings, keys: parts.keys }) : { game: parts.game });
+      writeLocal(this.storage, {
+        ...(taken.some((i) => i !== 'game' && i !== 'records') && { settings: parts.settings, keys: parts.keys }),
+        ...(taken.includes('game') && { game: parts.game }),
+        ...(taken.includes('records') && { records: parts.records }),
+      });
       const after = itemsOf(readLocal(this.storage));
       for (const i of taken) {
         this.meta.seen[i] = fingerprint(after[i]);

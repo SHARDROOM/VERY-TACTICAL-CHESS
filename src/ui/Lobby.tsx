@@ -7,6 +7,8 @@ import { SettingsMenu, useFullscreen } from './SettingsMenu';
 import { Icon } from './Icon';
 import { CloudButton } from './Cloud';
 import { BOOK_FACES, BookControl } from '../scene/RuleBook';
+import { RecordsDialog } from './Records';
+import { readRecords } from '../session/records';
 
 /** While reading the rule book: the close button above, the page buttons below. */
 const READING_INSET: TourInset = { left: 0, top: 64, bottom: 96 };
@@ -69,6 +71,9 @@ function useCoveredInset(root: React.RefObject<HTMLElement | null>, title: React
 export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVsAi, onWatchAi, onHost, onJoin, gmName, onGmSettings }: Props) {
   const [code, setCode] = useState('');
   const [showMenu, setShowMenu] = useState(false);
+  // 기록·전적: how many games are kept (read again when the list closes; a sync may have brought more).
+  const [showRecords, setShowRecords] = useState(false);
+  const recordCount = useMemo(() => (showRecords ? 0 : readRecords().length), [showRecords]);
   const fullscreen = useFullscreen();
   const rootRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLElement>(null);
@@ -183,6 +188,9 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
             AI끼리 보기
           </button>
         </div>
+        <button className="records-open" onClick={() => setShowRecords(true)} disabled={!!busy}>
+          전적{recordCount ? ` · ${recordCount}판` : ''}
+        </button>
 
         {busy && <p className="lobby-status">{busy}</p>}
         {error && <p className="lobby-error">{error}</p>}
@@ -230,6 +238,7 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
           fullscreen={fullscreen}
         />
       )}
+      {showRecords && <RecordsDialog onClose={() => setShowRecords(false)} />}
     </div>
   );
 }

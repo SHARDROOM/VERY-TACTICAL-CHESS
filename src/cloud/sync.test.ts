@@ -5,6 +5,7 @@ import { lockKey, newSalt, seal, unseal } from './crypto';
 import { TokenExpired, type CloudDrive } from './drive';
 import type { CloudAuth } from './google';
 import { createInitialState as initialState } from '../engine/setup';
+import { addRecord, readRecords, type GameRecord } from '../session/records';
 import { loadSavedGame, rememberBackups, rememberBrains, rememberGm, rememberedBackups, rememberedBrains, rememberedGm, saveGame, savedName, saveName } from '../session/storage';
 
 class MemoryStorage implements Storage {
@@ -95,7 +96,7 @@ describe('this browser, in the parts the cloud keeps', () => {
     expect(savedName(other)).toBe('은빛');
 
     wipeLocal(other);
-    expect(readLocal(other)).toEqual({ settings: {}, keys: {}, game: null });
+    expect(readLocal(other)).toEqual({ settings: {}, keys: {}, game: null, records: null });
   });
 });
 
@@ -179,6 +180,26 @@ describe('CloudSync', () => {
     await a.sync.sync();
     expect(savedName(a.storage)).toBe('B');
     expect(cloud.doc!.items.name).toBe('B');
+  });
+
+  it('brings the game records of two devices together: every game once, on both', async () => {
+    // 기록·전적: records are not settled by the newer side; the two lists are merged.
+    const rec = (id: string, at: number) => ({ id, at, mode: 'ai', map: 'classic', me: 'white', winner: 'white', end: 'king', result: 'won', turns: 30, gm: '가짜 GM', highlights: {}, precedents: [] }) as GameRecord;
+    const cloud = new Cloud();
+    const a = device(cloud);
+    const b = device(cloud);
+    addRecord(rec('a1', 1), a.storage);
+    addRecord(rec('b1', 2), b.storage);
+    await a.sync.connect();
+    await b.sync.connect();
+    clock += 1000;
+    addRecord(rec('a2', 3), a.storage);
+    addRecord(rec('b2', 4), b.storage);
+    await settle(a);
+    await settle(b);
+    await a.sync.sync();
+    expect(readRecords(a.storage).map((r) => r.id)).toEqual(['b2', 'a2', 'b1', 'a1']);
+    expect(readRecords(b.storage).map((r) => r.id)).toEqual(['b2', 'a2', 'b1', 'a1']);
   });
 
   it('never loses a key only one device had', async () => {
@@ -355,7 +376,7 @@ describe('CloudSync', () => {
     expect(await a.sync.signOut(true)).toBe('unsynced');
     expect(rememberedGm(a.storage).keys).toEqual({ gemini: 'KEY-UNSENT' });
     expect(await a.sync.signOut(true, true)).toBe('done');
-    expect(readLocal(a.storage)).toEqual({ settings: {}, keys: {}, game: null });
+    expect(readLocal(a.storage)).toEqual({ settings: {}, keys: {}, game: null, records: null });
     expect(a.applied.at(-1)).toContain('gm');
   });
 });

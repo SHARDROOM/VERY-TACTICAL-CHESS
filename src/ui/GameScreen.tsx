@@ -74,6 +74,7 @@ import { playChunkTracks, restingChunks } from '../scene/debris';
 import { playTakenTracks, receiveToy, setToySender, takenNow } from '../scene/toys';
 import type { PieceDirection } from '../scene/pieceMotion';
 import { GmBusyBadge } from './GmBusyBadge';
+import { addRecord, recordOf, type RecordMode } from '../session/records';
 
 /** The watched AIs' pace, as the buttons say it. */
 const SPEED_NAME: Record<WatchSpeed, string> = { slow: '느리게', normal: '보통', fast: '빠르게' };
@@ -956,6 +957,18 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
   const over = !!winner || !!drawn;
   // 명장면: the game's miracle, heartbreak and MVP, on the end screen (every round of an AI watch too).
   const moments = useMemo(() => (over ? highlightLines(highlights(game)) : []), [over, game]);
+  // 기록·전적: a finished game is kept, from this screen's side (an AI watch is not; the same game seen again is kept once).
+  useEffect(() => {
+    if (!over || watching) return;
+    const ais = Object.fromEntries(players.flatMap((c) => (aiOf(c) ? [[c, AI_LEVEL_NAME[aiOf(c)!.level]]] : [])));
+    const people = players.filter((c) => !aiOf(c));
+    const mode: RecordMode = online ? (spectator ? 'watching' : 'online') : Object.keys(ais).length ? 'ai' : 'hotseat';
+    const me = online ? (seat === 'white' || seat === 'black' || seat === 'red' ? seat : null) : people.length === 1 ? people[0] : 'both';
+    const record = recordOf(game, { mode, me, gm: view.gmName, ai: ais, at: Date.now() });
+    if (record) addRecord(record);
+    // Once, when the game is over (a reload of a finished game finds it kept already).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [over]);
   const people = players.filter((c) => !aiOf(c));
   const mySide: Color | null = seat === 'white' || seat === 'black' || seat === 'red' ? seat : seat === 'both' ? (!aiOf(sideToMove) ? sideToMove : people.length === 1 ? people[0] : null) : null;
   const canEnd = playing && connected && !watching && !!mySide;

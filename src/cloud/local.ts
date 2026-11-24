@@ -2,9 +2,11 @@
  * What this browser keeps, in the three parts the cloud copy keeps them in (docs/SPEC.md, "Google
  * 로그인과 Drive 저장"): settings (the GM chosen, the backup GMs, the AI seats' models, the name, the
  * sound and staging looks, the folded watch bar), the API keys (all of them, locked before they
- * leave: crypto.ts), and the game saved to go on with. Read and written as the stores already
+ * leave: crypto.ts), the game saved to go on with, and the finished games' records. Read and written as the stores already
  * keep them (their own readers check what is there), so nothing else needs to know about the cloud.
  */
+
+import { RECORDS_KEY } from '../session/records';
 
 const GM = 'vtc.gm.v1';
 const BACKUPS = 'vtc.gm.backups.v1';
@@ -14,7 +16,7 @@ const SAVE = 'vtc.save.v1';
 const PLAIN = { name: 'vtc.name', sound: 'vtc.sound', stagingLook: 'vtc.stagingLook', watchFolded: 'vtc.watchFolded' } as const;
 
 /** Everything this game keeps on a browser, for "wipe this device" (the device's own id stays). */
-export const LOCAL_KEYS = [GM, BACKUPS, BRAINS, SAVE, ...Object.values(PLAIN)];
+export const LOCAL_KEYS = [GM, BACKUPS, BRAINS, SAVE, RECORDS_KEY, ...Object.values(PLAIN)];
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -45,6 +47,8 @@ export interface LocalParts {
   settings: SettingsPart;
   keys: KeysPart;
   game: unknown | null;
+  /** The finished games' records (기록·전적), as kept (session/records.ts). */
+  records: unknown | null;
 }
 
 function readJson(storage: Storage, key: string): unknown {
@@ -85,7 +89,7 @@ export function readLocal(storage: Storage): LocalParts {
     const v = storage.getItem(key);
     if (v !== null) settings[field as keyof typeof PLAIN] = v;
   }
-  return { settings, keys, game: readJson(storage, SAVE) };
+  return { settings, keys, game: readJson(storage, SAVE), records: readJson(storage, RECORDS_KEY) };
 }
 
 /** Puts these parts on this browser (the parts left out stay as they are). */
@@ -109,6 +113,7 @@ export function writeLocal(storage: Storage, parts: Partial<LocalParts>): void {
     }
   }
   if ('game' in parts) set(SAVE, parts.game ?? undefined);
+  if ('records' in parts) set(RECORDS_KEY, parts.records ?? undefined);
 }
 
 /** Takes everything this game keeps off this browser (its device id stays). */
