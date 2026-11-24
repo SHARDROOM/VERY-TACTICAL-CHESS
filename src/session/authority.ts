@@ -369,7 +369,8 @@ export class Authority {
       }
       const waiting = offer.waiting.filter((c) => c !== me);
       if (waiting.length) return this.setDrawOffer({ ...offer, waiting });
-      this.setDrawOffer(null);
+      // The offer goes once the draw is made (apply clears it); a draw that cannot be made yet (a
+      // surrender's exile being picked, a piece in mid-fall) leaves it standing to answer again.
       this.apply({ type: 'draw' }, 'all');
       return;
     }

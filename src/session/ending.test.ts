@@ -103,6 +103,19 @@ describe('a draw offer and a resignation', () => {
     expect(s.view().drawOffer).toBeNull();
     s.dispose();
   });
+
+  it('the last yes that cannot end the game yet (an exile being picked) leaves the offer standing', async () => {
+    // Found next to a cross-check note: the offer was dropped before the draw was tried, so a draw
+    // that could not go through yet (the game waiting on a surrender) took the offer with it.
+    const waitingOnExile: GameState = { ...createInitialState(undefined, 'hex3'), surrender: { loser: 'red', to: 'white' } };
+    const s = new LocalSession(new TestGm(), { roll: () => 6, initialState: waitingOnExile, phase: 'playing', aiPace: 1000 });
+    const authority = (s as unknown as { authority: { drawOffer: unknown; handle: (r: unknown, a: string) => Promise<void> } }).authority;
+    authority.drawOffer = { from: 'white', waiting: ['black'] };
+    await authority.handle({ type: 'answerDraw', accept: true }, 'black');
+    expect(s.view().state.status.kind).toBe('playing');
+    expect(s.view().drawOffer).toEqual({ from: 'white', waiting: ['black'] });
+    s.dispose();
+  });
 });
 
 describe('online', () => {
