@@ -86,7 +86,7 @@ describe('prompt', () => {
     const p = buildSystemPrompt(createInitialState().rules);
     expect(p).toContain('3~12');
     expect(p).toContain('1~3');
-    expect(p).toContain('킹은 어떤 효과로도 제거하거나 잡거나 변환하거나 편을 바꿀 수 없고');
+    expect(p).toContain('킹은 어떤 효과로도 제거·잡기·변환·편 바꾸기·새로 만들기·되살리기가 안 된다');
   });
 
   it('user message describes the board and whose turn it is', () => {
@@ -143,9 +143,10 @@ describe('prompt shows precedents', () => {
       ],
     };
     const m = buildUserMessage('x', state);
-    expect(m).toContain('- 턴 3 백: "나이트 ‹발사›" → 투석기 / DC 4, AP 1, 주사위 6 (성공)');
+    // Only what makes a like ruling like it: the dice thrown are left out (GM 속도: a shorter prompt).
+    expect(m).toContain('- 턴 3 백: "나이트 ‹발사›" → 투석기 / DC 4, AP 1 (성공)');
     expect(m.indexOf('턴 3 백')).toBeLessThan(m.indexOf('턴 4 흑'));
-    expect(m).toContain('주사위 1 (대실패)');
+    expect(m).toContain('DC 5, AP 2 (대실패)');
   });
 
   it('keeps only the most recent 20', () => {
