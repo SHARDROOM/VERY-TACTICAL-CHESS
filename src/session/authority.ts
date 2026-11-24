@@ -307,7 +307,10 @@ export class Authority {
   /** Back to before the last move made on this screen (whatever the AIs and wanderers did after it goes too). */
   undo(): boolean {
     if (!this.canUndo()) return false;
-    const back = this.undoStack.pop()!;
+    // Who plays which side stays as it is now (a side handed to an AI or taken back mid-game).
+    const popped = this.undoStack.pop()!;
+    const back: GameState = { ...popped, rules: { ...popped.rules, ai: this.state.rules.ai } };
+    if (!back.rules.ai) delete back.rules.ai;
     if (this.aiHandle) clearTimeout(this.aiHandle);
     this.aiHandle = null;
     this.aiActing = false;

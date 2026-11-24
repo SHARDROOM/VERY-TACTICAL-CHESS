@@ -78,6 +78,48 @@ describe('undo on one screen', () => {
   });
 });
 
+describe('undo and who plays', () => {
+  it('keeps the sides as they are now: a side handed to an AI mid-game stays with it', () => {
+    const s = new LocalSession(new TestGm(), { roll: () => 6, aiPace: 1000 });
+    s.start();
+    s.request({ type: 'move', from: sq('e2'), to: sq('e4') });
+    s.setAi('black', { level: 'easy', specials: 'off' });
+    s.undo();
+    expect(s.view().state.rules.ai?.black).toMatchObject({ level: 'easy' });
+    s.dispose();
+  });
+});
+
+describe('undo while an AI is thinking', () => {
+  it('the AI left thinking is dropped: it does not ask its model again for the next turn', async () => {
+    // An AI that asks its model for a special action, and the model answers only when told.
+    const answers: (() => void)[] = [];
+    let asked = 0;
+    const gm: GameMaster = {
+      name: 'Slow',
+      rule: async (req: GmRequest) => fakeRuling(req.action, req.state.turn),
+      act: () => {
+        asked++;
+        return new Promise((resolve) => answers.push(() => resolve({ action: '', pass: true })));
+      },
+    };
+    const s = new LocalSession(gm, { roll: () => 6, aiPace: 0 });
+    s.setRules({ ai: { black: { level: 'easy', specials: 'often' } } });
+    s.start();
+    s.request({ type: 'move', from: sq('e2'), to: sq('e4') });
+    await settle(12);
+    expect(asked).toBe(1);
+    s.undo();
+    s.request({ type: 'move', from: sq('e2'), to: sq('e4') });
+    await settle(12);
+    // The old thought comes back late (and is dropped): it must not set off another AI turn.
+    answers[0]();
+    await settle(20);
+    expect(asked).toBeLessThanOrEqual(2);
+    s.dispose();
+  });
+});
+
 describe('undo elsewhere', () => {
   it('is not offered online, nor while AIs only play', async () => {
     const [hostEnd] = memoryChannelPair();
