@@ -339,8 +339,13 @@ export function WaitingRoom({ session, view, onLeave, onGmSettings, brains = {},
                     <input type="checkbox" checked={rules.doodle} onChange={(e) => set({ doodle: e.target.checked })} />
                     <span>낙서 모드 (테이블과 보드에 그리고 메모하기)</span>
                   </label>
+                  <label className="toggle-row">
+                    <input type="checkbox" checked={rules.scenario} onChange={(e) => set({ scenario: e.target.checked })} />
+                    <span>랜덤 시나리오 (기물이 줄거나 바뀌고, 혼란·검술·건물 같은 상황에서 시작)</span>
+                  </label>
                   <ul className="rule-notes">
                     <li>시간은 내 차례에만 흐르고, GM이 판정하는 동안에는 멈춥니다.</li>
+                    {rules.scenario && <li>랜덤 시나리오: 게임마다 상황 하나가 무작위로 정해져 시작할 때 양피지에 쓰여 나옵니다. 모든 진영이 똑같이 받습니다. GM은 부르지 않습니다.</li>}
                     {rules.chaosChance > 0 && (
                       <li>혼돈: 라운드마다(양쪽이 한 번씩 두고 백의 차례가 시작될 때) {chaosLabel(rules.chaosChance)} 확률로 GM(API)이 기상천외한 사건을 지어내 일으킵니다. GM API 사용량이 늘어납니다.</li>
                     )}

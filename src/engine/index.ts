@@ -1,4 +1,6 @@
 export * from './types';
+export { withScenario } from './game';
+export { SCENARIOS } from './scenario';
 export { applyCommand, clashEventFor, exitsOf, hasAnyMove, rulingContext, wanderTargets, KINGS_ONLY_DRAW_TURNS } from './game';
 export { BASE_CLASH, CLASH_MAX, CLASH_MIN, CLASH_ROLLS, DUEL_TIMING, duelSeconds, canResist, clashMultiplier, hasClashGear, clashScore, clashSkill, clashWinChance, exchangesFor, resolveClash } from './clash';
 export { capturedAfter } from './captured';

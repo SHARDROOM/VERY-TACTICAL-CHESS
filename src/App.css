@@ -312,6 +312,25 @@ body > .overlay { position: fixed; z-index: 10; }
 .victory h1 { margin: 0; font-family: var(--font-voice); font-weight: 800; font-size: 2.5rem; line-height: 1.15; color: var(--accent-bright); }
 .victory-name { margin-top: 2px; color: var(--text); font-size: 1.0625rem; }
 .victory-how { margin: 10px 0 0; font-family: var(--font-voice); font-size: 1.125rem; }
+/* 랜덤 시나리오: the parchment read out before the first move, and its badge to read it again. */
+.scenario-badge { cursor: pointer; font-family: var(--font-voice); color: #e9d6a7; }
+.scenario-scroll {
+  position: relative; width: min(400px, 100%); padding: 34px 30px 24px; text-align: center; color: #3b2814;
+  background: radial-gradient(ellipse at 50% 40%, #f3e4bf 0%, #e6cf9b 70%, #d4b77c 100%);
+  border-radius: 6px; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(120, 80, 30, 0.35);
+  transform: rotate(-1.2deg); transform-origin: top center; animation: scroll-unroll 0.7s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.scenario-scroll::before, .scenario-scroll::after {
+  content: ''; position: absolute; left: -10px; right: -10px; height: 16px; border-radius: 8px;
+  background: linear-gradient(#a8834b, #6e4f25 60%, #a8834b); box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
+}
+.scenario-scroll::before { top: -8px; }
+.scenario-scroll::after { bottom: -8px; }
+.scenario-kicker { margin: 0 0 6px; font-size: 0.875rem; color: #7a5a30; }
+.scenario-scroll h2 { margin: 0 0 12px; font-family: var(--font-voice); font-size: 1.75rem; line-height: 1.2; color: #4a2a10; }
+.scenario-text { margin: 0 0 20px; font-family: var(--font-voice); font-size: 1.0625rem; line-height: 1.7; }
+@keyframes scroll-unroll { from { transform: rotate(-1.2deg) scaleY(0.08); opacity: 0.4; } to { transform: rotate(-1.2deg) scaleY(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .scenario-scroll { animation: none; } }
 .victory-recap { margin: 6px auto 0; max-width: 32em; color: var(--muted); font-size: 0.9375rem; line-height: 1.6; }
 /* 명장면: the game's miracle, heartbreak and MVP, one line each under the recap. */
 .victory-highlights { list-style: none; margin: 14px 0 0; padding: 12px 0 0; border-top: 1px solid var(--line); display: grid; gap: 8px; text-align: left; font-size: 0.9375rem; line-height: 1.5; }

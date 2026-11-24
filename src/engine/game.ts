@@ -1,5 +1,6 @@
 import { SACRIFICE_MOD_MAX, checkSacrifice, modifierTotal, pendingModifiers, sacrificeClashBonus, sacrificeModifiers } from './modifiers';
 import { noteTakes } from './highlights';
+import { SCENARIOS, scenarioEffects } from './scenario';
 import {
   PROMOTION_TYPES,
   type Board,
@@ -841,4 +842,30 @@ function attempt(state: GameState, roll: number, clashRolls: readonly number[] =
     return { ok: true, ...passTurn(after, board, null, [...events, { type: 'autoTurnEnd', color, reason: 'check' }]) };
   }
   return { ok: true, state: after, events };
+}
+
+/**
+ * A new game in a random scenario (랜덤 시나리오, scenario.ts): its effects for every side, put on
+ * the board before the first move. A scenario that cannot be set up here (or would leave a king
+ * attacked) gives way to another. `id` picks one (tests).
+ */
+export function withScenario(state: GameState, random: () => number, id?: string): GameState {
+  setBoardMap(state.map);
+  const order = id ? SCENARIOS.filter((d) => d.id === id) : [...SCENARIOS].sort(() => random() - 0.5);
+  // Each scenario gets a few tries with other squares (a pawn gone may open a line onto a king).
+  for (const def of order.flatMap((d) => [d, d, d, d, d])) {
+    const effects = scenarioEffects(def, state, random);
+    if (!effects.length) continue;
+    const applied = applyEffects(state.board, effects, { ...effectContext(state), chaos: true });
+    if (!applied.ok || playersOf().some((c) => isInCheck(applied.board, c, applied.terrain))) continue;
+    return {
+      ...state,
+      board: applied.board,
+      terrain: applied.terrain,
+      nextSpawnId: applied.nextSpawnId,
+      castling: revokeCastling(state.castling, applied.touched),
+      scenario: { id: def.id, title: def.title, text: def.text },
+    };
+  }
+  return state;
 }

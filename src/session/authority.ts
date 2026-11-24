@@ -1,4 +1,4 @@
-import { AI_LEVEL_NAME, CLASH_ROLLS, aiExile, aiHints, aiMaxDc, cleanAiSeats, isAiOnly, isAir, playersOf, promotesOn, stackOf, standing, type AiSeat, applyCommand, impulseOf, impulseKindOf, impulseTargets, isStunned as isStunnedPiece, vanguardOrder, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
+import { AI_LEVEL_NAME, CLASH_ROLLS, aiExile, aiHints, aiMaxDc, cleanAiSeats, isAiOnly, isAir, playersOf, promotesOn, stackOf, standing, type AiSeat, applyCommand, impulseOf, impulseKindOf, impulseTargets, isStunned as isStunnedPiece, vanguardOrder, wanderTargets, duelSeconds, buildTimeline, createInitialState, withScenario, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
@@ -88,9 +88,13 @@ export function showMs(staging: Staging | undefined, effects: Effect[]): number 
  * It checks whose turn it is, rolls the dice, calls the GM, runs the turn clock and
  * sets off chaos; players only send requests.
  */
-/** A fresh board for a game about to begin, with an id of its own (기록·전적 tells games apart by it). */
-function newGame(rules: RuleConfig): GameState {
-  return { ...createInitialState(rules, rules.map), gameId: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}` };
+/**
+ * A fresh board for a game about to begin, with an id of its own (기록·전적 tells games apart by
+ * it), in a random scenario if the room chose one (랜덤 시나리오).
+ */
+function newGame(rules: RuleConfig, random: () => number): GameState {
+  const fresh: GameState = { ...createInitialState(rules, rules.map), gameId: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}` };
+  return rules.scenario ? withScenario(fresh, random) : fresh;
 }
 
 export class Authority {
@@ -194,7 +198,7 @@ export class Authority {
 
   start(): void {
     if (this.phase !== 'waiting') return;
-    this.replace(newGame(this.state.rules));
+    this.replace(newGame(this.state.rules, this.chance));
     this.aiForget();
     this.phase = 'playing';
     // Watching AIs: the same lineup carries on its score, a new one starts from nothing; never paused at the start.
@@ -215,7 +219,7 @@ export class Authority {
     const ai: NonNullable<RuleConfig['ai']> = {};
     for (const c of colors) ai[next(c) as 'white'] = this.state.rules.ai![c as 'white'];
     const rules = { ...this.state.rules, ai };
-    this.replace(newGame(rules));
+    this.replace(newGame(rules, this.chance));
     this.aiForget();
     this.setWatchState({ ...this.watch, paused: false, tally: this.watch.tally.map((e) => ({ ...e, color: next(e.color) })), round: this.watch.round + 1 });
     this.restartClock();

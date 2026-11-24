@@ -365,6 +365,8 @@ export interface GameState {
   precedents: Precedent[];
   /** Set when a game starts (the session's): tells two games apart that ended alike (기록·전적). Missing in older saves. */
   gameId?: string;
+  /** The random scenario this game started in (랜덤 시나리오, scenario.ts), read out on a parchment. */
+  scenario?: { id: string; title: string; text: string };
   /**
    * Who took what (명장면's MVP, highlights.ts): piece id → its side and kind when it last took a
    * piece, and how many it has taken. Missing = nothing taken yet.

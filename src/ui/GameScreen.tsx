@@ -320,6 +320,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
   const [warning, setWarning] = useState<string | null>(null);
   const [showPrecedents, setShowPrecedents] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  // 랜덤 시나리오: the parchment opens on a game's first turn (before anything has happened), and again from its badge.
+  const [scrollOpen, setScrollOpen] = useState(() => !!view.state.scenario && view.state.turnNumber === 1 && view.state.precedents.length === 0);
   const fullscreen = useFullscreen();
   const [showGmSettings, setShowGmSettings] = useState(openGmSettings);
   const [promotionChoice, setPromotionChoice] = useState<{ from: Square; to: Square } | null>(null);
@@ -1153,6 +1155,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
         {inCheck && <div className="badge check">체크!</div>}
         {chain && playing && <div className="badge chain">👣 연속 이동 {chain.left}번 남음</div>}
         {view.gmBusy && <GmBusyBadge name={view.gmName} />}
+        {game.scenario && !over && (
+          <button className="badge scenario-badge" onClick={() => setScrollOpen(true)} title="이번 판의 시나리오">
+            📜 {game.scenario.title}
+          </button>
+        )}
         {warning && !over && <div className="badge warn">⚠ {warning}</div>}
         {offer && playing && (
           <div className="badge draw-offer" role="status">
@@ -1691,6 +1698,19 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
             </div>
           )}
           <button onClick={dice.landed ? finishRoll : skipRoll}>{dice.landed ? '확인' : '건너뛰기'}</button>
+        </div>
+      )}
+
+      {scrollOpen && game.scenario && !over && (
+        <div className="overlay scenario-overlay" onClick={() => setScrollOpen(false)}>
+          <div className="scenario-scroll" role="dialog" aria-labelledby="scenario-title" onClick={(e) => e.stopPropagation()}>
+            <p className="scenario-kicker">이번 판의 전장</p>
+            <h2 id="scenario-title">{game.scenario.title}</h2>
+            <p className="scenario-text">{game.scenario.text}</p>
+            <button className="primary" onClick={() => setScrollOpen(false)}>
+              전장으로
+            </button>
+          </div>
         </div>
       )}
 

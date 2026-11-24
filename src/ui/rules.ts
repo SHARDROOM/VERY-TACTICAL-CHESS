@@ -22,6 +22,7 @@ export function rulesSummary(rules: RuleConfig): string[] {
     `실패 후 다시 굴리기: ${rerollLabel(rules.rerollCost)}`,
     `혼돈: 라운드마다 ${chaosLabel(rules.chaosChance)}`,
     `낙서 모드: ${rules.doodle ? '켬' : '끔'}`,
+    `랜덤 시나리오: ${rules.scenario ? '켬 (시작할 때 양피지로 공개)' : '끔'}`,
   ];
 }
 

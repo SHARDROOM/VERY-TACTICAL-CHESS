@@ -31,6 +31,8 @@ export interface RuleConfig {
   chaosChance: number;
   /** Whether anyone in the room may draw and write on the table. */
   doodle: boolean;
+  /** Each game starts in a random scenario (랜덤 시나리오, scenario.ts). */
+  scenario: boolean;
   /** The board: the classic 8×8 for two, or the three-player hexagon (docs/SPEC.md, "3인 육각 맵"). */
   map: 'classic' | 'hex3';
   /** Seats an AI plays (docs/SPEC.md, "AI 플레이어"): how strong it is and how often it tries special actions. */
@@ -70,6 +72,7 @@ export const DEFAULT_RULES: RuleConfig = {
   rerollCost: 1,
   chaosChance: 0,
   doodle: true,
+  scenario: false,
   map: 'classic',
 };
 
@@ -80,6 +83,7 @@ export function withDefaultRules(rules: Partial<RuleConfig> | undefined): RuleCo
   out.costMax = Math.min(out.costMax, DEFAULT_RULES.costMax);
   out.costMin = Math.min(out.costMin, out.costMax);
   if (out.map !== 'hex3') out.map = 'classic';
+  if (typeof out.scenario !== 'boolean') out.scenario = false;
   const ai = cleanAiSeats(out.ai, out.map);
   if (ai) out.ai = ai;
   else delete out.ai;

@@ -211,6 +211,7 @@ export function cleanRules(base: RuleConfig, change: Partial<RuleConfig>): RuleC
   if ('apPerTurn' in change) next.apPerTurn = pick(change.apPerTurn, AP_PER_TURN, base.apPerTurn);
   if ('chaosChance' in change) next.chaosChance = pick(change.chaosChance, CHAOS_CHANCES.map((c) => c.value), base.chaosChance);
   if ('doodle' in change && typeof change.doodle === 'boolean') next.doodle = change.doodle;
+  if ('scenario' in change && typeof change.scenario === 'boolean') next.scenario = change.scenario;
   if ('map' in change) next.map = change.map === 'hex3' ? 'hex3' : 'classic';
   // AI seats: only those the board has (a seat lost with the map change goes too).
   const ai = cleanAiSeats('ai' in change ? change.ai : next.ai, next.map);
