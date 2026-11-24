@@ -22,15 +22,25 @@ function findPiece(board: Board, id: string): Piece | null {
 /**
  * Counts what a command took, for the piece that took it: a capture by a move (normal, an effect,
  * a wanderer's, a rider's landing), a clash the defender won (its attacker falls, unless it only
- * shot), and a special action's plain removal of another side's piece (its actor's).
+ * shot), a guard that died in its friend's place (the attacker's), and a special action's plain
+ * removal of another side's piece (its actor's).
  */
 export function noteTakes(before: GameState, result: CommandResult): CommandResult {
   if (!result.ok) return result;
   const credit: string[] = [];
+  const pieceOf = (id: string) => findPiece(result.state.board, id) ?? findPiece(before.board, id);
+  // Who struck at the piece a guard (원호) or a hostage (인질) died for.
+  const interceptedBy = new Map<string, string>();
   for (const e of result.events) {
     if (e.type === 'moved' && e.captured) credit.push(e.pieceId);
     else if (e.type === 'unboarded' && e.captured) credit.push(e.riderId);
     else if (e.type === 'clash' && e.winner === 'defender' && e.strike !== 'ranged') credit.push(e.defenderId);
+    else if (e.type === 'intercepted') interceptedBy.set(e.saverId, e.attackerId);
+    else if (e.type === 'removed' && (e.cause === 'guard' || e.cause === 'hostage')) {
+      // The attacker took the one that died in its target's place, unless that was its own side's (a hostage).
+      const by = interceptedBy.get(e.piece.id);
+      if (by && pieceOf(by)?.color !== e.piece.color) credit.push(by);
+    }
   }
   const actorAt = before.pending?.ruling.actor;
   const actor = actorAt === undefined || actorAt === null ? null : before.board[actorAt];
@@ -40,7 +50,7 @@ export function noteTakes(before: GameState, result: CommandResult): CommandResu
   if (!credit.length) return result;
   const takes = { ...(result.state.takes ?? {}) };
   for (const id of credit) {
-    const p = findPiece(result.state.board, id) ?? findPiece(before.board, id);
+    const p = pieceOf(id);
     const was = takes[id];
     takes[id] = { color: p?.color ?? was?.color ?? 'gray', type: p?.type ?? was?.type ?? 'pawn', n: (was?.n ?? 0) + 1 };
   }

@@ -36,6 +36,23 @@ describe('who took what', () => {
     expect(r.state.takes?.[knight.id]).toEqual({ color: 'black', type: 'knight', n: 1 });
   });
 
+  it('a guard (원호) that dies in another’s place was taken by the attacker; a hostage of its own side was not', () => {
+    // Found in review: the guard's death was nobody's.
+    const base = createStateFrom({ e1: { color: 'white', type: 'king' }, e8: { color: 'black', type: 'king' } }, 'black');
+    const b = [...base.board];
+    b[sq('d4')] = { id: 'wp', color: 'white', type: 'pawn' };
+    b[sq('c4')] = { id: 'wn', color: 'white', type: 'knight', tags: [{ ...tag('원호'), turnsLeft: 3 }] };
+    b[sq('d8')] = { id: 'br', color: 'black', type: 'rook' };
+    expect(okMove({ ...base, board: b }, 'd8', 'd4').state.takes?.br).toEqual({ color: 'black', type: 'rook', n: 1 });
+
+    const h = createStateFrom({ e1: { color: 'white', type: 'king' }, e8: { color: 'black', type: 'king' } }, 'white');
+    const hb = [...h.board];
+    hb[sq('e4')] = { id: 'wp', color: 'white', type: 'pawn', tags: [{ ...tag('인질'), turnsLeft: 3, holder: 'bn' }] };
+    hb[sq('f5')] = { id: 'bn', color: 'black', type: 'knight' };
+    hb[sq('f1')] = { id: 'wr', color: 'white', type: 'rook' };
+    expect(okMove({ ...h, board: hb }, 'f1', 'f5').state.takes?.wr).toBeUndefined();
+  });
+
   it('a special action that removes a piece counts for its actor', () => {
     const s = play(createInitialState(), 'e2e4 e7e5');
     const ruling: Ruling = { interpretation: 'x', feasible: true, dc: 4, cost: 1, actor: sq('e4'), means: 'ranged', effects: [{ type: 'remove', at: sq('d7') }], narration: { success: 's', failure: 'f' } };
