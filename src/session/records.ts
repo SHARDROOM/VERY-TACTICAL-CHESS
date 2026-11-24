@@ -50,9 +50,10 @@ export interface RecordContext {
   at: number;
 }
 
-/** The same finished game gives the same id on every screen that saw it. */
+/** The same finished game gives the same id on every screen that saw it (its id, when it has one, and how it ended). */
 function recordId(state: GameState): string {
   return fingerprint({
+    game: state.gameId ?? null,
     map: state.map ?? 'classic',
     status: state.status,
     turn: state.turnNumber,

@@ -363,6 +363,8 @@ export interface GameState {
   impulseDue?: { id: string; kind: 'confused' | 'vanguard' }[];
   /** Every attempted special action this game, oldest first. */
   precedents: Precedent[];
+  /** Set when a game starts (the session's): tells two games apart that ended alike (기록·전적). Missing in older saves. */
+  gameId?: string;
   /**
    * Who took what (명장면's MVP, highlights.ts): piece id → its side and kind when it last took a
    * piece, and how many it has taken. Missing = nothing taken yet.

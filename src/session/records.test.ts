@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { createInitialState, type GameState } from '../engine';
 import { play } from '../engine/testUtil';
 import { MAX_RECORDS, addRecord, mergeRecords, readRecords, recordOf, type GameRecord } from './records';
+import { LocalSession } from './localSession';
+import { fakeRuling } from '../gm/fakeGm';
+import type { GameMaster, GmRequest } from '../gm/types';
 
 /* 기록·전적 (사용자 요청): every finished game, from this screen's side, the last 100. */
 
@@ -63,6 +66,22 @@ describe('what a finished game leaves', () => {
     expect(again.id).toBe(a.id);
     const other = recordOf({ ...play(createInitialState(), 'd2d4 e7e5 d4e5'), status: { kind: 'won', winner: 'white' } }, { ...base, mode: 'online', me: 'white' })!;
     expect(other.id).not.toBe(a.id);
+  });
+});
+
+describe('two games that end alike', () => {
+  it('are two records: each game started has its own id (found in review: two quick draws were one)', () => {
+    const gm: GameMaster = { name: 'Test GM', rule: async (req: GmRequest) => fakeRuling(req.action, req.state.turn) };
+    const s = new LocalSession(gm, { roll: () => 6 });
+    const ids: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      s.start();
+      s.request({ type: 'offerDraw' });
+      ids.push(recordOf(s.view().state, { ...base, mode: 'hotseat', me: 'both' })!.id);
+      s.restart();
+    }
+    expect(ids[0]).not.toBe(ids[1]);
+    s.dispose();
   });
 });
 
