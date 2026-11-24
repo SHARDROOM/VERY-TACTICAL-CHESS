@@ -106,6 +106,12 @@ describe('kept on this browser', () => {
     expect(mergeRecords(null, undefined)).toEqual([]);
   });
 
+  it('the same records in any order come out in the same order (found by cross-check: equal times flip-flopped between devices)', () => {
+    const a = rec('a', 7);
+    const b = rec('b', 7);
+    expect(mergeRecords([a], [b])).toEqual(mergeRecords([b], [a]));
+  });
+
   it('what is not a record is passed over', () => {
     const storage = new MemoryStorage();
     storage.setItem('vtc.records.v1', JSON.stringify([{ id: 1 }, 'x', rec('ok', 1)]));

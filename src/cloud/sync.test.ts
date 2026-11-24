@@ -202,6 +202,17 @@ describe('CloudSync', () => {
     expect(readRecords(b.storage).map((r) => r.id)).toEqual(['b2', 'a2', 'b1', 'a1']);
   });
 
+  it('a full browser storage does not stop the sync over the records (found by cross-check)', () => {
+    const full = new MemoryStorage();
+    const set = full.setItem.bind(full);
+    full.setItem = (k: string, v: string) => {
+      if (k === 'vtc.records.v1') throw new DOMException('full', 'QuotaExceededError');
+      set(k, v);
+    };
+    expect(() => writeLocal(full, { records: [{ id: 'x' }], game: { savedAt: 1 } })).not.toThrow();
+    expect(readLocal(full).game).toEqual({ savedAt: 1 });
+  });
+
   it('never loses a key only one device had', async () => {
     const cloud = new Cloud();
     const a = device(cloud);

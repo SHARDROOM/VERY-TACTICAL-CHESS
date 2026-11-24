@@ -100,7 +100,8 @@ function tidy(list: unknown[]): GameRecord[] {
     seen.add(r.id);
     out.push(r);
   }
-  return out.sort((a, b) => b.at - a.at).slice(0, MAX_RECORDS);
+  // Ties by id: every device puts the same records in the same order (or two would send theirs back and forth).
+  return out.sort((a, b) => b.at - a.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).slice(0, MAX_RECORDS);
 }
 
 /** Two lists of records (this browser's and the cloud's) as one. */

@@ -957,9 +957,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
   const over = !!winner || !!drawn;
   // 명장면: the game's miracle, heartbreak and MVP, on the end screen (every round of an AI watch too).
   const moments = useMemo(() => (over ? highlightLines(highlights(game)) : []), [over, game]);
-  // 기록·전적: a finished game is kept, from this screen's side (an AI watch is not; the same game seen again is kept once).
+  // 기록·전적: a game that ends on this screen is kept, from its side (an AI watch is not). A game
+  // opened already over is not kept again (it may have been pushed out of the last 100 long ago).
+  const overAtStart = useRef(over);
   useEffect(() => {
-    if (!over || watching) return;
+    if (!over || watching || overAtStart.current) return;
     const ais = Object.fromEntries(players.flatMap((c) => (aiOf(c) ? [[c, AI_LEVEL_NAME[aiOf(c)!.level]]] : [])));
     const people = players.filter((c) => !aiOf(c));
     const mode: RecordMode = online ? (spectator ? 'watching' : 'online') : Object.keys(ais).length ? 'ai' : 'hotseat';

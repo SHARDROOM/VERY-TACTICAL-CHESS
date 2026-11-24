@@ -113,7 +113,13 @@ export function writeLocal(storage: Storage, parts: Partial<LocalParts>): void {
     }
   }
   if ('game' in parts) set(SAVE, parts.game ?? undefined);
-  if ('records' in parts) set(RECORDS_KEY, parts.records ?? undefined);
+  if ('records' in parts) {
+    try {
+      set(RECORDS_KEY, parts.records ?? undefined);
+    } catch {
+      // A full storage keeps the records it had; everything else still syncs.
+    }
+  }
 }
 
 /** Takes everything this game keeps off this browser (its device id stays). */
