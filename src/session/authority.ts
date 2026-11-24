@@ -427,8 +427,9 @@ export class Authority {
     }
     this.state = result.state;
     this.emit({ kind: 'events', events: result.events, before, after: result.state });
-    // A draw offer stands until the turn passes (or the game is over).
-    if (result.events.some((e) => e.type === 'turnPassed') || this.state.status.kind !== 'playing') this.setDrawOffer(null);
+    // A draw offer stands until the turn passes or the game is over; a resignation (the hexagon: the
+    // others play on) takes it away too, or it would wait on a side no longer there to answer.
+    if (result.events.some((e) => e.type === 'turnPassed' || e.type === 'resigned') || this.state.status.kind !== 'playing') this.setDrawOffer(null);
     this.noteResult(before);
     this.aiNote(result.events);
     this.afterChange(result.events);

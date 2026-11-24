@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createStateFrom, parseSquare, type GameState } from '../engine';
+import { createInitialState, createStateFrom, parseSquare, type GameState } from '../engine';
 import type { GameMaster, GmRequest } from '../gm/types';
 import { fakeRuling } from '../gm/fakeGm';
 import { memoryChannelPair } from './channel';
@@ -86,6 +86,21 @@ describe('on one screen', () => {
     s.setAi('black', { level: 'normal', specials: 'off' });
     s.request({ type: 'resign' });
     expect(s.view().state.status).toEqual({ kind: 'won', winner: 'black', by: 'resign' });
+    s.dispose();
+  });
+});
+
+describe('a draw offer and a resignation', () => {
+  it('a side that resigns while an offer waits on it does not leave the offer stuck (3인 판)', async () => {
+    // One screen, the hexagon: white is a person, black and red AIs far behind (only kings and a pawn each).
+    const s = new LocalSession(new TestGm(), { roll: () => 6, initialState: createInitialState(undefined, 'hex3'), phase: 'playing', aiPace: 1000 });
+    s.setAi('black', { level: 'normal', specials: 'off' });
+    s.setAi('red', { level: 'normal', specials: 'off' });
+    // An offer stands (made online in a real room; here set as the authority would hold it).
+    const authority = (s as unknown as { authority: { drawOffer: unknown; handle: (r: unknown, a: string) => Promise<void> } }).authority;
+    authority.drawOffer = { from: 'white', waiting: ['black', 'red'] };
+    await authority.handle({ type: 'resign' }, 'red');
+    expect(s.view().drawOffer).toBeNull();
     s.dispose();
   });
 });
