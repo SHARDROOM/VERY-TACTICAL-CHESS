@@ -363,6 +363,11 @@ export interface GameState {
   impulseDue?: { id: string; kind: 'confused' | 'vanguard' }[];
   /** Every attempted special action this game, oldest first. */
   precedents: Precedent[];
+  /**
+   * Who took what (명장면's MVP, highlights.ts): piece id → its side and kind when it last took a
+   * piece, and how many it has taken. Missing = nothing taken yet.
+   */
+  takes?: Record<string, { color: Color; type: PieceType; n: number }>;
   /** Pieces taken off the board (captured or removed), oldest first, as plain pieces. */
   captured: CapturedPiece[];
   /** Where pieces fell lately (유해), oldest first: reviving one there is easier. See captured.ts. */

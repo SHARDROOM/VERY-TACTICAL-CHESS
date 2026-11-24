@@ -1,5 +1,5 @@
 import { josa } from './josa';
-import { BURN, COVER_NAME, KINGS_ONLY_DRAW_TURNS, TERRAIN_NAME, clashScore, squareName, type Color, type GameEvent, type Outcome, type PieceType, type RejectReason, type RollModifier, type Tag } from '../engine';
+import { BURN, COVER_NAME, KINGS_ONLY_DRAW_TURNS, TERRAIN_NAME, clashScore, squareName, type Color, type GameEvent, type Highlights, type Outcome, type PieceType, type RejectReason, type RollModifier, type Tag } from '../engine';
 
 export const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
 
@@ -283,4 +283,27 @@ export function mindAndSkill(t: Tag): string {
   if (t.skill) out.push(`특기: ${t.skill.about} ${signed(t.skill.bonus)}`);
   if (t.mind) out.push(`정신력 ${signed(t.mind)}`);
   return out.join(', ');
+}
+
+/** A declaration as quoted in a highlight: a long one is cut short. */
+const quoted = (action: string) => `“${action.length > 40 ? `${action.slice(0, 39)}…` : action}”`;
+
+/** 명장면 (사용자 요청): the end screen's lines for the game's miracle, heartbreak and MVP. */
+export function highlightLines(h: Highlights): { kind: 'miracle' | 'heartbreak' | 'mvp'; title: string; text: string }[] {
+  const pct = (c: number) => `${Math.round(c * 100)}%`;
+  const lines: ReturnType<typeof highlightLines> = [];
+  if (h.miracle) {
+    const m = h.miracle;
+    lines.push({ kind: 'miracle', title: '✨ 기적', text: `${m.turnNumber}턴 ${COLOR_NAME[m.color]}의 ${quoted(m.action)}, 성공 확률 ${pct(m.chance)}를 뚫고 성공` });
+  }
+  if (h.heartbreak) {
+    const b = h.heartbreak;
+    const how = b.fumble ? `성공 확률 ${pct(b.chance)}였는데 1·1 대실패` : `AP를 ${b.spent} 쓰고 실패 (성공 확률 ${pct(b.chance)})`;
+    lines.push({ kind: 'heartbreak', title: '💔 통한', text: `${b.turnNumber}턴 ${COLOR_NAME[b.color]}의 ${quoted(b.action)}, ${how}` });
+  }
+  if (h.mvp) {
+    const v = h.mvp;
+    lines.push({ kind: 'mvp', title: '👑 MVP', text: `${COLOR_NAME[v.color]} ${PIECE_NAME[v.type]}, 기물 ${v.n}개를 잡음${v.alive ? '' : ' (끝내 쓰러짐)'}` });
+  }
+  return lines;
 }

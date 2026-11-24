@@ -1,4 +1,5 @@
 import { SACRIFICE_MOD_MAX, checkSacrifice, modifierTotal, pendingModifiers, sacrificeClashBonus, sacrificeModifiers } from './modifiers';
+import { noteTakes } from './highlights';
 import {
   PROMOTION_TYPES,
   type Board,
@@ -70,8 +71,12 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
     void _due;
     state = rest;
   }
-  const result = promoteStranded(applyOne(state, cmd));
-  // A hostage whose holder is gone or moved away is let go, whatever moved it.
+  // Who took what is counted for the game's highlights (명장면).
+  return noteTakes(state, withHostagesLetGo(promoteStranded(applyOne(state, cmd))));
+}
+
+/** A hostage whose holder is gone or moved away is let go, whatever moved it. */
+function withHostagesLetGo(result: CommandResult): CommandResult {
   if (!result.ok || !result.state.board.some((p) => p?.tags?.some((t) => t.name === HOSTAGE))) return result;
   const board = [...result.state.board];
   const released: GameEvent[] = [];

@@ -38,11 +38,12 @@ import {
   isAiOnly,
   standing,
   playersOf,
+  highlights,
   type AiLevel,
 } from '../engine';
 import { BoardScene, type Broadcast, type CameraRequest } from '../scene/BoardScene';
 import { BookControl, bookPoseFor } from '../scene/RuleBook';
-import { COLOR_NAME, MOD_KIND_NAME, OUTCOME_LABEL, PIECE_NAME, REJECT_MESSAGE, describeEvents, signed, type LogEntry, type LogTone } from './messages';
+import { COLOR_NAME, MOD_KIND_NAME, OUTCOME_LABEL, PIECE_NAME, REJECT_MESSAGE, describeEvents, highlightLines, signed, type LogEntry, type LogTone } from './messages';
 import { PrecedentList } from './PrecedentList';
 import { josa } from './josa';
 import { GmSettings, type GmConfig } from './GmSettings';
@@ -953,6 +954,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
   // 판 끝내기: a draw, and who would give up or offer one from this screen.
   const drawn = game.status.kind === 'draw' ? game.status.reason : null;
   const over = !!winner || !!drawn;
+  // 명장면: the game's miracle, heartbreak and MVP, on the end screen (every round of an AI watch too).
+  const moments = useMemo(() => (over ? highlightLines(highlights(game)) : []), [over, game]);
   const people = players.filter((c) => !aiOf(c));
   const mySide: Color | null = seat === 'white' || seat === 'black' || seat === 'red' ? seat : seat === 'both' ? (!aiOf(sideToMove) ? sideToMove : people.length === 1 ? people[0] : null) : null;
   const canEnd = playing && connected && !watching && !!mySide;
@@ -1696,6 +1699,15 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
                       : `${COLOR_NAME[opponent(winner!)]} 킹이 잡혔습니다.`}
             </p>
             <p className="victory-recap">{recap(game)}</p>
+            {moments.length > 0 && (
+              <ul className="victory-highlights" aria-label="명장면">
+                {moments.map((m) => (
+                  <li key={m.kind} className={`moment moment-${m.kind}`}>
+                    <span className="moment-title">{m.title}</span> {m.text}
+                  </li>
+                ))}
+              </ul>
+            )}
             {watching && watch.tally.length > 0 && (
               <p className="victory-tally">
                 {players.map((c) => watch.tally.find((t) => t.color === c)).filter(Boolean).map((t) => `${t!.label} ${t!.wins}승`).join(' · ')}

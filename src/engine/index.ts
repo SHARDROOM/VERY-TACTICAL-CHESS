@@ -2,6 +2,7 @@ export * from './types';
 export { applyCommand, clashEventFor, exitsOf, hasAnyMove, rulingContext, wanderTargets, KINGS_ONLY_DRAW_TURNS } from './game';
 export { BASE_CLASH, CLASH_MAX, CLASH_MIN, CLASH_ROLLS, DUEL_TIMING, duelSeconds, canResist, clashMultiplier, hasClashGear, clashScore, clashSkill, clashWinChance, exchangesFor, resolveClash } from './clash';
 export { capturedAfter } from './captured';
+export { highlights, successChance, MIRACLE_BELOW, type Highlights } from './highlights';
 export { FOOTPRINT, footprint, restingPlace } from './levitation';
 export { blockedSquares, dropFromBridges, terrainAt, terrainBlocks, tickTerrain, MAX_TERRAIN, BUILDING_INFO, BUILDING_REACH, BUILDING_BONUS, BUILDING_BONUS_MAX, buildingLook, cleanBuilding } from './terrain';
 export { createInitialState, createStateFrom, withAir } from './setup';

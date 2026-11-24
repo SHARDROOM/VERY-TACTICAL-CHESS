@@ -313,6 +313,9 @@ body > .overlay { position: fixed; z-index: 10; }
 .victory-name { margin-top: 2px; color: var(--text); font-size: 1.0625rem; }
 .victory-how { margin: 10px 0 0; font-family: var(--font-voice); font-size: 1.125rem; }
 .victory-recap { margin: 6px auto 0; max-width: 32em; color: var(--muted); font-size: 0.9375rem; line-height: 1.6; }
+/* 명장면: the game's miracle, heartbreak and MVP, one line each under the recap. */
+.victory-highlights { list-style: none; margin: 14px 0 0; padding: 12px 0 0; border-top: 1px solid var(--line); display: grid; gap: 8px; text-align: left; font-size: 0.9375rem; line-height: 1.5; }
+.victory-highlights .moment-title { font-family: var(--font-voice); font-weight: 700; color: var(--accent-bright); margin-right: 4px; white-space: nowrap; }
 .victory-actions { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-top: 20px; }
 
 .promo-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 14px 0 8px; }
