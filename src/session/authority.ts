@@ -129,13 +129,19 @@ export class Authority {
   private barrier = false;
   private gmNow!: GameMaster;
 
-  /** The GM; one that goes on to a backup (예비 GM) tells everyone through the log. */
+  /**
+   * The GM; one that goes on to a backup (예비 GM) tells everyone through the log, and (while it
+   * rules) the busy badge names the one asked now.
+   */
   get gm(): GameMaster {
     return this.gmNow;
   }
   set gm(gm: GameMaster) {
     this.gmNow = gm;
-    gm.onNotice = (text) => this.emit({ kind: 'notice', to: 'all', text, tone: 'warn' });
+    gm.onNotice = (text) => {
+      this.emit({ kind: 'notice', to: 'all', text, tone: 'warn' });
+      if (this.busy) this.emit({ kind: 'busy', busy: true });
+    };
   }
   get brains(): Partial<Record<Color, GameMaster>> {
     return this.brainsNow;

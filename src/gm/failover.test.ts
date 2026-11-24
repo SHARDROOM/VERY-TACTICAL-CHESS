@@ -45,6 +45,23 @@ describe('backup GMs (예비 GM, 사용자 요청)', () => {
     expect(f.name).toBe('Gemini GM');
   });
 
+  it('while a request runs, the name is the GM being asked now (shown beside "GM 판정 중")', async () => {
+    let answer: (v: unknown) => void = () => {};
+    const main = gm('Gemini GM', () => new GmError('busy', 'busy'));
+    const backup: GameMaster = { name: 'Groq GM', rule: () => new Promise((r) => (answer = r)) };
+    const f = new FailoverGameMaster([{ gm: main, label: 'Gemini' }, { gm: backup, label: '예비 1 Groq' }]);
+    const names: string[] = [];
+    f.onNotice = () => names.push(f.name);
+    const going = f.rule(req);
+    await Promise.resolve();
+    await Promise.resolve();
+    // Told of the switch, the name is already the backup's; and it stays so while the backup thinks.
+    expect(names).toEqual(['Groq GM · 예비 1 Groq']);
+    expect(f.name).toBe('Groq GM · 예비 1 Groq');
+    answer({ ok: 1 });
+    await going;
+  });
+
   it('a key that will not do rests for good; a malformed reply is not passed on', async () => {
     let clock = 0;
     const main = gm('A', () => new GmError('key', 'auth'));

@@ -72,6 +72,7 @@ import { riderTypes } from '../scene/piecePhysics';
 import { playChunkTracks, restingChunks } from '../scene/debris';
 import { playTakenTracks, receiveToy, setToySender, takenNow } from '../scene/toys';
 import type { PieceDirection } from '../scene/pieceMotion';
+import { GmBusyBadge } from './GmBusyBadge';
 
 /** The watched AIs' pace, as the buttons say it. */
 const SPEED_NAME: Record<WatchSpeed, string> = { slow: '느리게', normal: '보통', fast: '빠르게' };
@@ -1133,7 +1134,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
         {online && watchers > 0 && <div className="badge muted-badge">관전 {watchers}명</div>}
         {inCheck && <div className="badge check">체크!</div>}
         {chain && playing && <div className="badge chain">👣 연속 이동 {chain.left}번 남음</div>}
-        {view.gmBusy && <div className="badge busy">GM 판정 중…</div>}
+        {view.gmBusy && <GmBusyBadge name={view.gmName} />}
         {warning && !over && <div className="badge warn">⚠ {warning}</div>}
         {offer && playing && (
           <div className="badge draw-offer" role="status">

@@ -36,7 +36,7 @@ export class FailoverGameMaster implements GameMaster {
   /** Told when a request goes on to another GM (the session shows it). */
   onNotice?: (text: string) => void;
   private readonly restUntil: number[];
-  /** The one that answered last (its name is shown). */
+  /** The one being asked now, or the one that answered last (its name is shown). */
   private current = 0;
 
   constructor(
@@ -81,15 +81,17 @@ export class FailoverGameMaster implements GameMaster {
       const e = this.entries[i];
       // The GM that does not support this (a fake one for chaos) is passed over quietly.
       if ((what === 'chaos' && !e.gm.chaos) || (what === 'act' && !e.gm.act)) continue;
+      // Named while it thinks ("GM 판정 중 · …"), so a switch shows at once.
+      this.current = i;
       try {
-        const reply = await (next === undefined ? call(e.gm) : limited(call(e.gm), LIMIT_MS[what]));
-        this.current = i;
-        return reply;
+        return await (next === undefined ? call(e.gm) : limited(call(e.gm), LIMIT_MS[what]));
       } catch (err) {
         last = err;
         if (!isBlocked(err)) throw err;
         this.restUntil[i] = err.kind === 'auth' ? Infinity : this.now() + REST_MS;
-        if (next !== undefined) this.onNotice?.(`🔁 ${e.label}이(가) ${WHY[err.kind]} ${this.entries[next].label}(으)로 넘깁니다.`);
+        if (next === undefined) continue;
+        this.current = next;
+        this.onNotice?.(`🔁 ${e.label}이(가) ${WHY[err.kind]} ${this.entries[next].label}(으)로 넘깁니다.`);
       }
     }
     throw last ?? new GmError('쓸 수 있는 GM이 없습니다.');

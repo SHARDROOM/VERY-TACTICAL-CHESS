@@ -90,6 +90,9 @@ select option { background: var(--walnut); }
 .badge.chain { color: var(--accent); border-color: var(--accent); font-family: var(--font-voice); }
 .panel-footer button.end-turn-ready { border-color: var(--accent); color: var(--accent); }
 .badge.busy { color: var(--text); }
+/* How long the GM has been at it, and which GM (a backup's name once it takes over). */
+.badge.busy .busy-seconds { font-variant-numeric: tabular-nums; }
+.badge.busy .busy-gm { display: block; margin-top: 2px; padding-left: 14px; font-size: 0.75rem; font-weight: 500; color: var(--muted); max-width: 62vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A draw offered: who offered, and the answer buttons for those asked. */
 .badge.draw-offer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border-color: var(--accent); }
 .badge.draw-offer button { padding: 4px 12px; font-size: 0.875rem; }
