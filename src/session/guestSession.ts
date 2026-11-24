@@ -89,6 +89,7 @@ export class GuestSession implements Session {
       chaosReady: true,
       watch: this.watch,
       drawOffer: this.drawOffer,
+      undoable: false,
     };
   }
 
@@ -132,6 +133,8 @@ export class GuestSession implements Session {
   setAi(): void {}
   setWatch(_change: Parameters<Session['setWatch']>[0]): void {}
   rematch(): void {}
+
+  undo(): void {}
 
   takeSeat(role: Role): void {
     this.send({ t: 'seat', role });

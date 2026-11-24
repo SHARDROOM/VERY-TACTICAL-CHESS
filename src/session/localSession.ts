@@ -1,6 +1,7 @@
 import { rollDie } from '../dice';
 import type { AiSeat, Color, GameState, RuleConfig } from '../engine';
 import type { GameMaster } from '../gm/types';
+import { COLOR_NAME } from '../ui/messages';
 import { Authority, type AuthorityEvent, type FallSimulator } from './authority';
 import { Emitter } from './emitter';
 import { DoodleStore, type DoodleOp } from './doodle';
@@ -63,6 +64,7 @@ export class LocalSession implements Session {
       chaosReady: !!this.authority.gm.chaos,
       watch: this.authority.watch,
       drawOffer: this.authority.drawOffer,
+      undoable: this.authority.canUndo(),
     };
   }
 
@@ -131,6 +133,13 @@ export class LocalSession implements Session {
 
   rematch(): void {
     this.authority.rematch();
+  }
+
+  undo(): void {
+    if (!this.authority.undo()) return this.emitter.emit({ kind: 'notice', text: '더 무를 수 없습니다. 주사위를 굴린 특수 행동·합이나 혼돈 사건 앞으로는 돌아갈 수 없습니다.', tone: 'warn' });
+    // The log keeps what was played; it says where the game went back to.
+    const s = this.authority.state;
+    this.emitter.emit({ kind: 'notice', text: `↶ 한 수 물렀습니다. ${s.turnNumber}턴, ${COLOR_NAME[s.turn]}의 차례로 돌아갑니다.`, tone: 'normal' });
   }
 
   dispose(): void {

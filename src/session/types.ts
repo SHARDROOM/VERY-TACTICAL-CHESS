@@ -142,6 +142,8 @@ export interface SessionView {
   watch: WatchState;
   /** A draw offered and not yet answered by everyone (판 끝내기). */
   drawOffer: DrawOffer | null;
+  /** One screen: a move can be taken back now (무르기). */
+  undoable: boolean;
 }
 
 export type NoticeTone = 'normal' | 'warn' | 'error';
@@ -187,6 +189,8 @@ export interface Session {
   setWatch(change: { paused?: boolean; speed?: WatchSpeed }): void;
   /** Authority only, after a game only AIs played: the next one at once, the AIs one seat on. */
   rematch(): void;
+  /** One screen only: take back the last move (무르기), never past dice or chaos. */
+  undo(): void;
   dispose(): void;
 }
 

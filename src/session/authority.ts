@@ -67,6 +67,9 @@ const AI_BUSY_REST_TURNS = 2;
 const AI_COMPOSE_TIMEOUT_MS = 20_000;
 const AI_RULING_TIMEOUT_MS = 60_000;
 
+/** The most moves kept for taking back (무르기). */
+const UNDO_MAX = 40;
+
 /** How long a fall plays on screen; the clock does not run during it. */
 export const FALL_SHOW_MS = 3200;
 
@@ -117,6 +120,13 @@ export class Authority {
   private brainsNow: Partial<Record<Color, GameMaster>> = {};
   /** A draw offered and not yet answered by everyone; it goes when the turn passes (판 끝내기). */
   drawOffer: DrawOffer | null = null;
+  /**
+   * 무르기 (사용자 요청): the game as it was before each move made on this screen, newest last.
+   * Dice (a special action rolled, a clash) or a chaos event empty it: nothing goes back past them.
+   */
+  private undoStack: GameState[] = [];
+  /** The last change applied had dice or chaos in it. */
+  private barrier = false;
   private gmNow!: GameMaster;
 
   /** The GM; one that goes on to a backup (예비 GM) tells everyone through the log. */
@@ -289,7 +299,28 @@ export class Authority {
     this.generation++;
   }
 
-  private replace(state: GameState): void {
+  /** A move can be taken back now: one screen's own moves, a game people play. */
+  canUndo(): boolean {
+    return this.phase === 'playing' && !this.busy && this.undoStack.length > 0 && !isAiOnly(this.state);
+  }
+
+  /** Back to before the last move made on this screen (whatever the AIs and wanderers did after it goes too). */
+  undo(): boolean {
+    if (!this.canUndo()) return false;
+    const back = this.undoStack.pop()!;
+    if (this.aiHandle) clearTimeout(this.aiHandle);
+    this.aiHandle = null;
+    this.aiActing = false;
+    this.aiTried = -1;
+    this.aiReadyAt = 0;
+    this.replace(back, true);
+    this.restartClock();
+    this.aiPoke();
+    return true;
+  }
+
+  private replace(state: GameState, keepUndo = false): void {
+    if (!keepUndo) this.undoStack = [];
     this.generation++;
     this.busy = false;
     this.state = state;
@@ -384,11 +415,13 @@ export class Authority {
 
     switch (req.type) {
       case 'move':
-        this.apply(req.promotion ? { type: 'move', from: req.from, to: req.to, promotion: req.promotion } : { type: 'move', from: req.from, to: req.to }, actor);
+      case 'endTurn': {
+        const before = this.state;
+        const done = this.apply(req.type === 'endTurn' ? { type: 'endTurn' } : req.promotion ? { type: 'move', from: req.from, to: req.to, promotion: req.promotion } : { type: 'move', from: req.from, to: req.to }, actor);
+        // One screen's own plain moves can be taken back (not one that rolled a clash).
+        if (done && actor === 'any' && !this.barrier && !isAiOnly(before)) this.undoStack = [...this.undoStack.slice(-(UNDO_MAX - 1)), before];
         return;
-      case 'endTurn':
-        this.apply({ type: 'endTurn' }, actor);
-        return;
+      }
       case 'cancel':
         this.apply({ type: 'cancelSpecial' }, actor);
         return;
@@ -426,6 +459,9 @@ export class Authority {
       return false;
     }
     this.state = result.state;
+    // Dice or chaos: nothing is taken back past this.
+    this.barrier = result.events.some((e) => e.type === 'specialResolved' || e.type === 'clash' || e.type === 'chaos');
+    if (this.barrier) this.undoStack = [];
     this.emit({ kind: 'events', events: result.events, before, after: result.state });
     // A draw offer stands until the turn passes or the game is over; a resignation (the hexagon: the
     // others play on) takes it away too, or it would wait on a side no longer there to answer.

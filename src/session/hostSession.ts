@@ -119,6 +119,7 @@ export class HostSession implements Session {
       chaosReady: !!this.authority.gm.chaos,
       watch: this.authority.watch,
       drawOffer: this.authority.drawOffer,
+      undoable: false,
     };
   }
 
@@ -341,6 +342,9 @@ export class HostSession implements Session {
   rematch(): void {
     this.authority.rematch();
   }
+
+  /** Online there is no taking back: the other side has seen the move. */
+  undo(): void {}
 
   /** The host sends a guest from their seat back to the bench (only that: guests choose seats themselves). */
   assignRole(key: string, role: Role): void {
