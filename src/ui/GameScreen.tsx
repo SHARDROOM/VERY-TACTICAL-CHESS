@@ -3,6 +3,7 @@ import {
   AIR,
   setBoardMap,
   isHex,
+  KINGS_ONLY_DRAW_TURNS,
   findKing,
   hasAnyMove,
   isAir,
@@ -948,6 +949,20 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
     if (chainAt !== null) setSelected(chainAt);
   }, [chainAt]);
   const winner = game.status.kind === 'won' ? game.status.winner : null;
+  // 판 끝내기: a draw, and who would give up or offer one from this screen.
+  const drawn = game.status.kind === 'draw' ? game.status.reason : null;
+  const over = !!winner || !!drawn;
+  const people = players.filter((c) => !aiOf(c));
+  const mySide: Color | null = seat === 'white' || seat === 'black' || seat === 'red' ? seat : seat === 'both' ? (!aiOf(sideToMove) ? sideToMove : people.length === 1 ? people[0] : null) : null;
+  const canEnd = playing && connected && !watching && !!mySide;
+  const resign = () => {
+    if (!mySide) return;
+    const what = isHex() ? '킹은 판을 떠나고, 남은 기물은 회색 떠돌이가 됩니다.' : `${COLOR_NAME[opponent(mySide)]}이 승리합니다.`;
+    if (confirm(`${COLOR_NAME[mySide]}이 기권할까요? ${what}`)) session.request({ type: 'resign' });
+  };
+  const drawLabel = online ? '무승부 제안' : people.length < players.length ? '무승부 제안 (AI는 불리할 때만 받음)' : '무승부로 끝내기';
+  const offer = view.drawOffer;
+  const answering = !!offer && !!mySide && online && offer.waiting.includes(mySide);
 
   const promotes = (from: Square, to: Square) => {
     const mover = game.board[from];
@@ -1036,7 +1051,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
   const absent = view.members.find((m) => (m.role === 'white' || m.role === 'black') && !m.online);
   const watchers = view.members.filter((m) => m.role === 'spectator').length;
 
-  const placeholder = winner
+  const placeholder = over
     ? '게임 종료'
     : spectator
       ? '관전 중입니다'
@@ -1102,8 +1117,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
           })}
         >
           <span className="turn-token" aria-hidden />
-          <span className="turn-text">{winner ? `${COLOR_NAME[winner]} 승리` : `${COLOR_NAME[sideToMove]}의 차례`}</span>
-          {!winner && nameOf(sideToMove) && (
+          <span className="turn-text">{winner ? `${COLOR_NAME[winner]} 승리` : drawn ? '무승부' : `${COLOR_NAME[sideToMove]}의 차례`}</span>
+          {!over && nameOf(sideToMove) && (
             <span className={`turn-name ${aiToMove && !(watching && watch.paused) ? 'ai-thinking' : ''}`}>
               {nameOf(sideToMove)}
               {aiToMove ? (watching && watch.paused ? ' · 일시정지' : ' · 생각 중…') : ''}
@@ -1119,7 +1134,22 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
         {inCheck && <div className="badge check">체크!</div>}
         {chain && playing && <div className="badge chain">👣 연속 이동 {chain.left}번 남음</div>}
         {view.gmBusy && <div className="badge busy">GM 판정 중…</div>}
-        {warning && !winner && <div className="badge warn">⚠ {warning}</div>}
+        {warning && !over && <div className="badge warn">⚠ {warning}</div>}
+        {offer && playing && (
+          <div className="badge draw-offer" role="status">
+            🤝 {COLOR_NAME[offer.from]}이 무승부를 제안했습니다
+            {answering ? (
+              <>
+                <button className="primary" onClick={() => session.request({ type: 'answerDraw', accept: true })}>
+                  받기
+                </button>
+                <button onClick={() => session.request({ type: 'answerDraw', accept: false })}>거절</button>
+              </>
+            ) : (
+              <span className="draw-offer-wait"> · {offer.waiting.map((c) => COLOR_NAME[c]).join(', ')}의 답을 기다리는 중</span>
+            )}
+          </div>
+        )}
         {absent && playing && <div className="badge warn">{absent.name}님 연결 끊김, 다시 들어오기를 기다리는 중</div>}
       </header>
 
@@ -1499,7 +1529,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
           onClose={() => setShowMenu(false)}
           gm={{ isAuthority: view.isAuthority, name: view.gmName, busy: view.gmBusy, onOpen: () => setShowGmSettings(true) }}
           fullscreen={fullscreen}
-          game={{ onLeave, online }}
+          game={{ onLeave, online, ...(canEnd && { onResign: resign, onOfferDraw: () => session.request({ type: 'offerDraw' }), drawLabel }) }}
           rules={rulesSummary(game.rules)}
         />
       )}
@@ -1635,13 +1665,25 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
         </div>
       )}
 
-      {winner && connected && !dice && (
+      {over && connected && !dice && (
         <div className="overlay">
-          <div className={`victory victory-${winner}`}>
+          <div className={`victory victory-${winner ?? 'draw'}`}>
             <span className="victory-stone" aria-hidden />
-            <h1>{COLOR_NAME[winner]} 승리</h1>
-            {nameOf(winner) && <div className="victory-name">{nameOf(winner)}</div>}
-            <p className="victory-how">{isHex() ? '마지막까지 킹을 지켰습니다.' : `${COLOR_NAME[opponent(winner)]} 킹이 잡혔습니다.`}</p>
+            <h1>{winner ? `${COLOR_NAME[winner]} 승리` : '무승부'}</h1>
+            {winner && nameOf(winner) && <div className="victory-name">{nameOf(winner)}</div>}
+            <p className="victory-how">
+              {drawn === 'agreed'
+                ? '모두 무승부에 합의했습니다.'
+                : drawn === 'kingsOnly'
+                  ? `킹만 남은 채로 ${KINGS_ONLY_DRAW_TURNS}턴이 지났습니다.`
+                  : game.status.kind === 'won' && game.status.by === 'resign'
+                    ? isHex()
+                      ? '마지막 상대가 기권했습니다.'
+                      : `${COLOR_NAME[opponent(winner!)]}이 기권했습니다.`
+                    : isHex()
+                      ? '마지막까지 킹을 지켰습니다.'
+                      : `${COLOR_NAME[opponent(winner!)]} 킹이 잡혔습니다.`}
+            </p>
             <p className="victory-recap">{recap(game)}</p>
             {watching && watch.tally.length > 0 && (
               <p className="victory-tally">

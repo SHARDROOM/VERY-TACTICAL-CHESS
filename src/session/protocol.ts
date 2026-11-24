@@ -1,5 +1,5 @@
 import { PROMOTION_TYPES, SQUARES, type GameEvent, type GameState } from '../engine';
-import { cleanChat, cleanName, type ChatMessage, type Member, type NoticeTone, type Phase, type Request, type Role, type TimerSnapshot, type WatchState } from './types';
+import { cleanChat, cleanName, type ChatMessage, type DrawOffer, type Member, type NoticeTone, type Phase, type Request, type Role, type TimerSnapshot, type WatchState } from './types';
 import { parseDoodleChange, parseDoodleOp, type Doodle, type DoodleChange, type DoodleOp } from './doodle';
 import { parseToyOp, type ToyOp } from './toy';
 
@@ -28,6 +28,8 @@ export interface RoomSnapshot {
   members: Member[];
   /** A game only AIs play: paused, speed, score (older hosts send none). */
   watch?: WatchState;
+  /** A draw offered and not yet answered by everyone (older hosts send none). */
+  draw?: DrawOffer | null;
 }
 
 export type HostMessage =
@@ -111,6 +113,11 @@ export function parseGuestMessage(raw: unknown): GuestMessage | null {
       return { t: 'req', req: { type: r.type } };
     case 'exile':
       return isSquare(r.at) ? { t: 'req', req: { type: 'exile', at: r.at as number } } : null;
+    case 'resign':
+    case 'offerDraw':
+      return { t: 'req', req: { type: r.type } };
+    case 'answerDraw':
+      return typeof r.accept === 'boolean' ? { t: 'req', req: { type: 'answerDraw', accept: r.accept } } : null;
     default:
       return null;
   }

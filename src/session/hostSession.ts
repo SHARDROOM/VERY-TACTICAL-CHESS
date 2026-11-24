@@ -118,6 +118,7 @@ export class HostSession implements Session {
       doodles: this.doodles.doodles,
       chaosReady: !!this.authority.gm.chaos,
       watch: this.authority.watch,
+      drawOffer: this.authority.drawOffer,
     };
   }
 
@@ -365,7 +366,7 @@ export class HostSession implements Session {
   }
 
   private room(): RoomSnapshot {
-    return { phase: this.authority.phase as Phase, members: this.publicMembers(), watch: this.authority.watch };
+    return { phase: this.authority.phase as Phase, members: this.publicMembers(), watch: this.authority.watch, draw: this.authority.drawOffer };
   }
 
   private sendTo(member: Seat, msg: HostMessage): void {
@@ -437,6 +438,7 @@ export class HostSession implements Session {
         this.broadcast({ t: 'timer', timer: e.timer });
         break;
       case 'watch':
+      case 'draw':
         this.broadcast({ t: 'room', room: this.room() });
         break;
     }

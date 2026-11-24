@@ -67,8 +67,8 @@ interface Props {
   onClose: () => void;
   gm: { isAuthority: boolean; name: string; busy: boolean; onOpen: () => void; note?: string };
   fullscreen: ReturnType<typeof useFullscreen>;
-  /** In a game: the way out. Absent on the title screen. */
-  game?: { onLeave: () => void; online: boolean };
+  /** In a game: the way out, and ending it (기권, 무승부) when this screen may. Absent on the title screen. */
+  game?: { onLeave: () => void; online: boolean; onResign?: () => void; onOfferDraw?: () => void; drawLabel?: string };
   /** The room's rules, shown read-only in a game. */
   rules?: string[];
 }
@@ -122,6 +122,12 @@ export function SettingsMenu({ onClose, gm, fullscreen, game, rules }: Props) {
         {game && (
           <section>
             <h3>게임</h3>
+            {game.onOfferDraw && <button onClick={act(game.onOfferDraw)}>{game.drawLabel ?? '무승부 제안'}</button>}
+            {game.onResign && (
+              <button className="danger" onClick={act(game.onResign)}>
+                기권
+              </button>
+            )}
             <button className="danger" onClick={act(game.onLeave)}>
               {game.online ? '방에서 나가기' : '로비로 나가기'}
             </button>

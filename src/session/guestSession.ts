@@ -11,6 +11,7 @@ import {
   pushChat,
   type ChatMessage,
   type ConnectionStatus,
+  type DrawOffer,
   type Member,
   type Phase,
   type Request,
@@ -51,6 +52,7 @@ export class GuestSession implements Session {
   private members: Member[] = [];
   private phase: Phase = 'waiting';
   private watch: WatchState = WATCH_DEFAULT;
+  private drawOffer: DrawOffer | null = null;
   private gmBusy = false;
   private gmName = '';
   private timer: TurnTimer | null = null;
@@ -86,6 +88,7 @@ export class GuestSession implements Session {
       doodles: this.doodles,
       chaosReady: true,
       watch: this.watch,
+      drawOffer: this.drawOffer,
     };
   }
 
@@ -211,6 +214,7 @@ export class GuestSession implements Session {
         this.phase = msg.room.phase;
         this.members = msg.room.members;
         this.watch = msg.room.watch ?? WATCH_DEFAULT;
+        this.drawOffer = msg.room.draw ?? null;
         this.gmName = msg.gmName;
         this.gmBusy = msg.busy;
         this.setTimer(msg.timer);
@@ -230,6 +234,7 @@ export class GuestSession implements Session {
         this.phase = msg.room.phase;
         this.members = msg.room.members;
         this.watch = msg.room.watch ?? WATCH_DEFAULT;
+        this.drawOffer = msg.room.draw ?? null;
         break;
       case 'update': {
         const before = this.state;

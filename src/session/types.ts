@@ -29,7 +29,18 @@ export type Request =
   | { type: 'attempt' }
   | { type: 'cancel' }
   /** The 3-player board: the surrendering player keeps the piece on `at` (see GameState.surrender). */
-  | { type: 'exile'; at: Square };
+  | { type: 'exile'; at: Square }
+  /** Give up (기권): online one's own side; on one screen the side to move (or the person's, on an AI's turn). */
+  | { type: 'resign' }
+  /** Offer a draw; the others (people) answer, AIs take it only when behind. */
+  | { type: 'offerDraw' }
+  | { type: 'answerDraw'; accept: boolean };
+
+/** A draw someone offered: who still has to answer it (the others took it, AIs at once). */
+export interface DrawOffer {
+  from: Color;
+  waiting: Color[];
+}
 
 /** A player's side, or watching. */
 export type Role = Color | 'spectator';
@@ -129,6 +140,8 @@ export interface SessionView {
   chaosReady: boolean;
   /** For a game only AIs play: pause, speed, the score of the series. */
   watch: WatchState;
+  /** A draw offered and not yet answered by everyone (판 끝내기). */
+  drawOffer: DrawOffer | null;
 }
 
 export type NoticeTone = 'normal' | 'warn' | 'error';

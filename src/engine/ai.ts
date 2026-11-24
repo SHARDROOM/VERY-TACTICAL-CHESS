@@ -51,6 +51,7 @@ export function standing(state: GameState): Partial<Record<Color, number>> {
   const colors = playersOf(state.map);
   const status = state.status;
   if (status.kind === 'won') return Object.fromEntries(colors.map((c) => [c, c === status.winner ? 1 : 0]));
+  if (status.kind === 'draw') return Object.fromEntries(colors.map((c) => [c, 1 / colors.length]));
   const alive = colors.filter((c) => state.board.some((p) => p?.type === 'king' && p.color === c));
   let score: Partial<Record<Color, number>>;
   if (colors.length === 2 && alive.length === 2) {

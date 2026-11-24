@@ -113,6 +113,9 @@ function applyOne(state: GameState, cmd: Command): CommandResult {
   // A player whose king fell picks the piece it keeps before anything else happens.
   if (cmd.type === 'exile') return exile(state, cmd.at);
   if (state.surrender) return { ok: false, reason: 'surrenderPending' };
+  // Giving up and an agreed draw may come at any moment (판 끝내기).
+  if (cmd.type === 'resign') return resign(state, cmd.color);
+  if (cmd.type === 'draw') return { ok: true, state: { ...state, pending: null, status: { kind: 'draw', reason: 'agreed' } }, events: [{ type: 'drawn', reason: 'agreed' }] };
   // Running out of time cancels whatever was pending, so it may come at any moment.
   if (cmd.type === 'timeout') return timeOut(state);
   const actionCommand = cmd.type === 'attemptSpecial' || cmd.type === 'cancelSpecial';
@@ -416,6 +419,40 @@ function wander(state: GameState, moves: { from: Square; to: Square }[]): Comman
   return { ok: true, state: after, events };
 }
 
+/** Only kings left (gray wanderers aside) for this many turns: a draw (판 끝내기; specials may still call pieces back meanwhile). */
+export const KINGS_ONLY_DRAW_TURNS = 10;
+
+/** Every side has only its king left (riders too), gray wanderers aside. */
+function kingsOnly(board: Board): boolean {
+  return board.every((p) => !p || stackOf(p).every((q) => q.color === GRAY || q.type === 'king'));
+}
+
+/**
+ * `color` gives up (기권, 사용자 요청). On the classic board the other side wins. On the hexagon its
+ * king leaves the board and every other piece of its turns into a gray wanderer; the last king left
+ * wins, otherwise the others play on (the turn passing on if it was its own).
+ */
+function resign(state: GameState, color: Color): CommandResult {
+  const inGame = playersOf().includes(color) && state.board.some((p) => p && stackOf(p).some((q) => q.color === color));
+  if (!inGame) return { ok: false, reason: 'notInGame' };
+  if (!isHex()) {
+    const winner = playersOf().find((c) => c !== color)!;
+    return { ok: true, state: { ...state, pending: null, status: { kind: 'won', winner, by: 'resign' } }, events: [{ type: 'resigned', color, winner }] };
+  }
+  const wander = (p: Piece): Piece => (p.color === color ? { ...p, color: GRAY } : p);
+  const board = state.board.map((p) => (!p ? p : p.color === color && p.type === 'king' ? null : mapStack(p, wander)));
+  const kings = [...new Set(board.flatMap((p) => (p ? stackOf(p) : [])).filter((p) => p.type === 'king').map((p) => p.color))];
+  if (kings.length <= 1) {
+    const winner = kings[0] ?? playersOf().find((c) => c !== color)!;
+    return { ok: true, state: { ...state, board, pending: null, status: { kind: 'won', winner, by: 'resign' } }, events: [{ type: 'resigned', color, winner }] };
+  }
+  const events: GameEvent[] = [{ type: 'resigned', color, winner: null }];
+  const after: GameState = { ...state, board, ...(state.turn === color && { pending: null, chain: undefined }) };
+  if (state.turn !== color) return { ok: true, state: after, events };
+  const passed = passTurn(after, board, null, events);
+  return { ok: true, state: passed.state, events: passed.events };
+}
+
 /** Who moves after the player now to move: the next in turn order who still has pieces. */
 function nextPlayer(state: GameState, board: Board): Color {
   const all = playersOf();
@@ -472,9 +509,22 @@ function passTurn(
       pending: null,
       ...withFalls(state, falls),
       ...(due.length && { impulseDue: due }),
+      ...kingsOnlyCount(state, ticked.board, turnNumber),
     },
-    events: [...events, { type: 'turnPassed', turn: next, turnNumber, apGained: apNext - state.ap[next], ended: state.turn }],
+    events: [
+      ...events,
+      { type: 'turnPassed', turn: next, turnNumber, apGained: apNext - state.ap[next], ended: state.turn },
+      ...(kingsOnlyCount(state, ticked.board, turnNumber).status ? [{ type: 'drawn' as const, reason: 'kingsOnly' as const }] : []),
+    ],
   };
+}
+
+/** After a turn: how long only kings have been left, and the draw once it has been KINGS_ONLY_DRAW_TURNS turns. */
+function kingsOnlyCount(state: GameState, board: Board, turnNumber: number): Pick<GameState, 'kingsOnlySince'> & { status?: GameState['status'] } {
+  if (!kingsOnly(board)) return { kingsOnlySince: undefined };
+  // The turn just played counts as the first.
+  const since = state.kingsOnlySince ?? state.turnNumber;
+  return { kingsOnlySince: since, ...(turnNumber - since >= KINGS_ONLY_DRAW_TURNS && { status: { kind: 'draw', reason: 'kingsOnly' } }) };
 }
 
 function checkEvents(board: Board, mover: Color, terrain: readonly TerrainCell[] | undefined): GameEvent[] {

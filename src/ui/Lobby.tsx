@@ -141,7 +141,7 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
               <strong>저장된 게임</strong>
               <div className="muted-line">
                 {saved.kind === 'host' ? `온라인 방 ${saved.code}` : '핫시트'} · 턴 {saved.state.turnNumber}
-                {saved.state.status.kind === 'won' ? ' · 끝난 게임' : ''} · {ago(saved.savedAt)}
+                {saved.state.status.kind !== 'playing' ? ' · 끝난 게임' : ''} · {ago(saved.savedAt)}
               </div>
             </div>
             <div className="saved-actions">

@@ -1,5 +1,5 @@
 import { josa } from './josa';
-import { BURN, COVER_NAME, TERRAIN_NAME, clashScore, squareName, type Color, type GameEvent, type Outcome, type PieceType, type RejectReason, type RollModifier, type Tag } from '../engine';
+import { BURN, COVER_NAME, KINGS_ONLY_DRAW_TURNS, TERRAIN_NAME, clashScore, squareName, type Color, type GameEvent, type Outcome, type PieceType, type RejectReason, type RollModifier, type Tag } from '../engine';
 
 export const COLOR_NAME: Record<Color, string> = { white: '백', black: '흑', red: '적', gray: '회색' };
 
@@ -30,6 +30,7 @@ export const REJECT_MESSAGE: Record<RejectReason, string> = {
   nothingFalling: '떨어지는 기물이 없습니다.',
   notChainedPiece: '연속 이동 중입니다. 방금 움직인 기물을 한 번 더 움직이거나 턴을 넘기세요.',
   surrenderPending: '항복한 쪽이 남길 기물을 고르는 중입니다.',
+  notInGame: '이 게임에 참여하지 않은 편입니다.',
   noSurrender: '항복한 플레이어가 없습니다.',
   notExiledPiece: '항복한 쪽의 기물만 남길 수 있습니다.',
   illegalWander: '떠돌이 기물이 그렇게 움직일 수 없습니다.',
@@ -195,6 +196,17 @@ export function describeEvents(events: GameEvent[], pieceType: (id: string) => P
         break;
       case 'kingCaptured':
         add(`👑 킹을 잡았습니다! ${COLOR_NAME[e.winner]} 승리.`);
+        break;
+      case 'resigned':
+        add(
+          e.winner
+            ? `🏳 ${COLOR_NAME[e.color]}이 기권했습니다. ${COLOR_NAME[e.winner]} 승리.`
+            : `🏳 ${COLOR_NAME[e.color]}이 기권했습니다. 킹은 판을 떠나고, 남은 기물은 회색 떠돌이가 됩니다.`,
+          'warn',
+        );
+        break;
+      case 'drawn':
+        add(e.reason === 'agreed' ? '🤝 무승부에 합의했습니다.' : `🤝 킹만 남은 채로 ${KINGS_ONLY_DRAW_TURNS}턴이 지나 무승부입니다.`);
         break;
       case 'surrendered':
         add(`🏳 ${COLOR_NAME[e.loser]}의 킹이 ${COLOR_NAME[e.to]}에게 항복했습니다.`, 'warn');

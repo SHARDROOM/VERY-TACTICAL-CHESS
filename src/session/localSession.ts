@@ -62,6 +62,7 @@ export class LocalSession implements Session {
       doodles: this.doodles.doodles,
       chaosReady: !!this.authority.gm.chaos,
       watch: this.authority.watch,
+      drawOffer: this.authority.drawOffer,
     };
   }
 

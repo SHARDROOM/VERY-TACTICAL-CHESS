@@ -1,4 +1,4 @@
-import { AI_LEVEL_NAME, CLASH_ROLLS, aiExile, aiHints, aiMaxDc, cleanAiSeats, isAiOnly, isAir, playersOf, promotesOn, type AiSeat, applyCommand, impulseOf, impulseKindOf, impulseTargets, isStunned as isStunnedPiece, vanguardOrder, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
+import { AI_LEVEL_NAME, CLASH_ROLLS, aiExile, aiHints, aiMaxDc, cleanAiSeats, isAiOnly, isAir, playersOf, promotesOn, stackOf, standing, type AiSeat, applyCommand, impulseOf, impulseKindOf, impulseTargets, isStunned as isStunnedPiece, vanguardOrder, wanderTargets, duelSeconds, buildTimeline, createInitialState, effectiveStaging, type Color, type Command, type Effect, type FallingPiece, type GameEvent, type GameState, type Landing, type RuleConfig, type Staging, type TerrainCell } from '../engine';
 import type { GameMaster } from '../gm/types';
 import { parseGmChaos, parseGmRuling } from '../gm/parse';
 import { pickSparks } from '../gm/prompt';
@@ -7,7 +7,7 @@ import { COLOR_NAME, REJECT_MESSAGE } from '../ui/messages';
 import { AI_RETRIES, RETRY_REASON, withRetries } from './retry';
 import { parsePlayerAction } from '../gm/player';
 import { chooseMoveAsync, shouldRollAsync } from './aiCompute';
-import { WATCH_DEFAULT, WATCH_SPEEDS, type Entrant, type NoticeTone, type Phase, type Request, type TimerSnapshot, type WatchSpeed, type WatchState } from './types';
+import { WATCH_DEFAULT, WATCH_SPEEDS, type DrawOffer, type Entrant, type NoticeTone, type Phase, type Request, type TimerSnapshot, type WatchSpeed, type WatchState } from './types';
 
 export type AuthorityEvent =
   | { kind: 'events'; events: GameEvent[]; before: GameState; after: GameState }
@@ -19,7 +19,9 @@ export type AuthorityEvent =
   | { kind: 'phase'; phase: Phase }
   | { kind: 'timer'; timer: TimerSnapshot | null }
   /** A watched game (only AIs play): paused, speed, score, a new round. */
-  | { kind: 'watch'; watch: WatchState };
+  | { kind: 'watch'; watch: WatchState }
+  /** A draw offered, answered, or gone (판 끝내기). */
+  | { kind: 'draw'; offer: DrawOffer | null };
 
 /** What a fall simulation needs: the board as it is, the falling pieces, and the seed every screen replays it with. */
 export interface FallQuery {
@@ -113,6 +115,8 @@ export class Authority {
   watch: WatchState = WATCH_DEFAULT;
   /** AI seats with a model of their own for their special actions (AI의 두뇌); the others use the GM's. */
   private brainsNow: Partial<Record<Color, GameMaster>> = {};
+  /** A draw offered and not yet answered by everyone; it goes when the turn passes (판 끝내기). */
+  drawOffer: DrawOffer | null = null;
   private gmNow!: GameMaster;
 
   /** The GM; one that goes on to a backup (예비 GM) tells everyone through the log. */
@@ -184,7 +188,7 @@ export class Authority {
    * black's white; on the hexagon black's plays red and red's white), the score carried over.
    */
   rematch(): void {
-    if (this.phase !== 'playing' || this.state.status.kind !== 'won' || !isAiOnly(this.state)) return;
+    if (this.phase !== 'playing' || this.state.status.kind === 'playing' || !isAiOnly(this.state)) return;
     const colors = playersOf(this.state.map);
     const next = (c: Color) => colors[(colors.indexOf(c) + 1) % colors.length];
     const ai: NonNullable<RuleConfig['ai']> = {};
@@ -290,6 +294,66 @@ export class Authority {
     this.busy = false;
     this.state = state;
     this.emit({ kind: 'reset', state });
+    this.setDrawOffer(null);
+  }
+
+  private setDrawOffer(offer: DrawOffer | null): void {
+    if (offer === null && this.drawOffer === null) return;
+    this.drawOffer = offer;
+    this.emit({ kind: 'draw', offer });
+  }
+
+  /** The sides still in this game (any piece of theirs on the board). */
+  private inGame(): Color[] {
+    return playersOf(this.state.map).filter((c) => this.state.board.some((p) => p && stackOf(p).some((q) => q.color === c)));
+  }
+
+  /**
+   * Resigning and draws (판 끝내기, 사용자 요청). Online a player speaks for its own side; on one
+   * screen, for the side to move (on an AI's turn, the one person's side). People are asked about a
+   * draw (online); AIs take one only when they are behind; on one screen pressing it is agreeing.
+   */
+  private ending(req: Extract<Request, { type: 'resign' | 'offerDraw' | 'answerDraw' }>, actor: Color | 'any', notice: (text: string, tone?: NoticeTone) => void): void {
+    if (this.state.status.kind !== 'playing') return notice('이미 끝난 게임입니다.', 'warn');
+    const ai = this.state.rules.ai ?? {};
+    const inGame = this.inGame();
+    const people = inGame.filter((c) => !ai[c as 'white']);
+    const me: Color | null = actor !== 'any' ? actor : !ai[this.state.turn as 'white'] ? this.state.turn : people.length === 1 ? people[0] : null;
+    if (!me) return notice('AI의 차례가 끝난 뒤 다시 눌러 주세요.', 'warn');
+    if (!inGame.includes(me)) return notice('이 게임에서 이미 빠진 편입니다.', 'warn');
+    if (req.type === 'resign') {
+      this.apply({ type: 'resign', color: me }, actor);
+      return;
+    }
+    if (req.type === 'answerDraw') {
+      const offer = this.drawOffer;
+      if (!offer || !offer.waiting.includes(me)) return notice('답할 무승부 제안이 없습니다.', 'warn');
+      if (!req.accept) {
+        this.setDrawOffer(null);
+        this.emit({ kind: 'notice', to: 'all', text: `${COLOR_NAME[me]}이 무승부를 거절했습니다.`, tone: 'normal' });
+        return;
+      }
+      const waiting = offer.waiting.filter((c) => c !== me);
+      if (waiting.length) return this.setDrawOffer({ ...offer, waiting });
+      this.setDrawOffer(null);
+      this.apply({ type: 'draw' }, 'all');
+      return;
+    }
+    if (this.drawOffer) return notice('이미 무승부 제안이 있습니다.', 'warn');
+    const others = inGame.filter((c) => c !== me);
+    // An AI answers at once: it takes a draw only when it is behind (less than an even share).
+    const share = standing(this.state);
+    const refusing = others.filter((c) => ai[c as 'white'] && (share[c] ?? 0) >= 1 / inGame.length);
+    if (refusing.length) {
+      return this.emit({ kind: 'notice', to: actor, text: `${refusing.map((c) => COLOR_NAME[c]).join(', ')} AI가 무승부를 거절했습니다(아직 불리하지 않음).`, tone: 'warn' });
+    }
+    const waiting = actor === 'any' ? [] : others.filter((c) => !ai[c as 'white']);
+    if (!waiting.length) {
+      this.apply({ type: 'draw' }, actor);
+      return;
+    }
+    this.setDrawOffer({ from: me, waiting });
+    this.emit({ kind: 'notice', to: 'all', text: `${COLOR_NAME[me]}이 무승부를 제안했습니다.`, tone: 'normal' });
   }
 
   // ---- requests --------------------------------------------------------------
@@ -308,6 +372,8 @@ export class Authority {
       this.apply({ type: 'exile', at: req.at }, actor);
       return;
     }
+    // Resigning and draws, whoever's turn it is.
+    if (req.type === 'resign' || req.type === 'offerDraw' || req.type === 'answerDraw') return this.ending(req, actor, notice);
     if (actor !== 'any' && actor !== this.state.turn && this.state.status.kind === 'playing') {
       return notice('상대의 차례입니다.', 'warn');
     }
@@ -361,6 +427,8 @@ export class Authority {
     }
     this.state = result.state;
     this.emit({ kind: 'events', events: result.events, before, after: result.state });
+    // A draw offer stands until the turn passes (or the game is over).
+    if (result.events.some((e) => e.type === 'turnPassed') || this.state.status.kind !== 'playing') this.setDrawOffer(null);
     this.noteResult(before);
     this.aiNote(result.events);
     this.afterChange(result.events);

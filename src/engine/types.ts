@@ -175,7 +175,10 @@ export type Square = number;
 
 export type Board = ReadonlyArray<Piece | null>;
 
-export type GameStatus = { kind: 'playing' } | { kind: 'won'; winner: Color };
+/** A game over with no winner: agreed on, or only kings left for KINGS_ONLY_DRAW_TURNS turns (판 끝내기). */
+export type DrawReason = 'agreed' | 'kingsOnly';
+/** `by`: how it was won when not by taking the last king ('resign': the other side gave up). */
+export type GameStatus = { kind: 'playing' } | { kind: 'won'; winner: Color; by?: 'resign' } | { kind: 'draw'; reason: DrawReason };
 
 export type CastlingRights = Record<Color, { kingSide: boolean; queenSide: boolean }>;
 
@@ -380,6 +383,8 @@ export interface GameState {
    * (`left` more times), or the turn is ended. Missing = no chain.
    */
   chain?: Chain;
+  /** The turn from which every side had only its king left (gray wanderers aside); missing = not so. See KINGS_ONLY_DRAW_TURNS. */
+  kingsOnlySince?: number;
 }
 
 /** The piece in the middle of moving several times in a row (see GameState.chain). */
@@ -410,6 +415,10 @@ export type Command =
   | { type: 'land'; seed: number; landings: Landing[] }
   /** The surrendering player keeps the piece on `at` (see GameState.surrender). */
   | { type: 'exile'; at: Square }
+  /** `color` gives up (기권), whoever is to move. See game.ts, resign. */
+  | { type: 'resign'; color: Color }
+  /** Everyone agreed on a draw (the session asks them; the engine just ends the game). */
+  | { type: 'draw' }
   /** Chaos's gray wanderers each make the move given (picked at random outside the engine), after a turn passes. */
   | { type: 'wander'; moves: { from: Square; to: Square }[] }
   /**
@@ -502,6 +511,10 @@ export type GameEvent =
   | { type: 'surrendered'; loser: Color; to: Color; keepsOne: boolean }
   /** The kept piece goes into exile under a ragged hood; everything else of `loser` now serves `to`. */
   | { type: 'exiled'; loser: Color; to: Color; piece: Piece; at: Square }
+  /** `color` gave up; `winner`: who won by it (null: the others play on, the hexagon). */
+  | { type: 'resigned'; color: Color; winner: Color | null }
+  /** The game ended with no winner. */
+  | { type: 'drawn'; reason: DrawReason }
   /** A gray wanderer (chaos's) moves of its own accord; the `moved` event follows. */
   | { type: 'wandered'; pieceId: string; from: Square; to: Square }
   /** An exile took a king: it becomes its side's king again. */
@@ -550,6 +563,8 @@ export type GameEvent =
 
 export type RejectReason =
   | 'gameOver'
+  /** Resigning for a side that is not (or no longer) in the game. */
+  | 'notInGame'
   | 'noPiece'
   | 'notYourPiece'
   | 'illegalMove'

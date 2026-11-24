@@ -90,6 +90,10 @@ select option { background: var(--walnut); }
 .badge.chain { color: var(--accent); border-color: var(--accent); font-family: var(--font-voice); }
 .panel-footer button.end-turn-ready { border-color: var(--accent); color: var(--accent); }
 .badge.busy { color: var(--text); }
+/* A draw offered: who offered, and the answer buttons for those asked. */
+.badge.draw-offer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border-color: var(--accent); }
+.badge.draw-offer button { padding: 4px 12px; font-size: 0.875rem; }
+.draw-offer-wait { color: var(--muted); font-weight: 500; }
 .badge.busy::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--accent); animation: gm-think 1.2s ease-in-out infinite; vertical-align: 1px; }
 @keyframes gm-think { 50% { opacity: 0.25; } }
 .badge.me { color: var(--text); }
@@ -297,6 +301,8 @@ body > .overlay { position: fixed; z-index: 10; }
 .victory-white .victory-stone { background: radial-gradient(circle at 35% 30%, #fffaf0, #e6dcc6 70%); }
 .victory-black .victory-stone { background: radial-gradient(circle at 35% 30%, #4a4036, #120d09 70%); }
 .victory-red .victory-stone { background: radial-gradient(circle at 35% 30%, #d8604f, #7a1d16 70%); }
+/* A draw: half a light stone, half a dark one. */
+.victory-draw .victory-stone { background: linear-gradient(90deg, #e6dcc6 0 50%, #1f1813 50% 100%); }
 .surrender-banner { top: 76px; left: 50%; transform: translateX(-50%); display: grid; gap: 4px; max-width: min(560px, calc(100vw - 32px)); padding: 12px 16px; text-align: center; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid #b23b3b; border-radius: 12px; box-shadow: var(--shadow); z-index: 3; }
 .surrender-banner span { color: var(--muted); font-size: 0.9375rem; }
 .victory h1 { margin: 0; font-family: var(--font-voice); font-weight: 800; font-size: 2.5rem; line-height: 1.15; color: var(--accent-bright); }

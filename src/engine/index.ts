@@ -1,5 +1,5 @@
 export * from './types';
-export { applyCommand, clashEventFor, exitsOf, hasAnyMove, rulingContext, wanderTargets } from './game';
+export { applyCommand, clashEventFor, exitsOf, hasAnyMove, rulingContext, wanderTargets, KINGS_ONLY_DRAW_TURNS } from './game';
 export { BASE_CLASH, CLASH_MAX, CLASH_MIN, CLASH_ROLLS, DUEL_TIMING, duelSeconds, canResist, clashMultiplier, hasClashGear, clashScore, clashSkill, clashWinChance, exchangesFor, resolveClash } from './clash';
 export { capturedAfter } from './captured';
 export { FOOTPRINT, footprint, restingPlace } from './levitation';
