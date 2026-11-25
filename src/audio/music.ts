@@ -210,10 +210,14 @@ function play(): void {
   if (!a || !s.music || timer || document.hidden) return;
   if (!out) {
     out = a.ctx.createGain();
+    // From silence: a new gain starts at full, and the first chord came in loud (found near the cross-check).
+    out.gain.setValueAtTime(0.0001, a.ctx.currentTime);
     out.connect(a.ctx.destination);
   }
   out.gain.setTargetAtTime(s.musicVolume * 0.8, a.ctx.currentTime, 0.3);
-  nextBarAt = a.ctx.currentTime + 0.2;
+  // Back within a bar or so: the bars already on the clock ring on, so carry on after them rather
+  // than lay a new bar over them (found near the cross-check: two chords at once). After a long rest: from now.
+  nextBarAt = Math.max(nextBarAt, a.ctx.currentTime + 0.2);
   timer = setInterval(schedule, 120);
   schedule();
 }
