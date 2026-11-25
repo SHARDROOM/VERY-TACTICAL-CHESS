@@ -2,6 +2,7 @@ import { Quaternion, Vector3 } from 'three';
 import type { PieceType } from '../engine';
 import { loadPhysics } from '../dice3d/simulate';
 import { G, addObstacles, addPieceColliders, addTable, type Obstacles } from './piecePhysics';
+import { rescueFallen } from './rescue';
 
 /*
  * A thing in the player's hand, simulated as it happens (docs/SPEC.md, "만지작거리기"): it hangs by
@@ -122,6 +123,8 @@ export class LiveDrag {
       this.moveMovers((n + 1) / steps);
       if (!this.released) this.pull();
       this.world.step();
+      // Thrown over the table's edge: back above the table (the floor is no place for it).
+      if (this.released && rescueFallen(this.body)) this.still = 0;
       if (this.released) {
         this.after += DT;
         const v = this.body.linvel();

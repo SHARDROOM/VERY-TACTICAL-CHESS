@@ -7,6 +7,7 @@ import { TRAY_SCALE, trayCenterX } from '../dice3d/DiceTray';
 import { findImpacts } from '../audio/impacts';
 import { crownLayout, PIECE_HEIGHT, pieceParts } from './pieceGeometry';
 import { TABLE_TOP_Y } from './WoodTable';
+import { rescueFallen } from './rescue';
 
 export interface BodyPose {
   position: Vector3;
@@ -253,6 +254,7 @@ export async function simulatePiece(o: SimOptions): Promise<PieceRun> {
     let still = 0;
     while (steps < maxSteps) {
       world.step();
+      rescueFallen(body);
       const p = body.translation();
       const r = body.rotation();
       frames.push(p.x, p.y, p.z, r.x, r.y, r.z, r.w);

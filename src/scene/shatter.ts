@@ -6,6 +6,8 @@ import { pieceParts } from './pieceGeometry';
 import { addObstacles, type Obstacles } from './piecePhysics';
 import { seeded } from './boardPhysics';
 import { TABLE_TOP_Y } from './WoodTable';
+import { rescueFallen } from './rescue';
+import { tableHalf } from './coords';
 
 /*
  * A shattered piece breaks into chunks of itself (docs/SPEC.md, "부서진 조각"): its own shape cut
@@ -105,7 +107,8 @@ type Rapier = Awaited<ReturnType<typeof loadPhysics>>;
 /** The table, the raised board and the obstacles, all fixed. */
 function solids(RAPIER: Rapier, world: InstanceType<Rapier['World']>, o?: Obstacles): void {
   const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
-  world.createCollider(RAPIER.ColliderDesc.cuboid(14, 0.3, 9).setTranslation(0, TABLE_TOP_Y - 0.3, 0).setFriction(0.8).setRestitution(0.15), fixed);
+  const [hw, hd] = tableHalf();
+  world.createCollider(RAPIER.ColliderDesc.cuboid(hw + 1, 0.3, hd + 0.5).setTranslation(0, TABLE_TOP_Y - 0.3, 0).setFriction(0.8).setRestitution(0.15), fixed);
   const boardH = -TABLE_TOP_Y / 2;
   world.createCollider(RAPIER.ColliderDesc.cuboid(4.6, boardH, 4.6).setTranslation(0, TABLE_TOP_Y + boardH, 0).setFriction(0.7).setRestitution(0.2), fixed);
   if (o) addObstacles(RAPIER, world, fixed, o);
@@ -196,6 +199,7 @@ async function shatter(type: PieceType, seed: number, style: ShatterStyle, at: [
     let still = 0;
     while (steps < maxSteps) {
       world.step();
+      bodies.forEach((b) => rescueFallen(b));
       bodies.forEach((b, i) => {
         const p = b.translation();
         const q = b.rotation();
@@ -245,6 +249,7 @@ export async function simulateChunkThrow(hull: Float32Array, p: Vector3, q: Quat
     let still = 0;
     while (steps < Math.round(4 / DT)) {
       world.step();
+      rescueFallen(b);
       const t = b.translation();
       const r = b.rotation();
       frames.push(t.x, t.y, t.z, r.x, r.y, r.z, r.w);

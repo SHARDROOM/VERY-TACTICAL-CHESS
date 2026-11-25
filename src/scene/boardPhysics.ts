@@ -7,6 +7,7 @@ import { AIR_Y, overBoard, squareToWorld, worldToBoard } from './coords';
 import { CHUNK } from './debris';
 import { TAKEN } from './toys';
 import type { Obstacle } from './piecePhysics';
+import { rescueFallen } from './rescue';
 
 /*
  * A move as a romp: the moving piece is shoved along its way (or flung in a rough arc), and
@@ -218,6 +219,7 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
     let still = 0;
     while (steps < maxSteps) {
       world.step();
+      for (const { body } of bodies) if (body.isDynamic()) rescueFallen(body);
       for (const { id, body } of bodies) {
         const p = body.translation();
         const q = body.rotation();
@@ -351,6 +353,7 @@ export async function simulateFalls(o: FallOptions): Promise<{ run: BoardRun; la
     let still = 0;
     while (steps < maxSteps) {
       world.step();
+      for (const { body } of bodies) if (body.isDynamic()) rescueFallen(body);
       for (const { id, body } of bodies) {
         const p = body.translation();
         const q = body.rotation();
