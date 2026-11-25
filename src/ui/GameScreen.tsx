@@ -74,6 +74,7 @@ import { playChunkTracks, restingChunks } from '../scene/debris';
 import { playTakenTracks, receiveToy, setToySender, takenNow, tellToss, tellWrite } from '../scene/toys';
 import type { PieceDirection } from '../scene/pieceMotion';
 import { GmBusyBadge } from './GmBusyBadge';
+import { STEP_SHORT, STEP_TEXT, blackReply, stepAfter, suggestedDeclaration, type TutorialStep } from '../tutorial/tutorial';
 import { addRecord, recordOf, type RecordMode } from '../session/records';
 
 /** The watched AIs' pace, as the buttons say it. */
@@ -273,13 +274,15 @@ interface Props {
   openGmSettings?: boolean;
   /** A line to show in the log when the screen opens. */
   startNotice?: string | null;
+  /** 따라하기: the coach walks the player through a first game (black answers by itself). */
+  tutorial?: boolean;
 }
 
 /** A phone-sized screen (the watch bar and the panel start folded there). */
 const narrowScreen = () => typeof matchMedia === 'function' && matchMedia('(max-width: 700px)').matches;
 const WATCH_FOLD_KEY = 'vtc.watchFolded';
 
-export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, openGmSettings = false, startNotice = null }: Props) {
+export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, openGmSettings = false, startNotice = null, tutorial = false }: Props) {
   const [view, setView] = useState<SessionView>(() => session.view());
   // Every square helper (names, the scene's geometry) follows the board this game is played on.
   setBoardMap(view.state.map);
@@ -326,6 +329,14 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
   const [showGmSettings, setShowGmSettings] = useState(openGmSettings);
   const [promotionChoice, setPromotionChoice] = useState<{ from: Square; to: Square } | null>(null);
   const [tab, setTab] = useState<'log' | 'chat'>('log');
+  // 따라하기: where the lesson is (null: no lesson, or it is over and the game goes on).
+  const [coach, setCoach] = useState<TutorialStep | null>(tutorial ? 'move' : null);
+  useEffect(() => {
+    if (!tutorial) return;
+    return session.subscribe((e) => {
+      if (e.kind === 'events') setCoach((s) => (s ? stepAfter(s, e.events) : s));
+    });
+  }, [session, tutorial]);
   // A folded panel keeps only the input row, leaving the table in view (watching AIs: only its tabs).
   // On a phone, watching starts folded (사용자 요청: the panel and the watch bar took the screen).
   const [collapsed, setCollapsed] = useState(() => narrowScreen() && isAiOnly(view.state));
@@ -965,13 +976,28 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
   // 판 끝내기: a draw, and who would give up or offer one from this screen.
   const drawn = game.status.kind === 'draw' ? game.status.reason : null;
   const over = !!winner || !!drawn;
+  // 따라하기: black answers by itself while the lesson runs (a quiet pawn move, a moment after white's).
+  useEffect(() => {
+    if (!coach || over || game.turn !== 'black' || view.gmBusy || dice) return;
+    const id = window.setTimeout(() => {
+      const r = blackReply(session.view().state);
+      if (r && session.view().state.turn === 'black') session.request({ type: 'move', ...r });
+    }, 1100);
+    return () => window.clearTimeout(id);
+  }, [coach, over, game.turn, game.turnNumber, view.gmBusy, dice, session]);
+  const suggestion = useMemo(() => (coach === 'declare' ? suggestedDeclaration(game) : ''), [coach, game]);
+  /** The lesson is over: the game goes on against an easy AI. */
+  const keepPlaying = () => {
+    setCoach(null);
+    session.setAi('black', { level: 'easy', specials: 'off' });
+  };
   // 명장면: the game's miracle, heartbreak and MVP, on the end screen (every round of an AI watch too).
   const moments = useMemo(() => (over ? highlightLines(highlights(game)) : []), [over, game]);
   // 기록·전적: a game that ends on this screen is kept, from its side (an AI watch is not). A game
   // opened already over is not kept again (it may have been pushed out of the last 100 long ago).
   const overAtStart = useRef(over);
   useEffect(() => {
-    if (!over || watching || overAtStart.current) return;
+    if (!over || watching || overAtStart.current || tutorial) return;
     const ais = Object.fromEntries(players.flatMap((c) => (aiOf(c) ? [[c, AI_LEVEL_NAME[aiOf(c)!.level]]] : [])));
     const people = players.filter((c) => !aiOf(c));
     const mode: RecordMode = online ? (spectator ? 'watching' : 'online') : Object.keys(ais).length ? 'ai' : 'hotseat';
@@ -1711,6 +1737,48 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
           )}
           <button onClick={dice.landed ? finishRoll : skipRoll}>{dice.landed ? '확인' : '건너뛰기'}</button>
         </div>
+      )}
+
+      {coach && pending && STEP_SHORT[coach] && (
+        <aside className="coach compact" role="status" aria-live="polite">
+          {STEP_SHORT[coach]}
+        </aside>
+      )}
+      {coach && !(pending && STEP_SHORT[coach]) && (
+        <aside className="coach" role="status" aria-live="polite">
+          <p className="coach-title">{STEP_TEXT[coach].title}</p>
+          <p className="coach-text">{STEP_TEXT[coach].text.replace('{action}', suggestion)}</p>
+          <div className="coach-actions">
+            {coach === 'declare' && (
+              <button
+                className="primary"
+                onClick={() => {
+                  setTab('log');
+                  setText(suggestion);
+                }}
+              >
+                입력칸에 넣기
+              </button>
+            )}
+            {(coach === 'ap' || coach === 'precedent') && (
+              <button className="primary" onClick={() => setCoach(coach === 'ap' ? 'declare' : 'end')}>
+                다음
+              </button>
+            )}
+            {coach === 'end' ? (
+              <>
+                <button className="primary" onClick={keepPlaying}>
+                  AI와 계속 두기
+                </button>
+                <button onClick={onLeave}>로비로</button>
+              </>
+            ) : (
+              <button className="link" onClick={() => setCoach('end')}>
+                건너뛰기
+              </button>
+            )}
+          </div>
+        </aside>
       )}
 
       {scrollOpen && game.scenario && !over && (

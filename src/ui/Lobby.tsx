@@ -9,6 +9,7 @@ import { CloudButton } from './Cloud';
 import { BOOK_FACES, BookControl } from '../scene/RuleBook';
 import { RecordsDialog } from './Records';
 import { readRecords } from '../session/records';
+import { markTutorialOffered, tutorialOffered } from '../tutorial/tutorial';
 
 /** While reading the rule book: the close button above, the page buttons below. */
 const READING_INSET: TourInset = { left: 0, top: 64, bottom: 96 };
@@ -34,6 +35,8 @@ interface Props {
   onHotseat: () => void;
   onVsAi: () => void;
   onWatchAi: () => void;
+  /** 따라하기: the lesson for a first game. */
+  onTutorial: () => void;
   onHost: () => void;
   onJoin: (code: string) => void;
   /** Display name of the GM a new game would use. */
@@ -68,9 +71,11 @@ function useCoveredInset(root: React.RefObject<HTMLElement | null>, title: React
   return inset;
 }
 
-export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVsAi, onWatchAi, onHost, onJoin, gmName, onGmSettings }: Props) {
+export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVsAi, onWatchAi, onTutorial, onHost, onJoin, gmName, onGmSettings }: Props) {
   const [code, setCode] = useState('');
   const [showMenu, setShowMenu] = useState(false);
+  // 따라하기 offered once, on the first visit (then a quieter button stays).
+  const [offer, setOffer] = useState(() => !tutorialOffered());
   // 기록·전적: how many games are kept (read again when the list closes; a sync may have brought more).
   const [showRecords, setShowRecords] = useState(false);
   const recordCount = useMemo(() => (showRecords ? 0 : readRecords().length), [showRecords]);
@@ -136,9 +141,29 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
       <div className="lobby-scroll">
       <div className="lobby-card" ref={cardRef}>
         <p className="tagline">체스판 위에서 무엇이든 선언하세요. GM이 판정하고, 주사위가 결정합니다.</p>
+        {offer && (
+          <div className="tutorial-offer" role="note">
+            <p>
+              <strong>처음이신가요?</strong> 작은 판에서 기물 옮기기부터 특수 행동과 주사위까지, 3분이면 따라 할 수 있습니다.
+            </p>
+            <div className="tutorial-offer-actions">
+              <button className="primary" onClick={() => { markTutorialOffered(); onTutorial(); }} disabled={!!busy}>
+                따라하기
+              </button>
+              <button className="link" onClick={() => { markTutorialOffered(); setOffer(false); }}>
+                괜찮아요
+              </button>
+            </div>
+          </div>
+        )}
         <button className="book-open" onClick={() => book.openBook()} disabled={!!busy}>
           <span aria-hidden>📖</span> 이 게임이 매우 전략적인 이유
         </button>
+        {!offer && (
+          <button className="tutorial-open" onClick={onTutorial} disabled={!!busy}>
+            처음이라면: 따라하기
+          </button>
+        )}
 
         {saved && (
           <div className="saved-card">

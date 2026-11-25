@@ -312,6 +312,23 @@ body > .overlay { position: fixed; z-index: 10; }
 .victory h1 { margin: 0; font-family: var(--font-voice); font-weight: 800; font-size: 2.5rem; line-height: 1.15; color: var(--accent-bright); }
 .victory-name { margin-top: 2px; color: var(--text); font-size: 1.0625rem; }
 .victory-how { margin: 10px 0 0; font-family: var(--font-voice); font-size: 1.125rem; }
+/* 따라하기: the lobby's offer on a first visit, its quieter button after, and the coach in the game. */
+.tutorial-offer { display: grid; gap: 10px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--accent); background: rgba(200, 150, 62, 0.1); }
+.tutorial-offer p { margin: 0; line-height: 1.55; }
+.tutorial-offer-actions { display: flex; gap: 10px; align-items: center; }
+.tutorial-open { align-self: center; padding: 6px 14px; font-weight: 600; color: var(--muted); background: transparent; border: 1px solid var(--line); }
+.tutorial-open:hover { color: var(--text); }
+.coach {
+  position: absolute; z-index: 3; top: 70px; left: 12px; width: min(380px, calc(100% - 24px)); padding: 12px 14px;
+  background: var(--panel-solid); border: 1px solid var(--accent); border-radius: 12px; box-shadow: var(--shadow);
+}
+/* A phone: the toolbar has a row of its own under the badges; the coach goes below it (step 5 points at it). */
+@media (max-width: 700px) { .coach:not(.compact) { top: 162px; } .coach-text { font-size: 0.875rem; } }
+/* While the ruling sheet fills the screen: one line above it. */
+.coach.compact { top: 6px; right: 12px; width: auto; padding: 8px 12px; font-size: 0.875rem; line-height: 1.4; z-index: 4; }
+.coach-title { margin: 0 0 4px; font-family: var(--font-voice); font-weight: 700; color: var(--accent-bright); }
+.coach-text { margin: 0 0 10px; font-size: 0.9375rem; line-height: 1.55; }
+.coach-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 /* 랜덤 시나리오: the parchment read out before the first move, and its badge to read it again. */
 .scenario-badge { cursor: pointer; font-family: var(--font-voice); color: #e9d6a7; }
 .scenario-scroll {

@@ -21,6 +21,8 @@ import { CloudSync, type Item } from './cloud/sync';
 import { GoogleDrive } from './cloud/drive';
 import { GOOGLE_CLIENT_ID, googleAuth, preloadGoogle } from './cloud/google';
 import { CloudContext, CloudDialogs } from './ui/Cloud';
+import { FakeGameMaster } from './gm/fakeGm';
+import { kindDice, markTutorialOffered, tutorialState } from './tutorial/tutorial';
 import './App.css';
 
 function roomFromHash(): string | null {
@@ -52,6 +54,8 @@ const newGameId = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) =
 type SaveTarget = { kind: 'hotseat' } | { kind: 'host'; code: string } | null;
 
 export default function App() {
+  // 따라하기 is running (the coach shows, nothing is saved or kept as a record).
+  const [tutorial, setTutorial] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   // The GM and its API key are remembered on this browser only, never sent to the other player.
   const [gmConfig, setGmConfig] = useState<GmConfig>(() => rememberedGm().current);
@@ -121,6 +125,7 @@ export default function App() {
   };
 
   const start = (s: Session, target: SaveTarget, notice: string | null = null, resumed: SavedGame | null = null) => {
+    setTutorial(false);
     setError(null);
     setBusy(null);
     saveTarget.current = target;
@@ -267,7 +272,16 @@ export default function App() {
     return () => window.removeEventListener('pagehide', bye);
   }, [session]);
 
+  /** 따라하기: the lesson board with the fake GM and kind dice; it never takes the save slot. */
+  const startTutorial = () => {
+    markTutorialOffered();
+    const local = new LocalSession(new FakeGameMaster(), { roll: kindDice(), initialState: tutorialState(), phase: 'playing', fall: landFalls });
+    start(local, null, '📘 따라하기: 가짜 GM과 함께 한 걸음씩 배웁니다. 이어 하기 저장 칸은 건드리지 않습니다.');
+    setTutorial(true);
+  };
+
   const leave = () => {
+    setTutorial(false);
     session?.dispose();
     setSession(null);
     saveTarget.current = null;
@@ -307,6 +321,7 @@ export default function App() {
           onHotseat={() => hotseat()}
           onVsAi={() => hotseat(null, 'vsAi')}
           onWatchAi={() => hotseat(null, 'watch')}
+          onTutorial={startTutorial}
           onHost={() => void host()}
           onJoin={join}
           onResume={() => (saved?.kind === 'host' ? void host(saved) : hotseat(saved))}
@@ -343,6 +358,7 @@ export default function App() {
       onLeave={leave}
       openGmSettings={askForKey}
       startNotice={startNotice}
+      tutorial={tutorial}
     />
   );
   }
@@ -359,6 +375,7 @@ function RoomScreen(props: {
   onLeave: () => void;
   openGmSettings: boolean;
   startNotice: string | null;
+  tutorial: boolean;
 }) {
   const { session } = props;
   const [view, setView] = useState<SessionView>(() => session.view());
@@ -413,6 +430,7 @@ function RoomScreen(props: {
       onLeave={props.onLeave}
       openGmSettings={props.openGmSettings}
       startNotice={gameNo <= 1 ? props.startNotice : null}
+      tutorial={props.tutorial && gameNo <= 1}
     />
   );
 }
