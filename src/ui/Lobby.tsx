@@ -8,6 +8,8 @@ import { Icon } from './Icon';
 import { CloudButton } from './Cloud';
 import { BOOK_FACES, BookControl } from '../scene/RuleBook';
 import { RecordsDialog } from './Records';
+import { ChallengesDialog } from './Challenges';
+import type { Challenge } from '../challenge/challenges';
 import { readRecords } from '../session/records';
 import { markTutorialOffered, tutorialOffered } from '../tutorial/tutorial';
 
@@ -37,6 +39,8 @@ interface Props {
   onWatchAi: () => void;
   /** 따라하기: the lesson for a first game. */
   onTutorial: () => void;
+  /** 도전 판: one of the set boards. */
+  onChallenge: (c: Challenge) => void;
   onHost: () => void;
   onJoin: (code: string) => void;
   /** Display name of the GM a new game would use. */
@@ -71,13 +75,14 @@ function useCoveredInset(root: React.RefObject<HTMLElement | null>, title: React
   return inset;
 }
 
-export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVsAi, onWatchAi, onTutorial, onHost, onJoin, gmName, onGmSettings }: Props) {
+export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVsAi, onWatchAi, onTutorial, onChallenge, onHost, onJoin, gmName, onGmSettings }: Props) {
   const [code, setCode] = useState('');
   const [showMenu, setShowMenu] = useState(false);
   // 따라하기 offered once, on the first visit (then a quieter button stays).
   const [offer, setOffer] = useState(() => !tutorialOffered());
   // 기록·전적: how many games are kept (read again when the list closes; a sync may have brought more).
   const [showRecords, setShowRecords] = useState(false);
+  const [showChallenges, setShowChallenges] = useState(false);
   const recordCount = useMemo(() => (showRecords ? 0 : readRecords().length), [showRecords]);
   const fullscreen = useFullscreen();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -213,9 +218,14 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
             AI끼리 보기
           </button>
         </div>
-        <button className="records-open" onClick={() => setShowRecords(true)} disabled={!!busy}>
-          전적{recordCount ? ` · ${recordCount}판` : ''}
-        </button>
+        <div className="lobby-extras">
+          <button className="records-open" onClick={() => setShowChallenges(true)} disabled={!!busy}>
+            도전 판
+          </button>
+          <button className="records-open" onClick={() => setShowRecords(true)} disabled={!!busy}>
+            전적{recordCount ? ` · ${recordCount}판` : ''}
+          </button>
+        </div>
 
         {busy && <p className="lobby-status">{busy}</p>}
         {error && <p className="lobby-error">{error}</p>}
@@ -264,6 +274,16 @@ export function Lobby({ busy, error, saved, onResume, onDiscard, onHotseat, onVs
         />
       )}
       {showRecords && <RecordsDialog onClose={() => setShowRecords(false)} />}
+      {showChallenges && (
+        <ChallengesDialog
+          gmName={gmName}
+          onClose={() => setShowChallenges(false)}
+          onPick={(c) => {
+            setShowChallenges(false);
+            onChallenge(c);
+          }}
+        />
+      )}
     </div>
   );
 }

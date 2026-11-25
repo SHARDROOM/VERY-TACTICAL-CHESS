@@ -312,6 +312,14 @@ body > .overlay { position: fixed; z-index: 10; }
 .victory h1 { margin: 0; font-family: var(--font-voice); font-weight: 800; font-size: 2.5rem; line-height: 1.15; color: var(--accent-bright); }
 .victory-name { margin-top: 2px; color: var(--text); font-size: 1.0625rem; }
 .victory-how { margin: 10px 0 0; font-family: var(--font-voice); font-size: 1.125rem; }
+/* 도전 판: the lobby's row of small buttons, the list, and the goal badge in the game. */
+.lobby-extras { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.challenge-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; overflow-y: auto; }
+.challenge-list li { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.challenge-list h3 { margin: 0 0 4px; font-family: var(--font-voice); font-size: 1.125rem; color: var(--accent-bright); }
+.challenge-list .challenge-goal { margin: 0 0 4px; font-weight: 600; }
+.challenge-list .muted-line { margin: 0; font-size: 0.875rem; line-height: 1.5; }
+.challenge-badge { font-family: var(--font-voice); color: var(--accent-bright); border-color: rgba(200, 150, 62, 0.6); }
 /* 따라하기: the lobby's offer on a first visit, its quieter button after, and the coach in the game. */
 .tutorial-offer { display: grid; gap: 10px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--accent); background: rgba(200, 150, 62, 0.1); }
 .tutorial-offer p { margin: 0; line-height: 1.55; }

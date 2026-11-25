@@ -74,6 +74,7 @@ import { playChunkTracks, restingChunks } from '../scene/debris';
 import { playTakenTracks, receiveToy, setToySender, takenNow, tellToss, tellWrite } from '../scene/toys';
 import type { PieceDirection } from '../scene/pieceMotion';
 import { GmBusyBadge } from './GmBusyBadge';
+import { challengeOutcome, turnsLeft, type Challenge } from '../challenge/challenges';
 import { STEP_SHORT, STEP_TEXT, blackReply, stepAfter, suggestedDeclaration, type TutorialStep } from '../tutorial/tutorial';
 import { addRecord, recordOf, type RecordMode } from '../session/records';
 
@@ -276,13 +277,17 @@ interface Props {
   startNotice?: string | null;
   /** 따라하기: the coach walks the player through a first game (black answers by itself). */
   tutorial?: boolean;
+  /** 도전 판: the goal and the turns left show, and how it went at the end. */
+  challenge?: Challenge | null;
+  /** 도전 판: the same board again. */
+  onRetry?: () => void;
 }
 
 /** A phone-sized screen (the watch bar and the panel start folded there). */
 const narrowScreen = () => typeof matchMedia === 'function' && matchMedia('(max-width: 700px)').matches;
 const WATCH_FOLD_KEY = 'vtc.watchFolded';
 
-export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, openGmSettings = false, startNotice = null, tutorial = false }: Props) {
+export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, openGmSettings = false, startNotice = null, tutorial = false, challenge = null, onRetry }: Props) {
   const [view, setView] = useState<SessionView>(() => session.view());
   // Every square helper (names, the scene's geometry) follows the board this game is played on.
   setBoardMap(view.state.map);
@@ -985,6 +990,8 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
     }, 1100);
     return () => window.clearTimeout(id);
   }, [coach, over, game.turn, game.turnNumber, view.gmBusy, dice, session]);
+  // 도전 판: how it stands (the engine decides: the goal met, or the turns run out).
+  const trial = challenge ? challengeOutcome(challenge, game) : null;
   const suggestion = useMemo(() => (coach === 'declare' ? suggestedDeclaration(game) : ''), [coach, game]);
   /** The lesson is over: the game goes on against an easy AI. */
   const keepPlaying = () => {
@@ -992,12 +999,12 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
     session.setAi('black', { level: 'easy', specials: 'off' });
   };
   // 명장면: the game's miracle, heartbreak and MVP, on the end screen (every round of an AI watch too).
-  const moments = useMemo(() => (over ? highlightLines(highlights(game)) : []), [over, game]);
+  const moments = useMemo(() => (over || trial ? highlightLines(highlights(game)) : []), [over, trial, game]);
   // 기록·전적: a game that ends on this screen is kept, from its side (an AI watch is not). A game
   // opened already over is not kept again (it may have been pushed out of the last 100 long ago).
   const overAtStart = useRef(over);
   useEffect(() => {
-    if (!over || watching || overAtStart.current || tutorial) return;
+    if (!over || watching || overAtStart.current || tutorial || challenge) return;
     const ais = Object.fromEntries(players.flatMap((c) => (aiOf(c) ? [[c, AI_LEVEL_NAME[aiOf(c)!.level]]] : [])));
     const people = players.filter((c) => !aiOf(c));
     const mode: RecordMode = online ? (spectator ? 'watching' : 'online') : Object.keys(ais).length ? 'ai' : 'hotseat';
@@ -1192,6 +1199,11 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
         {inCheck && <div className="badge check">체크!</div>}
         {chain && playing && <div className="badge chain">👣 연속 이동 {chain.left}번 남음</div>}
         {view.gmBusy && <GmBusyBadge name={view.gmName} />}
+        {challenge && !trial && (
+          <div className="badge challenge-badge" role="status">
+            🎯 {challenge.title} · 남은 턴 {turnsLeft(challenge, game)}
+          </div>
+        )}
         {game.scenario && !over && (
           <button className="badge scenario-badge" onClick={() => setScrollOpen(true)} title="이번 판의 시나리오">
             📜 {game.scenario.title}
@@ -1794,7 +1806,42 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
         </div>
       )}
 
-      {over && connected && !dice && (
+      {challenge && trial && !dice && (
+        <div className="overlay">
+          <div className={`victory ${trial === 'won' ? 'victory-white' : 'victory-draw'}`}>
+            <span className="victory-stone" aria-hidden />
+            <h1>{trial === 'won' ? '도전 성공' : '도전 실패'}</h1>
+            <div className="victory-name">{challenge.title}</div>
+            <p className="victory-how">
+              {trial === 'won'
+                ? `${Math.max(1, Math.ceil(game.turnNumber / 2))}턴째에 해냈습니다.`
+                : game.status.kind === 'won' && game.status.winner !== 'white'
+                  ? '백 킹이 쓰러졌습니다.'
+                  : `${challenge.turns}턴이 다 지났습니다. ${challenge.hint}`}
+            </p>
+            {trial === 'won' && <p className="victory-recap">{recap(game)}</p>}
+            {moments.length > 0 && (
+              <ul className="victory-highlights" aria-label="명장면">
+                {moments.map((m) => (
+                  <li key={m.kind} className={`moment moment-${m.kind}`}>
+                    <span className="moment-title">{m.title}</span> {m.text}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="victory-actions">
+              {onRetry && (
+                <button className="primary" onClick={onRetry}>
+                  다시 도전
+                </button>
+              )}
+              <button onClick={onLeave}>로비로</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {over && connected && !dice && !challenge && (
         <div className="overlay">
           <div className={`victory victory-${winner ?? 'draw'}`}>
             <span className="victory-stone" aria-hidden />

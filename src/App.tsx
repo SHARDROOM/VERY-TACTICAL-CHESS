@@ -23,6 +23,7 @@ import { GOOGLE_CLIENT_ID, googleAuth, preloadGoogle } from './cloud/google';
 import { CloudContext, CloudDialogs } from './ui/Cloud';
 import { FakeGameMaster } from './gm/fakeGm';
 import { kindDice, markTutorialOffered, tutorialState } from './tutorial/tutorial';
+import type { Challenge } from './challenge/challenges';
 import './App.css';
 
 function roomFromHash(): string | null {
@@ -56,6 +57,8 @@ type SaveTarget = { kind: 'hotseat' } | { kind: 'host'; code: string } | null;
 export default function App() {
   // 따라하기 is running (the coach shows, nothing is saved or kept as a record).
   const [tutorial, setTutorial] = useState(false);
+  // 도전 판 being played (its goal shows; nothing is saved or kept as a record).
+  const [challenge, setChallenge] = useState<Challenge | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   // The GM and its API key are remembered on this browser only, never sent to the other player.
   const [gmConfig, setGmConfig] = useState<GmConfig>(() => rememberedGm().current);
@@ -126,6 +129,7 @@ export default function App() {
 
   const start = (s: Session, target: SaveTarget, notice: string | null = null, resumed: SavedGame | null = null) => {
     setTutorial(false);
+    setChallenge(null);
     setError(null);
     setBusy(null);
     saveTarget.current = target;
@@ -280,8 +284,19 @@ export default function App() {
     setTutorial(true);
   };
 
+  /** 도전 판: its board, the player's own GM, black an easy AI; it never takes the save slot. */
+  const startChallenge = (c: Challenge) => {
+    session?.dispose();
+    const config = resumeGm(null);
+    const local = new LocalSession(chainOf(config), { roll: rollDie, initialState: c.start(), phase: 'playing', fall: landFalls });
+    local.setAi('black', { level: 'easy', specials: 'off' });
+    start(local, null, `🎯 도전: ${c.title}. ${c.goal}${keyNotice(config)}`);
+    setChallenge(c);
+  };
+
   const leave = () => {
     setTutorial(false);
+    setChallenge(null);
     session?.dispose();
     setSession(null);
     saveTarget.current = null;
@@ -322,6 +337,7 @@ export default function App() {
           onVsAi={() => hotseat(null, 'vsAi')}
           onWatchAi={() => hotseat(null, 'watch')}
           onTutorial={startTutorial}
+          onChallenge={startChallenge}
           onHost={() => void host()}
           onJoin={join}
           onResume={() => (saved?.kind === 'host' ? void host(saved) : hotseat(saved))}
@@ -359,6 +375,8 @@ export default function App() {
       openGmSettings={askForKey}
       startNotice={startNotice}
       tutorial={tutorial}
+      challenge={challenge}
+      onRetry={challenge ? () => startChallenge(challenge) : undefined}
     />
   );
   }
@@ -376,6 +394,8 @@ function RoomScreen(props: {
   openGmSettings: boolean;
   startNotice: string | null;
   tutorial: boolean;
+  challenge: Challenge | null;
+  onRetry?: () => void;
 }) {
   const { session } = props;
   const [view, setView] = useState<SessionView>(() => session.view());
@@ -431,6 +451,8 @@ function RoomScreen(props: {
       openGmSettings={props.openGmSettings}
       startNotice={gameNo <= 1 ? props.startNotice : null}
       tutorial={props.tutorial && gameNo <= 1}
+      challenge={props.challenge}
+      onRetry={props.onRetry}
     />
   );
 }
