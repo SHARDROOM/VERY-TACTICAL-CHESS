@@ -43,6 +43,22 @@ function SoundControls() {
           onPointerUp={() => playSfx('coinClink', { strength: 0.8 })}
         />
       </label>
+      <label className="menu-row">
+        <input type="checkbox" checked={sound.music} onChange={(e) => setSoundSettings({ music: e.target.checked })} />
+        배경음악
+      </label>
+      <label className="menu-row">
+        <span>음악 음량</span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={sound.musicVolume}
+          disabled={!sound.music}
+          onChange={(e) => setSoundSettings({ musicVolume: Number(e.target.value) })}
+        />
+      </label>
     </>
   );
 }

@@ -16,6 +16,7 @@ import type { GameMaster } from './gm/types';
 import { WaitingRoom } from './ui/WaitingRoom';
 import { rollDie } from './dice';
 import { playSfx, reloadSoundSettings, unlockAudio } from './audio/sfx';
+import { startMusic } from './audio/music';
 import { reloadStagingLook } from './ui/stagingLook';
 import { CloudSync, type Item } from './cloud/sync';
 import { GoogleDrive } from './cloud/drive';
@@ -249,9 +250,14 @@ export default function App() {
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
       unlockAudio();
+      // 배경음악: it may begin once sound is allowed (it is on by default, quiet).
+      startMusic();
       if ((e.target as Element | null)?.closest?.('button:not(:disabled)')) playSfx('click');
     };
-    const onKey = () => unlockAudio();
+    const onKey = () => {
+      unlockAudio();
+      startMusic();
+    };
     window.addEventListener('pointerdown', onDown, true);
     window.addEventListener('keydown', onKey, true);
     return () => {

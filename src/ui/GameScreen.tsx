@@ -74,6 +74,7 @@ import { playChunkTracks, restingChunks } from '../scene/debris';
 import { playTakenTracks, receiveToy, setToySender, takenNow, tellToss, tellWrite } from '../scene/toys';
 import type { PieceDirection } from '../scene/pieceMotion';
 import { GmBusyBadge } from './GmBusyBadge';
+import { musicAccent } from '../audio/music';
 import { challengeOutcome, turnsLeft, type Challenge } from '../challenge/challenges';
 import { STEP_SHORT, STEP_TEXT, blackReply, stepAfter, suggestedDeclaration, type TutorialStep } from '../tutorial/tutorial';
 import { addRecord, recordOf, type RecordMode } from '../session/records';
@@ -456,7 +457,10 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
       addLog(describeEvents(events, typeOf));
       const passed = events.some((ev) => ev.type === 'turnPassed');
       if (passed) playSfx('turn', { delay: 0.25 });
-      if (events.some((ev) => ev.type === 'check')) playSfx('check', { delay: 0.45 });
+      if (events.some((ev) => ev.type === 'check')) {
+        playSfx('check', { delay: 0.45 });
+        musicAccent('check');
+      }
       if (events.some((ev) => ev.type === 'specialProposed')) playSfx('ruling');
       if (events.some((ev) => ev.type === 'chaos')) playSfx('chaos');
       if (events.some((ev) => ev.type === 'timedOut')) playSfx('timeout');
@@ -540,6 +544,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
       void simulateDuel(plan).then((run) => {
         const startedAt = performance.now() + (still ? 0 : DUEL_TIMING.camera) * 1000;
         setDuel({ clash, plan, run, startedAt });
+        musicAccent('clash');
         let over = false;
         const end = () => {
           if (over) return;

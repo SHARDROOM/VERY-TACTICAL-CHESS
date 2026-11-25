@@ -29,7 +29,14 @@ export interface SoundSettings {
   enabled: boolean;
   /** 0..1 */
   volume: number;
+  /** The background music (배경음악, music.ts): its own switch and volume, apart from the effects. */
+  music: boolean;
+  /** 0..1 */
+  musicVolume: number;
 }
+
+/** The music starts quiet (사용자 요청: on by default, low). */
+export const MUSIC_DEFAULT_VOLUME = 0.25;
 
 const KEY = 'vtc.sound';
 let settings: SoundSettings = loadSettings();
@@ -43,12 +50,18 @@ function loadSettings(): SoundSettings {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null');
     if (raw && typeof raw.enabled === 'boolean' && typeof raw.volume === 'number') {
-      return { enabled: raw.enabled, volume: Math.min(1, Math.max(0, raw.volume)) };
+      return {
+        enabled: raw.enabled,
+        volume: Math.min(1, Math.max(0, raw.volume)),
+        // Settings from before the music: it is on, quiet.
+        music: typeof raw.music === 'boolean' ? raw.music : true,
+        musicVolume: typeof raw.musicVolume === 'number' ? Math.min(1, Math.max(0, raw.musicVolume)) : MUSIC_DEFAULT_VOLUME,
+      };
     }
   } catch {
     // no storage: defaults
   }
-  return { enabled: true, volume: 0.7 };
+  return { enabled: true, volume: 0.7, music: true, musicVolume: MUSIC_DEFAULT_VOLUME };
 }
 
 export function getSoundSettings(): SoundSettings {
@@ -74,6 +87,11 @@ export function reloadSoundSettings(): void {
 export function onSoundSettings(listener: (s: SoundSettings) => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** The audio context and a second of white noise, once a gesture has unlocked them (the music plays through them). */
+export function audioOut(): { ctx: AudioContext; noise: AudioBuffer } | null {
+  return ctx && noise ? { ctx, noise } : null;
 }
 
 /** Call from a user gesture (click/tap) so the browser lets us make sound. */
