@@ -23,11 +23,32 @@ describe('a look between screens', () => {
     expect(parseToyOp({ op: 'gaze', id: 'white', from: [0, 7], at: [0, 0, 0] })).toBeNull();
   });
 
+  it('a look or a sheet in another side\'s name is not passed on (found by cross-check: anyone could write on the opponent\'s sheet)', async () => {
+    const [hostEnd, guestEnd] = memoryChannelPair();
+    const host = new HostSession(gm, { code: 'ABC234', link: 'x', roll: () => 6, heartbeatMs: 0 });
+    host.attachGuest(hostEnd);
+    const guest = new GuestSession(guestEnd, { heartbeatMs: 0, id: 'g1', name: '친구' });
+    host.takeSeat('white');
+    await settle();
+    guest.takeSeat('black');
+    await settle();
+    const atHost: ToyOp[] = [];
+    host.subscribe((e: SessionEvent) => e.kind === 'toy' && atHost.push(e.op));
+    guest.toy({ op: 'write', id: 'white', text: '백이 항복합니다' });
+    guest.toy({ op: 'gaze', id: 'white', from: [0, 7, 9], at: [0, 0, 0] });
+    guest.toy({ op: 'write', id: 'black', text: '내 차례에 돌진' });
+    await settle();
+    expect(atHost).toEqual([{ op: 'write', id: 'black', text: '내 차례에 돌진' }]);
+  });
+
   it("the host's look reaches the guest, and the guest's the host", async () => {
     const [hostEnd, guestEnd] = memoryChannelPair();
     const host = new HostSession(gm, { code: 'ABC234', link: 'x', roll: () => 6, heartbeatMs: 0 });
     host.attachGuest(hostEnd);
     const guest = new GuestSession(guestEnd, { heartbeatMs: 0, id: 'g1', name: '친구' });
+    host.takeSeat('white');
+    await settle();
+    guest.takeSeat('black');
     await settle();
     const seen = (s: HostSession | GuestSession) => {
       const got: ToyOp[] = [];

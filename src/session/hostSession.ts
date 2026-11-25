@@ -154,6 +154,8 @@ export class HostSession implements Session {
         case 'doodle':
           return this.applyDoodle(msg.op, member.key, false);
         case 'toy':
+          // A look or a sheet speaks for a side: only the one sitting there may send it (no words in another's name).
+          if ((msg.op.op === 'gaze' || msg.op.op === 'write' || msg.op.op === 'toss') && msg.op.id !== member.role) return;
           // On to everyone else, and shown here.
           this.broadcast({ t: 'toy', op: msg.op }, member);
           return this.emitter.emit({ kind: 'toy', op: msg.op });

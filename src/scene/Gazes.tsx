@@ -24,7 +24,9 @@ function GazeLine({ side, look }: { side: Side; look: Look }) {
     // Start a little way out from the eye, so the line does not cross the viewer's own face as much.
     const start = from.clone().lerp(at, 0.25);
     const dir = at.clone().sub(start);
-    const length = dir.length();
+    const length = Math.max(dir.length(), 0.001);
+    // A look with no length (cannot come from a camera, but it came over the network): straight down, not NaN.
+    if (dir.lengthSq() < 1e-6) dir.set(0, -1, 0);
     return { mid: start.clone().add(at).multiplyScalar(0.5), length, quat: new Quaternion().setFromUnitVectors(UP, dir.normalize()), at };
   }, [look]);
   return (
