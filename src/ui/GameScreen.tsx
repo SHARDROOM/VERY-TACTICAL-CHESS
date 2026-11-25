@@ -1444,7 +1444,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
                     <button
                       className="undo-button"
                       onClick={() => session.undo()}
-                      disabled={!view.undoable || view.gmBusy || !!dice || !!stage || !!duel}
+                      disabled={!!coach || !view.undoable || view.gmBusy || !!dice || !!stage || !!duel}
                       title="마지막 수를 무릅니다(AI의 대답도 함께). 주사위를 굴린 특수 행동·합이나 혼돈 사건 앞으로는 돌아갈 수 없습니다."
                     >
                       ↶ 무르기
