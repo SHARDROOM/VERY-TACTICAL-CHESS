@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseToyOp, type ToyOp } from '../session/toy';
 import { onPaper, setToySender, tellToss, tellWrite } from './toys';
+import { paperKey } from './Papers';
 
 /* 쓰는 종이 (사용자 요청): what a player writes reaches the others as it is typed, and is tossed when sent. */
 
@@ -33,5 +34,14 @@ describe('a sheet being written', () => {
     expect(sent.at(-1)).toMatchObject({ op: 'toss', id: 'white', text: '나이트가 돌진한다' });
     expect(here).toEqual([sent.at(-1)]);
     off();
+  });
+});
+
+describe('a tossed sheet', () => {
+  it('has the same name on every screen, however many sheets each has seen (found by cross-check: one picked up elsewhere did not move here)', () => {
+    const op = { op: 'toss', id: 'black', text: 'x', dir: 1, seed: 12345 } as const;
+    expect(paperKey(op)).toBe(paperKey({ ...op }));
+    expect(paperKey(op)).not.toBe(paperKey({ ...op, seed: 999 }));
+    expect(paperKey(op)).not.toBe(paperKey({ ...op, id: 'white' }));
   });
 });

@@ -84,9 +84,19 @@ function usePaperTexture(text: string, writing: boolean): CanvasTexture {
     return t;
   }, []);
   useEffect(() => {
-    drawPaper(tex.image as HTMLCanvasElement, text, writing);
-    tex.needsUpdate = true;
-    keepAwake();
+    let alive = true;
+    const draw = () => {
+      if (!alive) return;
+      drawPaper(tex.image as HTMLCanvasElement, text, writing);
+      tex.needsUpdate = true;
+      keepAwake();
+    };
+    draw();
+    // Drawn before the handwriting font came: once more when it has.
+    document.fonts?.ready.then(draw).catch(() => {});
+    return () => {
+      alive = false;
+    };
   }, [tex, text, writing]);
   useEffect(() => () => tex.dispose(), [tex]);
   return tex;
@@ -140,6 +150,9 @@ function WritingPaper({ side, text, viewer }: { side: Side; text: string; viewer
   });
   return <Sheet texture={texture} meshRef={(m) => void (ref.current = m)} />;
 }
+
+/** A tossed sheet's name, the same on every screen (its drags are told by it): who wrote it and its toss's seed. */
+export const paperKey = (op: { id: Side; seed: number }) => `paper-${op.id}-${op.seed}`;
 
 interface Tossed {
   key: string;
@@ -320,7 +333,6 @@ function TossedPaper({ paper }: { paper: Tossed }) {
 export function Papers({ mySide, viewer }: { mySide: Side | null; viewer: Side }) {
   const [writing, setWriting] = useState<Partial<Record<Side, string>>>({});
   const [tossed, setTossed] = useState<Tossed[]>([]);
-  const count = useRef(0);
   useEffect(
     () =>
       onPaper((op) => {
@@ -331,8 +343,8 @@ export function Papers({ mySide, viewer }: { mySide: Side | null; viewer: Side }
         }
         setWriting((w) => ({ ...w, [op.id]: '' }));
         if (!op.text.trim()) return;
-        const paper: Tossed = { key: `paper-${op.id}-${op.seed}-${count.current++}`, side: op.id, text: op.text, dir: op.dir, seed: op.seed };
-        setTossed((list) => [...list, paper].slice(-MAX_PAPERS));
+        const paper: Tossed = { key: paperKey(op), side: op.id, text: op.text, dir: op.dir, seed: op.seed };
+        setTossed((list) => (list.some((p) => p.key === paper.key) ? list : [...list, paper].slice(-MAX_PAPERS)));
       }),
     [mySide],
   );
