@@ -2,6 +2,7 @@ import { Quaternion, Vector3 } from 'three';
 import type { Obstacle } from './piecePhysics';
 import type { Pose, ToyOp } from '../session/toy';
 import { d6Corners } from '../dice3d/d6';
+import { paperPose } from './paperPose';
 
 /*
  * The table's toys between the scene and the session (docs/SPEC.md, "만지작거리기"): what this
@@ -59,16 +60,22 @@ export function receiveToy(op: ToyOp): void {
 type GazeOp = Extract<ToyOp, { op: 'gaze' }>;
 const gazeListeners = new Set<(op: GazeOp) => void>();
 let lastGaze = { at: 0, text: '' };
+/** Where this screen's camera is and what it looks at, as last seen (a sheet being written floats in its view). */
+let myEye: { from: [number, number, number]; at: [number, number, number] } | null = null;
 /** A look is told a few times a second at most, and only when it moved. */
 const GAZE_EVERY_MS = 200;
+/** A look that has not moved is told again this often (well inside Gazes' 20 s; found while placing the sheet: a still camera's look faded away). */
+const GAZE_STILL_MS = 5000;
 
 /** Tells the others where this screen's camera is and what it looks at. */
 export function tellGaze(side: GazeOp['id'], from: [number, number, number], at: [number, number, number]): void {
+  myEye = { from, at };
   const now = performance.now();
   const r = (v: number) => Math.round(v * 20) / 20;
   const op: GazeOp = { op: 'gaze', id: side, from: [r(from[0]), r(from[1]), r(from[2])], at: [r(at[0]), r(at[1]), r(at[2])] };
   const text = JSON.stringify(op);
-  if (now - lastGaze.at < GAZE_EVERY_MS || text === lastGaze.text) return;
+  // Unchanged, it is still told now and then: the others drop a look not heard from for a while (Gazes.tsx).
+  if (now - lastGaze.at < GAZE_EVERY_MS || (text === lastGaze.text && now - lastGaze.at < GAZE_STILL_MS)) return;
   lastGaze = { at: now, text };
   send?.(op);
 }
@@ -81,13 +88,16 @@ let lastWrite = { at: 0, text: '', timer: 0 as ReturnType<typeof setTimeout> | 0
 /** What is being written goes out a few times a second at most (the last of it always does). */
 const WRITE_EVERY_MS = 150;
 
+/** Where this player's sheet floats: about the middle of its view (none before its camera is known). */
+const sheetPose = (): { pose?: Pose } => (myEye ? { pose: paperPose(myEye.from, myEye.at) } : {});
+
 /** Tells the others what this player is writing now ('' puts the paper away). */
 export function tellWrite(side: PaperOp['id'], text: string): void {
   if (text === lastWrite.text) return;
   if (lastWrite.timer) clearTimeout(lastWrite.timer);
   const go = () => {
     lastWrite = { at: performance.now(), text, timer: 0 };
-    send?.({ op: 'write', id: side, text });
+    send?.({ op: 'write', id: side, text, ...sheetPose() });
   };
   const wait = WRITE_EVERY_MS - (performance.now() - lastWrite.at);
   if (wait <= 0) go();
@@ -98,7 +108,7 @@ export function tellWrite(side: PaperOp['id'], text: string): void {
 export function tellToss(side: PaperOp['id'], text: string): void {
   if (lastWrite.timer) clearTimeout(lastWrite.timer);
   lastWrite = { at: performance.now(), text: '', timer: 0 };
-  const op: PaperOp = { op: 'toss', id: side, text, dir: Math.random() < 0.5 ? -1 : 1, seed: newSeed() };
+  const op: PaperOp = { op: 'toss', id: side, text, dir: Math.random() < 0.5 ? -1 : 1, seed: newSeed(), ...sheetPose() };
   send?.(op);
   for (const fn of paperListeners) fn(op);
 }

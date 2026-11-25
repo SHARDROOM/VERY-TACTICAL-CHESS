@@ -3,7 +3,7 @@ import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js'
 import type { PieceType } from '../engine';
 import { loadPhysics } from '../dice3d/simulate';
 import { pieceParts } from './pieceGeometry';
-import { addObstacles, type Obstacles } from './piecePhysics';
+import { addFixtures, addObstacles, type Obstacles } from './piecePhysics';
 import { seeded } from './boardPhysics';
 import { TABLE_TOP_Y } from './WoodTable';
 import { rescueFallen } from './rescue';
@@ -104,13 +104,14 @@ export type { Obstacles } from './piecePhysics';
 
 type Rapier = Awaited<ReturnType<typeof loadPhysics>>;
 
-/** The table, the raised board and the obstacles, all fixed. */
+/** The table, the raised board, the dice tray and coin dishes, and the obstacles, all fixed. */
 function solids(RAPIER: Rapier, world: InstanceType<Rapier['World']>, o?: Obstacles): void {
   const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
   const [hw, hd] = tableHalf();
   world.createCollider(RAPIER.ColliderDesc.cuboid(hw + 1, 0.3, hd + 0.5).setTranslation(0, TABLE_TOP_Y - 0.3, 0).setFriction(0.8).setRestitution(0.15), fixed);
   const boardH = -TABLE_TOP_Y / 2;
   world.createCollider(RAPIER.ColliderDesc.cuboid(4.6, boardH, 4.6).setTranslation(0, TABLE_TOP_Y + boardH, 0).setFriction(0.7).setRestitution(0.2), fixed);
+  addFixtures(RAPIER, world, fixed);
   if (o) addObstacles(RAPIER, world, fixed, o);
 }
 

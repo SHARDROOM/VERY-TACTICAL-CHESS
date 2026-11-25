@@ -4,6 +4,7 @@ import { CanvasTexture, Euler, Quaternion, SRGBColorSpace, Vector3, type Mesh } 
 import { CHUNK, addChunk, chunkPose, getChunk, playChunk, removeChunks, type Chunk } from './debris';
 import { simulateChunkThrow } from './shatter';
 import { onPaper, onToy, poseOf, readPose, tellToy } from './toys';
+import type { Pose } from '../session/toy';
 import { Grip, holdingSomething, onDepth, tableObstacles, useTable } from './tableDrag';
 import { LiveDrag } from './liveDrag';
 import { sideDir } from './coords';
@@ -12,8 +13,10 @@ import { keepAwake } from './renderPace';
 
 /*
  * 쓰는 종이 (사용자 요청): while another player types a chat line or a special action, a sheet of
- * paper floats on their side of the table with the words appearing as they are typed (turned so
- * this screen can read it). Sent, the sheet is tossed to the table's left or right and lies there
+ * paper floats in the middle of their view (on their line of sight, as their screen tells:
+ * paperPose.ts) with the words appearing as they are typed, the written face turned to the writer
+ * (사용자 요청); the others see it from behind, the ink showing through. Sent, the sheet is tossed
+ * from there to the table's left or right and lies there
  * as a body like a shattered piece's chunk (debris.ts): pieces push it, anyone can pick it up and
  * throw it (the same live drag), and the others see that too. Only a look, not saved.
  */
@@ -42,8 +45,8 @@ function facing(toward: [number, number], tilt = 0.75): Quaternion {
   return new Quaternion().setFromEuler(new Euler(-Math.PI / 2 + tilt, yaw, 0, 'YXZ'));
 }
 
-/** The sheet's face: aged paper, the words in ink, wrapped to fit. */
-function drawPaper(canvas: HTMLCanvasElement, text: string, writing: boolean): void {
+/** The sheet's face: aged paper, the words in ink, wrapped to fit. `back`: seen from behind, the ink showing through (mirrored, faint). */
+function drawPaper(canvas: HTMLCanvasElement, text: string, writing: boolean, back = false): void {
   const g = canvas.getContext('2d');
   if (!g) return;
   const { width: w, height: h } = canvas;
@@ -70,25 +73,42 @@ function drawPaper(canvas: HTMLCanvasElement, text: string, writing: boolean): v
   if (line) lines.push(line);
   const lh = size * 1.35;
   const maxLines = Math.floor((h - 60) / lh);
+  g.save();
+  if (back) {
+    g.translate(w, 0);
+    g.scale(-1, 1);
+    g.globalAlpha = 0.32;
+  }
   lines.slice(0, maxLines).forEach((l, i) => g.fillText(l, 30, 30 + i * lh));
+  g.restore();
 }
 
-function usePaperTexture(text: string, writing: boolean): CanvasTexture {
+interface PaperFaces {
+  front: CanvasTexture;
+  back: CanvasTexture;
+}
+
+function usePaperTexture(text: string, writing: boolean): PaperFaces {
   const tex = useMemo(() => {
-    const c = document.createElement('canvas');
-    c.width = 512;
-    c.height = Math.round((512 * H) / W);
-    const t = new CanvasTexture(c);
-    t.colorSpace = SRGBColorSpace;
-    t.anisotropy = 4;
-    return t;
+    const make = () => {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = Math.round((512 * H) / W);
+      const t = new CanvasTexture(c);
+      t.colorSpace = SRGBColorSpace;
+      t.anisotropy = 4;
+      return t;
+    };
+    return { front: make(), back: make() };
   }, []);
   useEffect(() => {
     let alive = true;
     const draw = () => {
       if (!alive) return;
-      drawPaper(tex.image as HTMLCanvasElement, text, writing);
-      tex.needsUpdate = true;
+      drawPaper(tex.front.image as HTMLCanvasElement, text, writing);
+      drawPaper(tex.back.image as HTMLCanvasElement, text, writing, true);
+      tex.front.needsUpdate = true;
+      tex.back.needsUpdate = true;
       keepAwake();
     };
     draw();
@@ -98,14 +118,20 @@ function usePaperTexture(text: string, writing: boolean): CanvasTexture {
       alive = false;
     };
   }, [tex, text, writing]);
-  useEffect(() => () => tex.dispose(), [tex]);
+  useEffect(
+    () => () => {
+      tex.front.dispose();
+      tex.back.dispose();
+    },
+    [tex],
+  );
   return tex;
 }
 
-/** The sheet itself: a thin slab, the writing on its upper face. */
+/** The sheet itself: a thin slab, the writing on its +z face (showing through on the other). */
 type PointerHandler = (e: ThreeEvent<PointerEvent>) => void;
 function Sheet({ texture, ...rest }: {
-  texture: CanvasTexture;
+  texture: PaperFaces;
   meshRef?: (m: Mesh | null) => void;
   onPointerDown?: PointerHandler;
   onPointerMove?: PointerHandler;
@@ -121,13 +147,22 @@ function Sheet({ texture, ...rest }: {
       <meshStandardMaterial attach="material-1" color="#d9c08e" roughness={0.95} />
       <meshStandardMaterial attach="material-2" color="#d9c08e" roughness={0.95} />
       <meshStandardMaterial attach="material-3" color="#d9c08e" roughness={0.95} />
-      <meshStandardMaterial attach="material-4" map={texture} roughness={0.9} />
-      <meshStandardMaterial attach="material-5" color="#cfb47f" roughness={0.95} />
+      <meshStandardMaterial attach="material-4" map={texture.front} roughness={0.9} />
+      <meshStandardMaterial attach="material-5" map={texture.back} color="#efe4cc" roughness={0.95} />
     </mesh>
   );
 }
 
-/** Where a sheet being written floats: just off the board by the writer's half (on its right), raised, so it covers no piece. */
+/** Where a sheet starts: the writer's `pose` if told, else `spot`, lying back toward the writer. */
+function sheetStart(side: Side, pose: Pose | undefined, spot: Vector3, tilt = 0.75): { at: Vector3; q: Quaternion } {
+  if (!pose) return { at: spot, q: facing(sideDir(side), tilt) };
+  const at = new Vector3();
+  const q = new Quaternion();
+  readPose(pose, at, q);
+  return { at, q };
+}
+
+/** Where a sheet being written floats without a pose: just off the board by the writer's half (on its right), raised. */
 function floatingSpot(side: Side): Vector3 {
   const [dx, dz] = sideDir(side);
   return new Vector3(dx * 2.6 - dz * 6.2, TABLE_TOP_Y + 1.5, dz * 2.6 + dx * 6.2);
@@ -135,12 +170,15 @@ function floatingSpot(side: Side): Vector3 {
 /** Bigger while it is being written, so the words can be read from across the table. */
 const WRITING_SCALE = 1.6;
 
-/** Another player's sheet while it writes: floating over its side, bobbing a little, standing up to face this screen. */
-function WritingPaper({ side, text, viewer }: { side: Side; text: string; viewer: [number, number] }) {
+/**
+ * Another player's sheet while it writes: about the middle of its view, as its screen told
+ * (`pose`), the words facing the writer; bobbing a little. Without a pose (its camera not known
+ * yet): just off the board by its half, standing up toward it.
+ */
+function WritingPaper({ side, text, pose }: { side: Side; text: string; pose?: Pose }) {
   const texture = usePaperTexture(text, true);
   const ref = useRef<Mesh | null>(null);
-  const at = useMemo(() => floatingSpot(side), [side]);
-  const q = useMemo(() => facing(viewer, 1.15), [viewer]);
+  const { at, q } = useMemo(() => sheetStart(side, pose, floatingSpot(side), 1.15), [side, pose]);
   useFrame(({ clock }) => {
     const m = ref.current;
     if (!m) return;
@@ -160,6 +198,8 @@ interface Tossed {
   text: string;
   dir: 1 | -1;
   seed: number;
+  /** Where the writer held it (about the middle of its view), as its screen told. */
+  pose?: Pose;
 }
 
 const TMP_P = new Vector3();
@@ -175,11 +215,17 @@ function TossedPaper({ paper }: { paper: Tossed }) {
   useEffect(() => {
     if (getChunk(key)) return;
     let alive = true;
-    const p = writingSpot(paper.side);
-    const q = facing(sideDir(paper.side));
+    const { at: p, q } = sheetStart(paper.side, paper.pose, writingSpot(paper.side));
     const c: Chunk = { key, pieceId: paper.key, index: 0, hull: HULL, p: p.clone(), q: q.clone() };
     const [dx, dz] = sideDir(paper.side);
-    const velocity = new Vector3(paper.dir * 6 - dx * 0.5, 3.2, -dz * 1.2);
+    // From over the writer's near ranks: flung hard to its left or right (a little back toward it),
+    // over the dice tray or the coin dishes, to come down past them, clear of the board and the
+    // writer's book (checked with two browsers and the physics: tossed as before, it landed among
+    // the pieces; less hard, it hit the tray or a dish and fell back). Without a pose it starts off
+    // the board already, in front of the writer.
+    const velocity = paper.pose
+      ? new Vector3(-dz * paper.dir * 12 + dx * 0.6, 3.2, dx * paper.dir * 12 + dz * 0.6)
+      : new Vector3(paper.dir * 6 - dx * 0.5, 3.2, -dz * 1.2);
     simulateChunkThrow(HULL, p, q, velocity, paper.seed, table ? tableObstacles(table, { chunkKey: key }) : undefined)
       .then((run) => {
         if (!alive) return;
@@ -330,28 +376,27 @@ function TossedPaper({ paper }: { paper: Tossed }) {
  * The papers on the table: the others' while they write, and every sent one (this screen's too)
  * lying where it was tossed. `viewer`: the side this screen looks from (the writing faces it).
  */
-export function Papers({ mySide, viewer }: { mySide: Side | null; viewer: Side }) {
-  const [writing, setWriting] = useState<Partial<Record<Side, string>>>({});
+export function Papers({ mySide }: { mySide: Side | null; viewer?: Side }) {
+  const [writing, setWriting] = useState<Partial<Record<Side, { text: string; pose?: Pose }>>>({});
   const [tossed, setTossed] = useState<Tossed[]>([]);
   useEffect(
     () =>
       onPaper((op) => {
         if (op.op === 'write') {
           if (op.id === mySide) return;
-          setWriting((w) => ({ ...w, [op.id]: op.text }));
+          setWriting((w) => ({ ...w, [op.id]: { text: op.text, pose: op.pose } }));
           return;
         }
-        setWriting((w) => ({ ...w, [op.id]: '' }));
+        setWriting((w) => ({ ...w, [op.id]: undefined }));
         if (!op.text.trim()) return;
-        const paper: Tossed = { key: paperKey(op), side: op.id, text: op.text, dir: op.dir, seed: op.seed };
+        const paper: Tossed = { key: paperKey(op), side: op.id, text: op.text, dir: op.dir, seed: op.seed, pose: op.pose };
         setTossed((list) => (list.some((p) => p.key === paper.key) ? list : [...list, paper].slice(-MAX_PAPERS)));
       }),
     [mySide],
   );
-  const view = useMemo(() => sideDir(viewer), [viewer]);
   return (
     <>
-      {(Object.entries(writing) as [Side, string][]).map(([side, text]) => (text ? <WritingPaper key={side} side={side} text={text} viewer={view} /> : null))}
+      {(Object.entries(writing) as [Side, { text: string; pose?: Pose } | undefined][]).map(([side, w]) => (w?.text ? <WritingPaper key={side} side={side} text={w.text} pose={w.pose} /> : null))}
       {tossed.map((p) => (
         <TossedPaper key={p.key} paper={p} />
       ))}

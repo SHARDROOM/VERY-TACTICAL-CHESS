@@ -1,6 +1,8 @@
 import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
-import { isHex, ridersOf, type Piece, type PieceType } from '../engine';
-import { HEX_FRAME_R, tableHalf } from './coords';
+import { isHex, playersOf, ridersOf, type Piece, type PieceType } from '../engine';
+import { HEX_FRAME_R, tableDiceSide, tableHalf } from './coords';
+import { coinLayout } from '../coins/layout';
+import { DISH } from '../coins/coinSim';
 import { loadPhysics } from '../dice3d/simulate';
 import { TRAY } from '../dice3d/simulate';
 import { TRAY_SCALE, trayCenterX } from '../dice3d/DiceTray';
@@ -169,16 +171,14 @@ export function addFloor(RAPIER: Rapier, world: InstanceType<Rapier['World']>, f
   else world.createCollider(RAPIER.ColliderDesc.cuboid(BOARD_HALF, boardH, BOARD_HALF).setTranslation(0, TABLE_TOP_Y + boardH, 0).setFriction(0.55).setRestitution(0.2), fixed);
 }
 
-/** The table top, the board raised on it and the dice tray's walls, fixed; returns their body. */
-export function addTable(RAPIER: Rapier, world: InstanceType<Rapier['World']>, diceSide: 1 | -1): InstanceType<Rapier['RigidBody']> {
-  const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+/**
+ * What else stands on the table, fixed on `fixed`: the dice tray's walls and each player's coin dish
+ * (its base and rim; 사용자 제보: things went through the dish). Where every screen draws them: the
+ * same table for all (tableDiceSide).
+ */
+export function addFixtures(RAPIER: Rapier, world: InstanceType<Rapier['World']>, fixed: InstanceType<Rapier['RigidBody']>, diceSide: 1 | -1 = tableDiceSide()): void {
   const solid = (desc: InstanceType<typeof RAPIER.ColliderDesc>, friction = 0.6, restitution = 0.2) =>
     world.createCollider(desc.setFriction(friction).setRestitution(restitution), fixed);
-  const [hw, hd] = tableHalf();
-  solid(RAPIER.ColliderDesc.cuboid(hw + 1, 0.3, hd + 0.5).setTranslation(0, TABLE_TOP_Y - 0.3, 0), 0.7, 0.15);
-  const boardH = -TABLE_TOP_Y / 2;
-  if (isHex()) for (const desc of hexSlab(RAPIER)) solid(desc, 0.55, 0.2);
-  else solid(RAPIER.ColliderDesc.cuboid(BOARD_HALF, boardH, BOARD_HALF).setTranslation(0, TABLE_TOP_Y + boardH, 0), 0.55, 0.2);
   const tx = trayCenterX(diceSide);
   const hx = TRAY.halfX * TRAY_SCALE;
   const hz = TRAY.halfZ * TRAY_SCALE;
@@ -192,6 +192,38 @@ export function addTable(RAPIER: Rapier, world: InstanceType<Rapier['World']>, d
   ]) {
     solid(RAPIER.ColliderDesc.cuboid(w, wallH / 2, d).setTranslation(x, TABLE_TOP_Y + wallH / 2, z));
   }
+  const coins = coinLayout(diceSide === 1 ? -1 : 1);
+  const segments = 16;
+  const r = DISH.radius + DISH.rimThickness / 2;
+  const seg = (2 * Math.PI * r) / segments / 2 + 0.02;
+  for (const color of playersOf()) {
+    const [x, z] = coins.dish[color];
+    solid(RAPIER.ColliderDesc.cylinder(DISH.baseHeight / 2, DISH.radius + DISH.rimThickness).setTranslation(x, TABLE_TOP_Y + DISH.baseHeight / 2, z), 0.8, 0.1);
+    for (let i = 0; i < segments; i++) {
+      const a = (i / segments) * Math.PI * 2;
+      const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), -a);
+      solid(
+        RAPIER.ColliderDesc.cuboid(DISH.rimThickness / 2, DISH.rimHeight / 2, seg)
+          .setTranslation(x + Math.cos(a) * r, TABLE_TOP_Y + DISH.rimHeight / 2, z + Math.sin(a) * r)
+          .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }),
+        0.6,
+        0.15,
+      );
+    }
+  }
+}
+
+/** The table top, the board raised on it, the dice tray's walls and the coin dishes, fixed; returns their body. */
+export function addTable(RAPIER: Rapier, world: InstanceType<Rapier['World']>, diceSide: 1 | -1): InstanceType<Rapier['RigidBody']> {
+  const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+  const solid = (desc: InstanceType<typeof RAPIER.ColliderDesc>, friction = 0.6, restitution = 0.2) =>
+    world.createCollider(desc.setFriction(friction).setRestitution(restitution), fixed);
+  const [hw, hd] = tableHalf();
+  solid(RAPIER.ColliderDesc.cuboid(hw + 1, 0.3, hd + 0.5).setTranslation(0, TABLE_TOP_Y - 0.3, 0), 0.7, 0.15);
+  const boardH = -TABLE_TOP_Y / 2;
+  if (isHex()) for (const desc of hexSlab(RAPIER)) solid(desc, 0.55, 0.2);
+  else solid(RAPIER.ColliderDesc.cuboid(BOARD_HALF, boardH, BOARD_HALF).setTranslation(0, TABLE_TOP_Y + boardH, 0), 0.55, 0.2);
+  addFixtures(RAPIER, world, fixed, diceSide);
   return fixed;
 }
 

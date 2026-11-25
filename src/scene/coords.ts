@@ -46,5 +46,12 @@ export function sideDir(color: Color): [number, number] {
   return [0, 1];
 }
 
+/**
+ * The side of the table (world x: -1 or +1) the dice tray is on; the coin dishes are across from it.
+ * The same on every screen (사용자 제보: white looked at the dice and black's screen showed it looking
+ * at the coin dish, for each screen had put the tray on its own player's left): one table for all.
+ */
+export const tableDiceSide = (): 1 | -1 => (isHex() ? 1 : -1);
+
 /** How big the table is (it grows for the hexagon), half its width and depth. */
 export const tableHalf = (): [number, number] => (isHex() ? [17, 11.5] : [13, 8.5]);

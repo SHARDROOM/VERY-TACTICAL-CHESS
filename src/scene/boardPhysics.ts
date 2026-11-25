@@ -1,7 +1,7 @@
 import { Quaternion, Vector3 } from 'three';
 import { isAir, type Board, type FallingPiece, type Landing, type PieceType, type Square, type TerrainCell } from '../engine';
 import { loadPhysics } from '../dice3d/simulate';
-import { addFloor, addPieceColliders, ballistic, hullPoints, riderTypes } from './piecePhysics';
+import { addFixtures, addFloor, addPieceColliders, ballistic, hullPoints, riderTypes } from './piecePhysics';
 import { PIECE_HEIGHT } from './pieceGeometry';
 import { AIR_Y, overBoard, squareToWorld, worldToBoard } from './coords';
 import { CHUNK } from './debris';
@@ -100,6 +100,7 @@ export async function simulateRomp(o: RompOptions): Promise<BoardRun> {
   try {
     const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
     addFloor(RAPIER, world, fixed);
+    addFixtures(RAPIER, world, fixed);
     // Walls are solid; pieces bounce off them.
     for (const c of o.terrain ?? []) {
       if (c.kind !== 'wall') continue;
@@ -294,6 +295,7 @@ export async function simulateFalls(o: FallOptions): Promise<{ run: BoardRun; la
   try {
     const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
     addFloor(RAPIER, world, fixed);
+    addFixtures(RAPIER, world, fixed);
     for (const c of o.terrain ?? []) {
       if (c.kind !== 'wall') continue;
       const [x, , z] = squareToWorld(c.at);

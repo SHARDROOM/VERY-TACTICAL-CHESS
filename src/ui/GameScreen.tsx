@@ -43,6 +43,7 @@ import {
 } from '../engine';
 import { BoardScene, type Broadcast, type CameraRequest } from '../scene/BoardScene';
 import { BookControl, bookPoseFor } from '../scene/RuleBook';
+import { tableDiceSide } from '../scene/coords';
 import { COLOR_NAME, MOD_KIND_NAME, OUTCOME_LABEL, PIECE_NAME, REJECT_MESSAGE, describeEvents, highlightLines, signed, type LogEntry, type LogTone } from './messages';
 import { PrecedentList } from './PrecedentList';
 import { josa } from './josa';
@@ -1147,7 +1148,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
         camera={camera}
         onSquareClick={onSquareClick}
         onHoverSquare={setHovered}
-        diceSide={isHex() || seat === 'black' ? 1 : -1}
+        diceSide={tableDiceSide()}
         book={book}
         diceRoll={diceRoll}
         onDiceLanded={onDiceLanded}
