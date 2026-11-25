@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCommand, applyEffects, createStateFrom, pendingModifiers, type Effect, type GameState, type Ruling } from './index';
+import { applyCommand, applyEffects, createInitialState, createStateFrom, pendingModifiers, type Effect, type GameState, type Ruling } from './index';
 import { ok, sq } from './testUtil';
 import { looksOnPiece } from './props';
 
@@ -96,6 +96,16 @@ describe('a building never sits on a piece (사용자 요청: the GM put a canno
   it('nor may a building go up on a piece’s own square: the GM hears to use a free square next to it', () => {
     const r = applyEffects(base().board, [{ type: 'terrain', at: sq('d2'), kind: 'wall', turns: 0, building: { kind: 'forge', name: '', about: '', bonus: 2 } }], ctx);
     expect(r).toMatchObject({ ok: false, detail: expect.stringMatching(/건물.*옆의 빈 칸/) });
+  });
+
+  it('the GM hears which squares next to it are free, or that none is (found near the cross-check: a boxed-in knight’s GM tried a square two away)', () => {
+    // d2's free neighbours in base(): all but e1 (the king).
+    const open = applyEffects(base().board, [{ type: 'terrain', at: sq('d2'), kind: 'wall', turns: 0, building: { kind: 'forge', name: '', about: '', bonus: 2 } }], ctx);
+    expect(open).toMatchObject({ ok: false, detail: expect.stringContaining('c1, c2, c3, d1, d3, e2, e3') });
+    // The knight on g1 at the start has nothing free around it.
+    const start = createInitialState();
+    const boxed = applyEffects(start.board, [{ type: 'terrain', at: sq('g1'), kind: 'wall', turns: 0, building: { kind: 'forge', name: '', about: '', bonus: 2 } }], ctx);
+    expect(boxed).toMatchObject({ ok: false, detail: expect.stringContaining('빈 칸이 없') });
   });
 
   it('a piece that already wears one (an older save) shows it no more; its other looks stay', () => {

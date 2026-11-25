@@ -565,7 +565,14 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         const piece = board[e.at];
         if (piece && e.kind === 'wall') {
           // A building never goes up on a piece (사용자 요청): the GM hears where it may go instead.
-          if (e.building) return fail(`건물은 빈 칸에만 지을 수 있음 (${squareName(e.at)}에 기물이 있음). 기물 옆의 빈 칸에 지을 것`);
+          if (e.building) {
+            // Which squares next to it are free, or that none is (found near the cross-check: told only
+            // "a free square next to it", a boxed-in knight's GM tried one two squares away).
+            const free: string[] = [];
+            for (let sq = 0; sq < SQUARES; sq++) if (onGround(sq) && distance(sq, e.at) === 1 && !board[sq] && !terrainOn(sq)) free.push(squareName(sq));
+            const where = free.length ? `기물 옆의 빈 칸(${free.sort().join(', ')})에 지을 것` : '그 옆에도 빈 칸이 없으니 여기에는 지을 수 없음';
+            return fail(`건물은 빈 칸에만 지을 수 있음 (${squareName(e.at)}에 기물이 있음). ${where}`);
+          }
           return fail(`벽은 빈 칸에만 세울 수 있음 (${squareName(e.at)}에 기물이 있음)`);
         }
         if (!terrainOn(e.at) && terrain.length >= MAX_TERRAIN) return fail(`지형은 한꺼번에 최대 ${MAX_TERRAIN}칸`);
