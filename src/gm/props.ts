@@ -20,7 +20,7 @@ const PARTS_HELP =
 
 /** What a GM writes for a prop (every field present; "none" and "" mean nothing). */
 export const GmPropSchema = z.object({
-  preset: z.enum(PRESETS).describe(`미리 만든 모양 (${PROP_PRESETS.join(', ')}) 또는 none(아래 parts로 직접 조합)`),
+  preset: z.enum(PRESETS).describe(`미리 만든 모양 (${PROP_PRESETS.join(', ')}; cannon·chapel·forge는 건물 칸 전용, 기물에는 안 됨) 또는 none(아래 parts로 직접 조합)`),
   color: z.string().describe('미리 만든 모양의 천·유리·빛남 색 "#rrggbb" (기본은 "")'),
   scale: z.number().describe('크기 배율 0.5~2 (기본 1)'),
   attach: z.enum(ATTACH_POINTS).describe('기물에 붙는 곳: rightHand, leftHand, head, back, feet (칸 조형물은 feet)'),
@@ -31,7 +31,7 @@ export const GmPropSchema = z.object({
 export const GM_PROP_JSON_SCHEMA = {
   type: 'object',
   properties: {
-    preset: { type: 'string', enum: [...PRESETS], description: `미리 만든 모양 (${PROP_PRESETS.join(', ')}) 또는 none(아래 parts로 직접 조합)` },
+    preset: { type: 'string', enum: [...PRESETS], description: `미리 만든 모양 (${PROP_PRESETS.join(', ')}; cannon·chapel·forge는 건물 칸 전용, 기물에는 안 됨) 또는 none(아래 parts로 직접 조합)` },
     color: { type: 'string', description: '미리 만든 모양의 천·유리·빛남 색 "#rrggbb" (기본은 "")' },
     scale: { type: 'number', description: '크기 배율 0.5~2 (기본 1)' },
     attach: { type: 'string', enum: [...ATTACH_POINTS], description: '기물에 붙는 곳: rightHand, leftHand, head, back, feet (칸 조형물은 feet)' },

@@ -32,7 +32,7 @@ import { BUILDING_REACH, MAX_TERRAIN, buildingLook, cleanBuilding, dropFromBridg
 import { capturedAfter, remainsAt } from './captured';
 import { checkActor } from './actor';
 import { CLASH_MAX, CLASH_MIN, canResist, clashMultiplier, clashSkill, hasClashGear, resolveClash } from './clash';
-import { cleanProp } from './props';
+import { cleanProp, isBuildingLook } from './props';
 import { MOD_EACH_MAX, SACRIFICE_CLASH_CAP } from './modifiers';
 import { intercept, saverFor } from './guard';
 import { fused, split } from './fusion';
@@ -360,6 +360,7 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         // The kinds it moves like instead of itself (its own kind among them keeps its own moves too).
         const moveAs = [...new Set(e.moveAs ?? [])];
         const prop = e.prop ? cleanProp(e.prop) : null;
+        if (isBuildingLook(prop)) return fail('대포·예배당·대장간 모양은 건물 전용이라 기물에 붙일 수 없음. 설치하거나 지으려면 기물 옆의 빈 칸에 terrain wall과 building으로, 들고 쓰려면 parts로 작은 모양을 직접 만들 것');
         // 공중부양 lifts a piece on the ground into the air above it (already floating: it lasts longer).
         let at = e.at as Square;
         if (name === LEVITATE && !isAir(at)) {
@@ -562,7 +563,11 @@ export function applyEffects(start: Board, effects: readonly Effect[], ctx: Effe
         if (!isTerrainKind(e.kind)) return fail('지형은 wall(벽)이나 pit(구덩이)만 됨');
         if (!isInt(e.turns) || e.turns < 0) return fail('지속 턴은 0(영구) 이상의 정수여야 함');
         const piece = board[e.at];
-        if (piece && e.kind === 'wall') return fail(`벽은 빈 칸에만 세울 수 있음 (${squareName(e.at)}에 기물이 있음)`);
+        if (piece && e.kind === 'wall') {
+          // A building never goes up on a piece (사용자 요청): the GM hears where it may go instead.
+          if (e.building) return fail(`건물은 빈 칸에만 지을 수 있음 (${squareName(e.at)}에 기물이 있음). 기물 옆의 빈 칸에 지을 것`);
+          return fail(`벽은 빈 칸에만 세울 수 있음 (${squareName(e.at)}에 기물이 있음)`);
+        }
         if (!terrainOn(e.at) && terrain.length >= MAX_TERRAIN) return fail(`지형은 한꺼번에 최대 ${MAX_TERRAIN}칸`);
         if (piece) {
           // A pit opens under a piece: it falls in, unless a shield holds it up (then no pit).

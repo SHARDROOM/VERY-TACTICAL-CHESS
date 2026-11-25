@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyCommand, applyEffects, createStateFrom, pendingModifiers, type Effect, type GameState, type Ruling } from './index';
 import { ok, sq } from './testUtil';
+import { looksOnPiece } from './props';
 
 const base = (): GameState =>
   createStateFrom(
@@ -79,5 +80,30 @@ describe('a building always looks like one (사용자 요청: a forge came out a
     const r = applyEffects(s.board, [{ type: 'terrain', at: sq('e4'), kind: 'wall', turns: 0, prop: { preset: 'barricade', parts: [], attach: 'feet', scale: 1 }, building: { kind: 'forge', name: '', about: '', bonus: 2 } } as Effect], { turnNumber: 1, nextSpawnId: 1, color: 'white', terrain: [] });
     if (!r.ok) throw new Error(r.detail);
     expect(r.terrain[0]).toMatchObject({ building: { kind: 'forge', name: '대장간' }, prop: { preset: 'forge' } });
+  });
+});
+
+describe('a building never sits on a piece (사용자 요청: the GM put a cannon in a pawn’s hand, as if it wore it)', () => {
+  const ctx = { turnNumber: 1, nextSpawnId: 1, color: 'white' as const, terrain: [] };
+  const tagWith = (preset: 'cannon' | 'chapel' | 'forge' | 'sword') =>
+    applyEffects(base().board, [{ type: 'tag', at: sq('d2'), tag: '대포 장착', turns: 3, prop: { preset, parts: [], attach: 'rightHand', scale: 1 } } as Effect], ctx);
+
+  it('a tag may not wear a building’s look (cannon, chapel, forge): the GM hears to build it on a free square instead', () => {
+    for (const preset of ['cannon', 'chapel', 'forge'] as const) expect(tagWith(preset)).toMatchObject({ ok: false, detail: expect.stringMatching(/건물.*빈 칸/) });
+    expect(tagWith('sword')).toMatchObject({ ok: true });
+  });
+
+  it('nor may a building go up on a piece’s own square: the GM hears to use a free square next to it', () => {
+    const r = applyEffects(base().board, [{ type: 'terrain', at: sq('d2'), kind: 'wall', turns: 0, building: { kind: 'forge', name: '', about: '', bonus: 2 } }], ctx);
+    expect(r).toMatchObject({ ok: false, detail: expect.stringMatching(/건물.*옆의 빈 칸/) });
+  });
+
+  it('a piece that already wears one (an older save) shows it no more; its other looks stay', () => {
+    const tags = [
+      { name: '대포 장착', turnsLeft: 3, appliedOnTurn: 1, prop: { preset: 'cannon' as const, parts: [], attach: 'rightHand' as const, scale: 1 } },
+      { name: '검술', turnsLeft: 3, appliedOnTurn: 1, prop: { preset: 'sword' as const, parts: [], attach: 'rightHand' as const, scale: 1 } },
+      { name: '기절', turnsLeft: 1, appliedOnTurn: 1 },
+    ];
+    expect(looksOnPiece(tags).map((t) => t.name)).toEqual(['검술']);
   });
 });

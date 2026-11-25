@@ -97,6 +97,18 @@ export function cleanProp(raw: unknown): Prop | null {
   };
 }
 
+/**
+ * The buildings' looks (건물: a cannon on its carriage, a chapel, a smithy). They stand on a square,
+ * never on a piece (사용자 요청: the GM put a cannon in a pawn's hand, as if it wore the building).
+ */
+export const BUILDING_PRESETS: readonly PropPreset[] = ['cannon', 'chapel', 'forge'];
+export const isBuildingLook = (prop: Prop | null | undefined): boolean => !!prop?.preset && BUILDING_PRESETS.includes(prop.preset);
+
+/** The looks a piece shows from its tags: each tag's prop, but never a building's (an older save may hold one). */
+export function looksOnPiece<T extends { prop?: Prop }>(tags: readonly T[]): (T & { prop: Prop })[] {
+  return tags.filter((t): t is T & { prop: Prop } => !!t.prop && !isBuildingLook(t.prop));
+}
+
 /** Where a ready-made prop goes when the GM did not say. */
 export function defaultAttach(preset: PropPreset | null): AttachPoint {
   if (preset === 'shield') return 'leftHand';

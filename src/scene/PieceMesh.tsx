@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { Euler, MeshStandardMaterial, Quaternion, TorusGeometry, Vector2, Vector3, type Group, type Mesh, type MeshPhysicalMaterial } from 'three';
-import { BURN, CORE_TAGS, RIDE, SHIELD, STUN, hasTag, isHex, ridersOf, type Color, type Entrance, type Exit, type MotionStyle, type Piece, type PieceType } from '../engine';
+import { BURN, CORE_TAGS, RIDE, SHIELD, STUN, hasTag, isHex, looksOnPiece, ridersOf, type Color, type Entrance, type Exit, type MotionStyle, type Piece, type PieceType } from '../engine';
 import { PIECE_HEIGHT, crownLayout, featureParts, pieceParts } from './pieceGeometry';
 import { FoldingBadges, ShieldBubble, StunStars, type Chip } from './TagEffects';
 import { playSfx } from '../audio/sfx';
@@ -207,7 +207,7 @@ function TagDecorations({ piece, top, chipsAbove }: { piece: Piece; top: number;
       {hasTag(piece, SHIELD) && <ShieldBubble height={top} />}
       {stunned && <StunStars y={top + 0.12} />}
       {chips.length > 0 && <FoldingBadges chips={chips} y={(chipsAbove ?? top) + (stunned ? 0.36 : 0.2)} />}
-      {(piece.tags ?? []).map((t) => t.prop && <PropOnPiece key={t.name} prop={t.prop} color={piece.color} height={top} />)}
+      {looksOnPiece(piece.tags ?? []).map((t) => <PropOnPiece key={t.name} prop={t.prop} color={piece.color} height={top} />)}
     </>
   );
 }
