@@ -71,7 +71,7 @@ import { duelLength, planDuel, simulateDuel, type DuelPlan, type DuelRun } from 
 import { runLength, simulateFalls, simulateRomp, type BoardRun, type Mover } from '../scene/boardPhysics';
 import { riderTypes } from '../scene/piecePhysics';
 import { playChunkTracks, restingChunks } from '../scene/debris';
-import { playTakenTracks, receiveToy, setToySender, takenNow } from '../scene/toys';
+import { playTakenTracks, receiveToy, setToySender, takenNow, tellToss, tellWrite } from '../scene/toys';
 import type { PieceDirection } from '../scene/pieceMotion';
 import { GmBusyBadge } from './GmBusyBadge';
 import { addRecord, recordOf, type RecordMode } from '../session/records';
@@ -351,6 +351,14 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
   tabRef.current = tab;
   const chat = view.chat;
   const [chatText, setChatText] = useState('');
+  // 쓰는 종이: online, a seated player's typing shows on a sheet on the others' table; sent, it is tossed aside.
+  const paperSide = online && (seat === 'white' || seat === 'black' || seat === 'red') ? seat : null;
+  useEffect(() => {
+    if (paperSide) tellWrite(paperSide, text.trim());
+  }, [text, paperSide]);
+  useEffect(() => {
+    if (paperSide) tellWrite(paperSide, chatText.trim());
+  }, [chatText, paperSide]);
   /** The doodle tool in hand (null: the pointer moves the camera and the pieces). */
   const [doodleTool, setDoodleTool] = useState<DoodleTool | null>(null);
   const lastTool = useRef<DoodleTool>({ kind: 'pen', color: DOODLE_COLORS[1], width: 0.06, noteText: '' });
@@ -1040,6 +1048,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
     }
     // The text stays in the box until the GM's ruling arrives, so a failed call can be resent.
     session.request({ type: 'declare', action: input });
+    if (paperSide) tellToss(paperSide, input);
   };
 
   const promote = (type: PromotionType) => {
@@ -1114,6 +1123,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
         clashOdds={locked ? undefined : clashOdds}
         broadcast={watching ? focus : null}
         gazeAs={online ? (seat === 'white' || seat === 'black' || seat === 'red' ? seat : null) : undefined}
+        papers={online ? { mySide: paperSide, viewer: homeSide } : null}
         directions={directions}
         fx={fxShow}
         shake={shake}
@@ -1435,6 +1445,7 @@ export function GameScreen({ session, gmConfig, onGmConfig, onBackups, onLeave, 
                 e.preventDefault();
                 if (!chatText.trim()) return;
                 session.sendChat(chatText);
+                if (paperSide) tellToss(paperSide, chatText.trim());
                 setChatText('');
               }}
             >

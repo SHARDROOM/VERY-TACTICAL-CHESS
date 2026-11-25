@@ -10,7 +10,7 @@ import { d6Corners } from '../dice3d/d6';
  */
 
 /** What is done to one thing on the table (a look is not: it goes to onGaze). */
-type ItemOp = Exclude<ToyOp, { op: 'gaze' }>;
+type ItemOp = Exclude<ToyOp, { op: 'gaze' | 'write' | 'toss' }>;
 type Handler = (op: ItemOp) => void;
 const handlers = new Map<string, Handler>();
 let send: ((op: ToyOp) => void) | null = null;
@@ -47,6 +47,10 @@ export function receiveToy(op: ToyOp): void {
     for (const fn of gazeListeners) fn(op);
     return;
   }
+  if (op.op === 'write' || op.op === 'toss') {
+    for (const fn of paperListeners) fn(op);
+    return;
+  }
   handlers.get(op.id)?.(op);
 }
 
@@ -67,6 +71,41 @@ export function tellGaze(side: GazeOp['id'], from: [number, number, number], at:
   if (now - lastGaze.at < GAZE_EVERY_MS || text === lastGaze.text) return;
   lastGaze = { at: now, text };
   send?.(op);
+}
+
+// ---- the papers players write on (쓰는 종이) -----------------------------------------
+
+type PaperOp = Extract<ToyOp, { op: 'write' | 'toss' }>;
+const paperListeners = new Set<(op: PaperOp) => void>();
+let lastWrite = { at: 0, text: '', timer: 0 as ReturnType<typeof setTimeout> | 0 };
+/** What is being written goes out a few times a second at most (the last of it always does). */
+const WRITE_EVERY_MS = 150;
+
+/** Tells the others what this player is writing now ('' puts the paper away). */
+export function tellWrite(side: PaperOp['id'], text: string): void {
+  if (text === lastWrite.text) return;
+  if (lastWrite.timer) clearTimeout(lastWrite.timer);
+  const go = () => {
+    lastWrite = { at: performance.now(), text, timer: 0 };
+    send?.({ op: 'write', id: side, text });
+  };
+  const wait = WRITE_EVERY_MS - (performance.now() - lastWrite.at);
+  if (wait <= 0) go();
+  else lastWrite.timer = setTimeout(go, wait);
+}
+
+/** The player sent what was written: the paper is tossed aside, here and on the others' screens. */
+export function tellToss(side: PaperOp['id'], text: string): void {
+  if (lastWrite.timer) clearTimeout(lastWrite.timer);
+  lastWrite = { at: performance.now(), text: '', timer: 0 };
+  const op: PaperOp = { op: 'toss', id: side, text, dir: Math.random() < 0.5 ? -1 : 1, seed: newSeed() };
+  send?.(op);
+  for (const fn of paperListeners) fn(op);
+}
+
+export function onPaper(fn: (op: PaperOp) => void): () => void {
+  paperListeners.add(fn);
+  return () => void paperListeners.delete(fn);
 }
 
 /** Listens for where the others look. */

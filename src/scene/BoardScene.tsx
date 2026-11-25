@@ -9,6 +9,7 @@ import { fallStart } from './boardPhysics';
 import { TableContext, depthMoved, holdingSomething, type TableHands } from './tableDrag';
 import { diceObstacles, setTakenSource, tellGaze } from './toys';
 import { Gazes } from './Gazes';
+import { Papers } from './Papers';
 import { clearChunks, restingChunks } from './debris';
 import { PieceMesh, PiecePhysicsContext, type PiecePhysics } from './PieceMesh';
 import { riderTypes, type Obstacle } from './piecePhysics';
@@ -112,6 +113,8 @@ interface Props {
   broadcast?: Broadcast | null;
   /** Online, playing this side: where this camera looks goes to the others, and theirs are drawn (상대 시선). */
   gazeAs?: 'white' | 'black' | 'red' | null;
+  /** Online: the sheets players write on and toss aside (쓰는 종이); `viewer` is the side this screen looks from. */
+  papers?: { mySide: 'white' | 'black' | 'red' | null; viewer: Color } | null;
 }
 
 /** Shakes everything on the table (not the camera, which the player controls) for a moment. */
@@ -526,6 +529,7 @@ export function BoardScene({
   falling = NO_FALLING,
   broadcast = null,
   gazeAs,
+  papers = null,
   extras = null,
   book,
 }: Props) {
@@ -701,6 +705,7 @@ export function BoardScene({
         )),
       ]}
       </PiecePhysicsContext.Provider>
+        {papers && <Papers mySide={papers.mySide} viewer={papers.viewer === 'gray' ? 'white' : papers.viewer} />}
       </TableContext.Provider>
       <FxLayer show={fx} pieceAt={pieceAt} auras={auras} light={lightFx} />
       </ShakeGroup>
